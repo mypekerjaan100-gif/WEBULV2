@@ -9,19 +9,33 @@ export function useAuth() {
 
 export default function AppAuth({ children }) {
   const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [view, setView] = useState('loading')
   const [error, setError] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
-      setLoading(false)
+      const hash = window.location.hash || ''
+      if (s && hash.includes('type=recovery')) {
+        setView('recovery')
+      } else if (s) {
+        setView('app')
+      } else {
+        setView('signin')
+      }
     })
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
+      if (event === 'PASSWORD_RECOVERY') {
+        setView('recovery')
+      } else if (event === 'SIGNED_IN' && view === 'loading') {
+        setView('app')
+      } else if (event === 'SIGNED_OUT') {
+        setView('signin')
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -37,14 +51,16 @@ export default function AppAuth({ children }) {
       setError(authErr.message)
       return false
     }
+    setView('app')
     return true
   }
 
   const signOut = async () => {
     await supabase.auth.signOut()
+    setView('signin')
   }
 
-  if (loading) {
+  if (view === 'loading') {
     return (
       <div
         style={{
@@ -60,7 +76,11 @@ export default function AppAuth({ children }) {
     )
   }
 
-  if (!session) {
+  if (view === 'recovery') {
+    return <UpdatePasswordForm />
+  }
+
+  if (view === 'signin' || !session) {
     return <SignInForm onSignIn={signIn} error={error} />
   }
 
@@ -68,6 +88,124 @@ export default function AppAuth({ children }) {
     <AuthContext.Provider value={{ session, user: session.user, signOut }}>
       {children}
     </AuthContext.Provider>
+  )
+}
+
+function UpdatePasswordForm() {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+
+    if (!password) {
+      setError('Password wajib diisi.')
+      return
+    }
+    if (password.length < 6) {
+      setError('Password minimal 6 karakter.')
+      return
+    }
+    if (password !== confirm) {
+      setError('Konfirmasi password tidak cocok.')
+      return
+    }
+
+    setSubmitting(true)
+    const { error: updateErr } = await supabase.auth.updateUser({ password })
+    setSubmitting(false)
+
+    if (updateErr) {
+      setError(updateErr.message)
+      return
+    }
+
+    setSuccess('Password berhasil diperbarui. Anda akan dialihkan ke halaman login...')
+    setTimeout(async () => {
+      await supabase.auth.signOut()
+      window.location.hash = ''
+      window.location.reload()
+    }, 2000)
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        fontFamily: 'sans-serif',
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          minWidth: 320,
+          padding: 24,
+          border: '1px solid #ddd',
+          borderRadius: 8,
+        }}
+      >
+        <h2 style={{ marginTop: 0 }}>Buat Password Baru</h2>
+        <p style={{ fontSize: 14, color: '#555', marginTop: 0 }}>
+          Masukkan password baru Anda di bawah ini.
+        </p>
+        {error && (
+          <p style={{ color: '#d32f2f', fontSize: 14 }}>{error}</p>
+        )}
+        {success && (
+          <p style={{ color: '#2e7d32', fontSize: 14 }}>{success}</p>
+        )}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>
+            Password Baru
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={6}
+            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+          />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>
+            Konfirmasi Password
+          </label>
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            minLength={6}
+            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={submitting || !!success}
+          style={{
+            width: '100%',
+            padding: '10px',
+            backgroundColor: '#1976d2',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            fontSize: 14,
+          }}
+        >
+          {submitting ? 'Menyimpan...' : 'Simpan Password'}
+        </button>
+      </form>
+    </div>
   )
 }
 
