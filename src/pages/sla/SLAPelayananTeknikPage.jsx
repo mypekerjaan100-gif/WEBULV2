@@ -1,0 +1,644 @@
+import { useEffect, useState } from 'react'
+import SLAContextBar from '../../components/sla/SLAContextBar.jsx'
+import SLAIndicatorTable from '../../components/sla/SLAIndicatorTable.jsx'
+import SLAExportPreview from '../../components/sla/SLAExportPreview.jsx'
+import SLAMasterOrganisasi from '../../components/sla/SLAMasterOrganisasi.jsx'
+import SLAMasterLokasi from '../../components/sla/SLAMasterLokasi.jsx'
+import SLAMasterJabatan from '../../components/sla/SLAMasterJabatan.jsx'
+import SLADatabasePegawai from '../../components/sla/SLADatabasePegawai.jsx'
+import SLAMasterPenandatangan from '../../components/sla/SLAMasterPenandatangan.jsx'
+import SLAPengaturanSLA from '../../components/sla/SLAPengaturanSLA.jsx'
+import SLAVariableCost from '../../components/sla/SLAVariableCost.jsx'
+import SLALembur from '../../components/sla/SLALembur.jsx'
+import {
+  buildDefaultTargets,
+  buildVersionSections,
+  cloneTargets,
+  flattenVersionIndicators,
+  pelayananTeknikModules,
+  slaContractScope,
+  slaPeriods,
+  slaSignatureGroups,
+  slaUlpEntries,
+  slaVersions,
+} from '../../data/slaPelayananTeknik.js'
+import {
+  currentNameOf,
+  ulpIdsOfUp3,
+} from '../../data/organisasiPelayananTeknik.js'
+import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
+import { seedPegawaiFromCsv } from '../../data/pegawaiPelayananTeknik.js'
+import { reconcileLocationsFromUnits, seedWorkLocationsFromUnits } from '../../data/lokasiPelayananTeknik.js'
+import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
+import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
+import {
+  createLemburRecord,
+  deleteLemburRecord,
+  initialLemburRecords,
+  scopedLemburRecords,
+  updateLemburRecord,
+} from '../../data/lemburPelayananTeknik.js'
+import {
+  activateScopedVersion,
+  deleteScopedDraft,
+  markScopedVersionUsed,
+  periodKeyFromLabel,
+  resolveVersionForPeriod,
+  rollbackScopedVersion,
+  updateScopedVersion,
+} from '../../data/versiSlaPelayananTeknik.js'
+import csvTadYantek from '../../data/dataTadYantek.csv?raw'
+
+const ROLE_NOTES = {
+  up3: 'Admin UP3 \u2014 pilih view UP3 atau salah satu ULP. View UP3: Target UP3 dan data Manual (Satuan, WO, Realisasi, Pencapaian) dapat dikelola. View ULP: Target ULP dikelola Admin UP3, data input ULP hanya ditampilkan.',
+  ulp: 'Admin ULP \u2014 Target read-only. Indikator Manual: Satuan, WO, Realisasi, dan Pencapaian dapat diedit. 8 indikator Variable Cost: Realisasi dan Pencapaian read-only (otomatis).',
+}
+
+export default function SLAPelayananTeknikPage({
+  onBack,
+  contractId,
+  role,
+  onRoleChange,
+  unitId,
+  onUnitChange,
+  up3Id,
+  units,
+  onUnitsChange,
+}) {
+  const [moduleId, setModuleId] = useState('sla')
+  const [period, setPeriod] = useState('Agustus 2026')
+  const [versionId, setVersionId] = useState(() => slaVersions[0]?.id ?? '')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [changeRequests, setChangeRequests] = useState([])
+  const [locations, setLocations] = useState(() =>
+    seedWorkLocationsFromUnits(units, slaContractScope.contractId),
+  )
+  const [employees, setEmployees] = useState(() => {
+    const seeded = seedPegawaiFromCsv(csvTadYantek, {
+      contractId: slaContractScope.contractId,
+      up3Id,
+    }).employees
+    const initialLocations = seedWorkLocationsFromUnits(
+      units,
+      slaContractScope.contractId,
+    )
+    const up3Office = initialLocations.find(
+      (l) => l.unitId === up3Id && l.type === 'UNIT_OFFICE',
+    )
+    return seeded.map((employee) => {
+      const workLocationId =
+        employee.unitId === up3Id && up3Office ? up3Office.id : null
+      return {
+        ...employee,
+        contractId: employee.contractId ?? slaContractScope.contractId,
+        up3Id: employee.up3Id ?? up3Id,
+        workLocationId,
+        workLocationHistory: workLocationId
+          ? [
+              {
+                id: `hist-${employee.id}-wloc`,
+                workLocationId,
+                validFrom: employee.unitHistory?.[0]?.validFrom ?? '2026-01-01',
+                validTo: null,
+              },
+            ]
+          : [],
+      }
+    })
+  })
+  const [pensionPolicies, setPensionPolicies] = useState(() =>
+    initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id),
+  )
+  const [jabatan, setJabatan] = useState(() =>
+    initialJabatanForUp3(slaContractScope.contractId, up3Id),
+  )
+  const [signatureGroups, setSignatureGroups] = useState(() =>
+    slaSignatureGroups.map((group) => ({
+      ...group,
+      signatories: group.signatories.map((signatory) => ({ ...signatory })),
+    })),
+  )
+  const [versions, setVersions] = useState(() =>
+    slaVersions.map((version) => ({
+      ...version,
+      scope: slaContractScope,
+      sections: buildVersionSections(),
+      targets: buildDefaultTargets(),
+    })),
+  )
+  const [entriesByUnit, setEntriesByUnit] = useState(() =>
+    initialVariableCostForUp3(slaContractScope.contractId, up3Id, units),
+  )
+  const [lemburRecords, setLemburRecords] = useState(() =>
+    initialLemburRecords.filter(
+      (record) =>
+        record.contractId === slaContractScope.contractId &&
+        record.up3Id === up3Id,
+    ),
+  )
+
+  const activeModule = pelayananTeknikModules.find((module) => module.id === moduleId)
+  const up3Unit = units.find((unit) => unit.type === 'UP3' && unit.id === up3Id) ?? null
+  const ulpUnits = units.filter(
+    (unit) => unit.type === 'ULP' && unit.parentUnitId === up3Id,
+  )
+  const scopedUnits = [up3Unit, ...ulpUnits].filter(Boolean)
+  const scopedVersions = versions.filter(
+    (version) =>
+      version.contractId === slaContractScope.contractId &&
+      version.up3Id === up3Id,
+  )
+  const scopedUnitIds = [up3Id, ...ulpIdsOfUp3(units, up3Id)]
+  const scopedEmployees = employees.filter(
+    (employee) =>
+      employee.contractId === slaContractScope.contractId &&
+      employee.up3Id === up3Id &&
+      scopedUnitIds.includes(employee.unitId),
+  )
+  const effectiveUnitId = scopedUnitIds.includes(unitId)
+    ? unitId
+    : role === 'ulp'
+      ? null
+      : (ulpUnits[0]?.id ?? up3Id)
+  const selectedUnit = units.find((unit) => unit.id === effectiveUnitId)
+  const isUp3View = effectiveUnitId === up3Id
+  const slaUnitIds = [
+    ...new Set([
+      ...Object.keys(slaUlpEntries),
+      ...versions.map((version) => version.up3Id).filter(Boolean),
+      slaContractScope.up3.id,
+    ]),
+  ]
+
+  const selectedVersion =
+    role === 'ulp'
+      ? resolveVersionForPeriod(scopedVersions, {
+          contractId: slaContractScope.contractId,
+          up3Id,
+          periodKey: periodKeyFromLabel(period),
+        })
+      : scopedVersions.find((version) => version.id === versionId) ??
+        scopedVersions.find((version) => version.status === 'Aktif') ??
+        scopedVersions[0]
+  const flatIndicators = selectedVersion
+    ? flattenVersionIndicators(selectedVersion)
+    : []
+  const visibleModules = pelayananTeknikModules.filter(
+    (module) => role === 'up3' || !module.adminOnly,
+  )
+  const activeVcCount = flatIndicators.filter(
+    (indicator) => indicator.inputMode === 'variable-cost',
+  ).length
+
+  useEffect(() => {
+    setLocations((prev) =>
+      reconcileLocationsFromUnits(prev, units, slaContractScope.contractId),
+    )
+  }, [units])
+
+  useEffect(() => {
+    setJabatan((prev) =>
+      prev.some(
+        (item) =>
+          item.contractId === slaContractScope.contractId &&
+          item.up3Id === up3Id,
+      )
+        ? prev
+        : [...prev, ...initialJabatanForUp3(slaContractScope.contractId, up3Id)],
+    )
+  }, [up3Id])
+
+  useEffect(() => {
+    setPensionPolicies((prev) =>
+      prev.some(
+        (policy) =>
+          policy.contractId === slaContractScope.contractId &&
+          policy.up3Id === up3Id,
+      )
+        ? prev
+        : [...prev, ...initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id)],
+    )
+  }, [up3Id])
+
+  useEffect(() => {
+    if (role === 'ulp' && activeModule?.adminOnly) {
+      setModuleId('sla')
+    }
+  }, [role, activeModule])
+
+  const updateActiveTargets = (nextTargets) => {
+    const selected = selectedVersion
+    if (
+      !selected ||
+      selected.contractId !== slaContractScope.contractId ||
+      selected.up3Id !== up3Id
+    ) {
+      return
+    }
+    setVersions((prev) =>
+      prev.map((version) =>
+        version.id === selected.id && version.up3Id === up3Id
+          ? { ...version, targets: nextTargets }
+          : version,
+      ),
+    )
+  }
+
+  const updateEntries = (nextEntries) => {
+    const selected = selectedVersion
+    if (
+      !selected ||
+      selected.contractId !== slaContractScope.contractId ||
+      selected.up3Id !== up3Id
+    ) {
+      return
+    }
+    const result = writeVariableCostEntries(entriesByUnit, {
+      contractId: slaContractScope.contractId,
+      up3Id,
+      unitId: effectiveUnitId,
+      period,
+      versionId: selected.id,
+      scopedUnitIds,
+      entries: nextEntries,
+    })
+    if (!result.ok) return
+    setEntriesByUnit(result.entriesByUnit)
+    markVersionUsed(selected.id)
+  }
+
+  const markVersionUsed = (id) => {
+    if (!id) return
+    setVersions((prev) =>
+      markScopedVersionUsed(prev, id, slaContractScope.contractId, up3Id),
+    )
+  }
+
+  const handleCreateDraft = ({ name, period: draftPeriod, source, baseVersionId, periodStart, periodEnd }) => {
+    const id = `draft-${Date.now()}`
+    const base =
+      baseVersionId != null
+        ? scopedVersions.find((version) => version.id === baseVersionId)
+        : scopedVersions.find((version) => version.status === 'Aktif')
+    const sections =
+      source === 'copy-active' && base
+        ? base.sections.map((section) => ({
+            ...section,
+            indicators: section.indicators.map((indicator) => ({ ...indicator })),
+          }))
+        : buildVersionSections()
+    const targets =
+      source === 'copy-active' && base && base.targets
+        ? cloneTargets(base.targets)
+        : buildDefaultTargets(up3Id, units)
+    setVersions((prev) => [
+      ...prev,
+      {
+        id,
+        name,
+        status: 'Draft',
+        period: draftPeriod,
+        source,
+        scope: slaContractScope,
+        contractId: slaContractScope.contractId,
+        up3Id,
+        periodStart: periodStart ?? '2027-01-01',
+        periodEnd: periodEnd ?? '2027-12-31',
+        sections,
+        targets,
+      },
+    ])
+    return id
+  }
+
+  const handleUpdateVersion = (id, patch) =>
+    setVersions((prev) => {
+      const target = prev.find((version) => version.id === id)
+      if (
+        !target ||
+        target.contractId !== slaContractScope.contractId ||
+        target.up3Id !== up3Id
+      ) {
+        return prev
+      }
+      return prev.map((version) => (version.id === id ? { ...version, ...patch } : version))
+    })
+
+  const handleActivateVersion = (id) => {
+    const result = activateScopedVersion(versions, id, slaContractScope.contractId, up3Id)
+    if (!result.ok) return result
+    setVersions(result.versions)
+    setVersionId(id)
+    return result
+  }
+
+  const handleRollbackVersion = (id) => {
+    const result = rollbackScopedVersion(versions, id, slaContractScope.contractId, up3Id)
+    if (!result.ok) return result
+    setVersions(result.versions)
+    setVersionId(result.nextVersionId)
+    return result
+  }
+
+  const handleDeleteVersion = (id) => {
+    const result = deleteScopedDraft(versions, id, slaContractScope.contractId, up3Id)
+    if (!result.ok) return result
+    setVersions(result.versions)
+    if (versionId === id) setVersionId(result.nextVersionId)
+    return result
+  }
+
+  const exportScopeLabel = isUp3View
+    ? `SLA UP3 ${(currentNameOf(up3Unit) ?? '').replace(/^UP3\s+/, '')}`
+    : `SLA ULP ${(currentNameOf(selectedUnit) ?? '').replace(/^ULP\s+/, '')}`
+
+  return (
+    <div className="page page-sla">
+      <button type="button" className="back-button" onClick={onBack}>
+        &larr; Kembali ke Dashboard
+      </button>
+      <section className="page-hero sla-hero">
+        <h1 className="page-title">Pelayanan Teknik</h1>
+        <p className="page-description">
+          Navigasi Pelayanan Teknik: SLA (indikator A&ndash;D dalam satu tabel
+          kontinu), Variable Cost, Lembur, Master Organisasi, Database Pegawai,
+          dan Pengaturan SLA khusus Admin UP3. Seluruh nilai dummy, termasuk
+          demo Role Preview.
+        </p>
+        <div className="sla-hero-meta">
+          <span className="sla-hero-badge">
+            {flatIndicators.length} indikator SLA
+          </span>
+          <span className="sla-hero-badge">{activeVcCount} Variable Cost</span>
+          <span className="sla-hero-badge">
+            {flatIndicators.length - activeVcCount} Manual
+          </span>
+          <span className="sla-hero-badge">
+            {up3Unit ? currentNameOf(up3Unit) : slaContractScope.region} &middot;{' '}
+            {ulpUnits.length} ULP
+          </span>
+        </div>
+      </section>
+
+      <nav className="sla-module-nav" aria-label="Menu Pelayanan Teknik">
+        {visibleModules.map((module) => (
+          <button
+            key={module.id}
+            type="button"
+            className={`sla-module-nav-item ${moduleId === module.id ? 'sla-module-nav-item-active' : ''}`}
+            onClick={() => setModuleId(module.id)}
+          >
+            {module.name}
+          </button>
+        ))}
+      </nav>
+
+      {moduleId === 'pengaturan-sla' ? (
+        <SLAPengaturanSLA
+          versions={scopedVersions}
+          units={scopedUnits}
+          contractScope={slaContractScope}
+          onCreateDraft={handleCreateDraft}
+          onUpdateVersion={handleUpdateVersion}
+          onActivate={handleActivateVersion}
+          onRollback={handleRollbackVersion}
+          onDeleteVersion={handleDeleteVersion}
+        />
+      ) : moduleId === 'master-penandatangan' ? (
+        <SLAMasterPenandatangan
+          contractScope={slaContractScope}
+          up3Id={up3Id}
+          units={scopedUnits}
+          signatureGroups={signatureGroups}
+          onSignatureGroupsChange={setSignatureGroups}
+        />
+      ) : moduleId === 'master-organisasi' ? (
+        <SLAMasterOrganisasi
+          contractScope={slaContractScope}
+          up3Id={up3Id}
+          role={role}
+          units={units}
+          onUnitsChange={onUnitsChange}
+          referencesContext={{ employees, signatureGroups, slaUnitIds }}
+        />
+      ) : moduleId === 'master-lokasi' ? (
+        <SLAMasterLokasi
+          contractScope={slaContractScope}
+          up3Id={up3Id}
+          units={scopedUnits}
+          locations={locations}
+          onLocationsChange={setLocations}
+          role={role}
+          unitId={effectiveUnitId}
+          referencesContext={{ employees, changeRequests }}
+        />
+      ) : moduleId === 'master-jabatan' ? (
+        <SLAMasterJabatan
+          contractScope={slaContractScope}
+          up3Id={up3Id}
+          jabatan={jabatan}
+          onJabatanChange={setJabatan}
+        />
+      ) : moduleId === 'database-pegawai' ? (
+        <SLADatabasePegawai
+          contractScope={slaContractScope}
+          up3Id={up3Id}
+          units={scopedUnits}
+          employees={employees}
+          onEmployeesChange={setEmployees}
+          changeRequests={changeRequests}
+          onChangeRequestsChange={setChangeRequests}
+          jabatan={jabatan}
+          role={role}
+          unitId={effectiveUnitId}
+          pensionPolicies={pensionPolicies}
+          onPensionPoliciesChange={setPensionPolicies}
+          locations={locations}
+        />
+      ) : moduleId === 'sla' ? (
+        role === 'ulp' && !effectiveUnitId ? (
+          <section className="placeholder">
+            <h2 className="placeholder-title">Unit tidak tersedia</h2>
+            <p className="placeholder-text">
+              Tidak ada ULP aktif pada UP3{' '}
+              <strong>{up3Unit ? currentNameOf(up3Unit) : up3Id}</strong>.
+              Pilih UP3 lain atau aktifkan ULP melalui Master Organisasi.
+            </p>
+          </section>
+        ) : (
+        <>
+          <SLAContextBar
+            role={role}
+            periods={slaPeriods}
+            versions={scopedVersions}
+            units={scopedUnits}
+            period={period}
+            version={versionId}
+            versionName={selectedVersion?.name}
+            unitId={effectiveUnitId}
+            onPeriodChange={setPeriod}
+            onVersionChange={setVersionId}
+            onUnitChange={onUnitChange}
+          />
+          <div className={`sla-role-banner sla-role-banner-${role}`}>
+            {ROLE_NOTES[role]}
+          </div>
+          <div className="sla-export-bar">
+            <span className="sla-export-scope">
+              Export berlaku untuk {exportScopeLabel}
+            </span>
+            <button
+              type="button"
+              className="sla-btn sla-btn-primary"
+              onClick={() => setExportOpen(true)}
+            >
+              Export
+            </button>
+          </div>
+          {selectedVersion ? (
+            <SLAIndicatorTable
+              indicators={flatIndicators}
+              role={role}
+              unitId={effectiveUnitId}
+              up3Id={up3Id}
+              entries={entriesByUnit[effectiveUnitId] ?? {}}
+              onEntriesChange={updateEntries}
+              targets={selectedVersion.targets}
+              onTargetsChange={updateActiveTargets}
+            />
+          ) : (
+            <section className="placeholder">
+              <h2 className="placeholder-title">Belum ada SLA untuk UP3 ini</h2>
+              <p className="placeholder-text">
+                Belum ada versi SLA untuk kontrak{' '}
+                <strong>{slaContractScope.contractName}</strong> pada UP3{' '}
+                <strong>{up3Unit ? currentNameOf(up3Unit) : up3Id}</strong>.
+                Buat SLA/Addendum melalui modul Pengaturan SLA.
+              </p>
+            </section>
+          )}
+        </>
+        )
+      ) : moduleId === 'variable-cost' ? (
+        role === 'ulp' && !effectiveUnitId ? (
+          <section className="placeholder">
+            <h2 className="placeholder-title">Unit tidak tersedia</h2>
+            <p className="placeholder-text">
+              Tidak ada ULP aktif pada UP3{' '}
+              <strong>{up3Unit ? currentNameOf(up3Unit) : up3Id}</strong>.
+            </p>
+          </section>
+        ) : selectedVersion ? (
+          <SLAVariableCost
+            indicators={flatIndicators.filter(
+              (indicator) => indicator.inputMode === 'variable-cost',
+            )}
+            role={role}
+            unitId={effectiveUnitId}
+            up3Id={up3Id}
+            entries={entriesByUnit[effectiveUnitId] ?? {}}
+            onEntriesChange={updateEntries}
+            targets={selectedVersion.targets}
+            onTargetsChange={updateActiveTargets}
+          />
+        ) : (
+          <section className="placeholder">
+            <h2 className="placeholder-title">Belum ada SLA untuk UP3 ini</h2>
+            <p className="placeholder-text">
+              Variable Cost di-resolve terhadap SLA aktif; buat SLA/Addendum
+              melalui modul Pengaturan SLA terlebih dahulu.
+            </p>
+          </section>
+        )
+      ) : moduleId === 'lembur' ? (
+        role === 'ulp' && !effectiveUnitId ? (
+          <section className="placeholder">
+            <h2 className="placeholder-title">Unit tidak tersedia</h2>
+            <p className="placeholder-text">
+              Tidak ada ULP aktif pada UP3{' '}
+              <strong>{up3Unit ? currentNameOf(up3Unit) : up3Id}</strong>.
+            </p>
+          </section>
+        ) : (
+          <SLALembur
+            contractScope={slaContractScope}
+            role={role}
+            up3Id={up3Id}
+            unitId={effectiveUnitId}
+            validUnitIds={scopedUnitIds}
+            records={scopedLemburRecords(
+              lemburRecords,
+              slaContractScope.contractId,
+              up3Id,
+              role === 'ulp' ? effectiveUnitId : null,
+            )}
+            employees={scopedEmployees}
+            pensionPolicies={pensionPolicies}
+            onCreate={(draft) => {
+              const result = createLemburRecord(lemburRecords, draft, {
+                employees: scopedEmployees,
+                contractId: slaContractScope.contractId,
+                up3Id,
+                unitId: role === 'ulp' ? effectiveUnitId : null,
+                validUnitIds: scopedUnitIds,
+                date: draft.date,
+                pensionPolicies,
+              })
+              if (result.ok) setLemburRecords(result.records)
+              return result
+            }}
+            onUpdate={(id, patch) => {
+              const result = updateLemburRecord(lemburRecords, id, patch, {
+                employees: scopedEmployees,
+                contractId: slaContractScope.contractId,
+                up3Id,
+                unitId: role === 'ulp' ? effectiveUnitId : null,
+                validUnitIds: scopedUnitIds,
+                date: patch.date,
+                pensionPolicies,
+              })
+              if (result.ok) setLemburRecords(result.records)
+              return result
+            }}
+            onDelete={(id) => {
+              const result = deleteLemburRecord(lemburRecords, id, {
+                contractId: slaContractScope.contractId,
+                up3Id,
+                unitId: role === 'ulp' ? effectiveUnitId : null,
+              })
+              if (result.ok) setLemburRecords(result.records)
+              return result
+            }}
+          />
+        )
+      ) : (
+        <section className="placeholder">
+          <h2 className="placeholder-title">{activeModule.name}</h2>
+          <p className="placeholder-text">
+            Modul <strong>{activeModule.name}</strong> baru berupa struktur
+            navigasi pada tahap ini. Isi modul akan dibangun pada tahap
+            pengembangan berikutnya.
+          </p>
+        </section>
+      )}
+      {exportOpen && selectedVersion && (
+        <SLAExportPreview
+          period={period}
+          version={selectedVersion}
+          role={role}
+          unitId={effectiveUnitId}
+          up3Id={up3Id}
+          units={units}
+          contractId={slaContractScope.contractId}
+          documentScope={isUp3View ? 'sla-up3' : 'sla-ulp'}
+          indicators={flatIndicators}
+          targets={selectedVersion.targets}
+          ulpEntries={entriesByUnit}
+          signatureGroups={signatureGroups}
+          onExported={() => markVersionUsed(selectedVersion?.id)}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
