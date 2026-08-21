@@ -118,8 +118,8 @@ export default function SLADatabasePegawai({
   )
   const locationById = new Map(scopedLocations.map((l) => [l.id, l]))
   const unitName = (id) => currentNameOf(unitById.get(id)) ?? id
-  const positionName = (posId) => jabatanById.get(posId)?.name ?? posId
-  const locationName = (locId) => currentLocationNameOf(locationById.get(locId)) ?? locId
+  const positionName = (posId) => jabatanById.get(posId)?.name ?? null
+  const locationName = (locId) => currentLocationNameOf(locationById.get(locId)) ?? null
   const scopeUnitIds = role === 'ulp' ? [unitId] : [up3Id, ...ulpIdsOfUp3(units, up3Id)]
   const scopedUnitIds = scopeUnitIds.filter(Boolean)
   const todayStr = today()
@@ -515,10 +515,10 @@ export default function SLADatabasePegawai({
       key === 'unitId'
         ? unitName(value)
         : key === 'positionId'
-          ? positionName(value)
+          ? (positionName(value) ?? 'Belum Ditentukan')
           : key === 'workLocationId'
             ? value
-              ? locationName(value)
+              ? (locationName(value) ?? 'Belum Ditentukan')
               : 'Belum ditentukan'
             : value
     return Object.keys(labels)
@@ -575,11 +575,11 @@ export default function SLADatabasePegawai({
             label="Lokasi Penempatan"
             value={
               data.workLocationId
-                ? locationName(data.workLocationId)
+                ? (locationName(data.workLocationId) ?? 'Belum Ditentukan')
                 : 'Belum ditentukan'
             }
           />
-          <Field label="Jabatan" value={positionName(data.positionId)} />
+          <Field label="Jabatan" value={positionName(data.positionId) ?? 'Belum Ditentukan'} />
           <Field label="Status Pegawai" value={data.employmentStatus} />
           {data.employmentStatus === 'Nonaktif' && (
             <>
@@ -908,7 +908,7 @@ export default function SLADatabasePegawai({
               label="Lokasi Penempatan"
               value={data.workLocationId ? locationName(data.workLocationId) : 'Belum ditentukan'}
             />
-            <Field label="Jabatan" value={positionName(data.positionId)} />
+          <Field label="Jabatan" value={positionName(data.positionId) ?? 'Belum Ditentukan'} />
             <Field label="Bank" value={data.bank} />
             <Field label="No Rekening" value={data.accountNumber} />
             <Field label="Tarif/Jam" value={`Rp ${Number(data.hourlyRate || 0).toLocaleString('id-ID')}`} />
@@ -982,15 +982,15 @@ export default function SLADatabasePegawai({
         <button type="button" className="sla-btn sla-btn-primary" onClick={openAdd}>
           Tambah Pegawai
         </button>
-        <span className="sla-status-badge sla-status-draft">Prototype</span>
+        <span className="sla-status-badge sla-status-active">Supabase</span>
       </div>
       <p className="sla-flat-note">
-        Data TAD Pelayanan Teknik (CSV, NIP sebagai kunci stabil) untuk kontrak{' '}
+        Data TAD Pelayanan Teknik (Supabase, NIP sebagai kunci stabil) untuk kontrak{' '}
         {contractScope.contractName}. Unit/jabatan di-resolve dari Master
         Organisasi/Master Jabatan via unitId/positionId. Tarif Lembur/Jam
         disimpan sebagai histori. Admin ULP hanya mengelola unit sendiri dan
         perubahannya menjadi Pending Approval; perpindahan antar-ULP hanya Admin
-        UP3. Perubahan hanya disimpan di state lokal (prototype).
+        UP3. Penambahan/edit pegawai masih disimpan di state lokal (prototype).
       </p>
 
       {role === 'up3' && (
@@ -1327,14 +1327,18 @@ export default function SLADatabasePegawai({
                   <td>{unitName(data.unitId)}</td>
                   <td>
                     {data.workLocationId ? (
-                      locationName(data.workLocationId)
+                      locationName(data.workLocationId) ?? (
+                        <span className="sla-status-badge sla-status-draft">Belum Ditentukan</span>
+                      )
                     ) : (
                       <span className="sla-status-badge sla-status-draft">Belum ditentukan</span>
                     )}
                   </td>
                   <td>
-                    {positionName(data.positionId)}
-                    {data.sourcePosition && data.sourcePosition !== positionName(data.positionId) && (
+                    {positionName(data.positionId) ?? (
+                      <span className="sla-status-badge sla-status-draft">Belum Ditentukan</span>
+                    )}
+                    {data.sourcePosition && data.sourcePosition !== (positionName(data.positionId) ?? '') && (
                       <div className="sla-table-sub">CSV: {data.sourcePosition}</div>
                     )}
                   </td>

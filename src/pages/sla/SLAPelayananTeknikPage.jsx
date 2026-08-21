@@ -1,4 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { useAuth } from '../../lib/AppAuth.jsx'
+import {
+  fetchEmployeesFromSupabase,
+  fetchPositionsFromSupabase,
+  fetchLocationsFromSupabase,
+} from '../../data/employeeRepository.js'
 import SLAContextBar from '../../components/sla/SLAContextBar.jsx'
 import SLAIndicatorTable from '../../components/sla/SLAIndicatorTable.jsx'
 import SLAExportPreview from '../../components/sla/SLAExportPreview.jsx'
@@ -72,36 +78,40 @@ export default function SLAPelayananTeknikPage({
   const [locations, setLocations] = useState(() =>
     seedWorkLocationsFromUnits(units, slaContractScope.contractId),
   )
-  const [employees, setEmployees] = useState(() => {
-    const seeded = []
-    const initialLocations = seedWorkLocationsFromUnits(
-      units,
-      slaContractScope.contractId,
-    )
-    const up3Office = initialLocations.find(
-      (l) => l.unitId === up3Id && l.type === 'UNIT_OFFICE',
-    )
-    return seeded.map((employee) => {
-      const workLocationId =
-        employee.unitId === up3Id && up3Office ? up3Office.id : null
-      return {
-        ...employee,
-        contractId: employee.contractId ?? slaContractScope.contractId,
-        up3Id: employee.up3Id ?? up3Id,
-        workLocationId,
-        workLocationHistory: workLocationId
-          ? [
-              {
-                id: `hist-${employee.id}-wloc`,
-                workLocationId,
-                validFrom: employee.unitHistory?.[0]?.validFrom ?? '2026-01-01',
-                validTo: null,
-              },
-            ]
-          : [],
-      }
-    })
-  })
+  const auth = useAuth()
+  const [employees, setEmployees] = useState([])
+  const [employeesLoaded, setEmployeesLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!auth?.session) return
+    let cancelled = false
+    Promise.all([
+      fetchEmployeesFromSupabase({ hasSensitiveRead: true }),
+      fetchPositionsFromSupabase(),
+      fetchLocationsFromSupabase(),
+    ])
+      .then(([empResult, posRows, locRows]) => {
+        if (cancelled) return
+        setEmployees(empResult.employees)
+        if (posRows.length) {
+          setJabatan((prev) => {
+            const existing = new Set(prev.map((j) => j.id))
+            const supabasePositions = posRows.map((p) => ({
+              id: p.id,
+              name: p.name,
+              contractId: p.contract_id,
+            }))
+            const newPositions = supabasePositions.filter((p) => !existing.has(p.id))
+            return newPositions.length ? [...prev, ...newPositions] : prev
+          })
+        }
+        setEmployeesLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) setEmployeesLoaded(true)
+      })
+    return () => { cancelled = true }
+  }, [auth?.session])
   const [pensionPolicies, setPensionPolicies] = useState(() =>
     initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id),
   )
