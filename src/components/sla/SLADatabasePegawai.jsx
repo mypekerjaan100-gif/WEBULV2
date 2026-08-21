@@ -80,6 +80,7 @@ export default function SLADatabasePegawai({
   pensionPolicies,
   onPensionPoliciesChange,
   locations,
+  orgMap,
 }) {
   const [search, setSearch] = useState('')
   const [filterJabatan, setFilterJabatan] = useState('')
@@ -109,6 +110,12 @@ export default function SLADatabasePegawai({
   const [rejectNotes, setRejectNotes] = useState({})
 
   const unitById = new Map(units.map((u) => [u.id, u]))
+  const orgUnitByUuid = orgMap
+    ? new Map(orgMap.units.map((u) => [u.uuid, u]))
+    : new Map()
+  const orgUnitByKey = orgMap
+    ? new Map(orgMap.units.map((u) => [u.legacyKey, u]))
+    : new Map()
   const scopedJabatan = jabatanOfScope(jabatan, contractScope.contractId, up3Id)
   const jabatanById = new Map(scopedJabatan.map((j) => [j.id, j]))
   const scopedLocations = locations.filter(
@@ -117,10 +124,24 @@ export default function SLADatabasePegawai({
       (l.up3Id == null || l.up3Id === up3Id),
   )
   const locationById = new Map(scopedLocations.map((l) => [l.id, l]))
-  const unitName = (id) => currentNameOf(unitById.get(id)) ?? id
+  const unitName = (id) => {
+    if (!id) return ''
+    const orgUnit = orgUnitByUuid.get(id)
+    if (orgUnit) return orgUnit.displayName
+    const legacyUnit = orgUnitByKey.get(id)
+    if (legacyUnit) return legacyUnit.displayName
+    const localUnit = unitById.get(id)
+    if (localUnit) return currentNameOf(localUnit) || id
+    return id
+  }
   const positionName = (posId) => jabatanById.get(posId)?.name ?? null
   const locationName = (locId) => currentLocationNameOf(locationById.get(locId)) ?? null
-  const scopeUnitIds = role === 'ulp' ? [unitId] : [up3Id, ...ulpIdsOfUp3(units, up3Id)]
+  const resolvedContractUuid = orgMap?.contractUuid ?? contractScope.contractId
+  const resolvedUp3Uuid = orgMap?.up3Uuid ?? up3Id
+  const resolvedUnitUuids = orgMap?.scopedUnitUuids ?? []
+  const scopeUnitIds = role === 'ulp'
+    ? [unitId]
+    : [resolvedUp3Uuid, ...resolvedUnitUuids.filter((uuid) => uuid !== resolvedUp3Uuid)]
   const scopedUnitIds = scopeUnitIds.filter(Boolean)
   const todayStr = today()
   const pensionPolicy = activePensionPolicy(pensionPolicies, contractScope.contractId, up3Id, todayStr)
@@ -147,7 +168,7 @@ export default function SLADatabasePegawai({
       req.status === 'Pending' &&
       req.employeeId &&
       req.contractId === contractScope.contractId &&
-      req.up3Id === up3Id
+      req.up3Id === resolvedUp3Uuid
     ) {
       ;(pendingByEmployee[req.employeeId] ??= []).push(req)
     }
@@ -157,7 +178,7 @@ export default function SLADatabasePegawai({
       req.type === 'add' &&
       req.status === 'Pending' &&
       req.contractId === contractScope.contractId &&
-      req.up3Id === up3Id,
+      req.up3Id === resolvedUp3Uuid,
   )
 
   const approvalOf = (row) =>
@@ -172,8 +193,8 @@ export default function SLADatabasePegawai({
       .filter(
         (employee) =>
           (employee.contractId == null ||
-            employee.contractId === contractScope.contractId) &&
-          (employee.up3Id == null || employee.up3Id === up3Id),
+            employee.contractId === resolvedContractUuid) &&
+          (employee.up3Id == null || employee.up3Id === resolvedUp3Uuid),
       )
       .map((employee) => ({ key: employee.id, employee, request: null, addPending: false })),
     ...pendingAdds.map((request) => ({
@@ -247,7 +268,7 @@ export default function SLADatabasePegawai({
     setForm({
       nip: e.nip,
       name: e.name,
-      up3Id: e.up3Id ?? up3Id,
+      up3Id: e.up3Id ?? resolvedUp3Uuid,
       unitId: e.unitId,
       workLocationId: e.workLocationId ?? '',
       positionId: e.positionId,
@@ -269,8 +290,10 @@ export default function SLADatabasePegawai({
 
   const openAdd = () => {
     const defaultUnitId =
-      role === 'ulp' ? unitId : ulpIdsOfUp3(units, up3Id)[0] ?? up3Id ?? ''
-    setForm(emptyForm(defaultUnitId, up3Id))
+      role === 'ulp'
+        ? unitId
+        : resolvedUnitUuids.filter((uuid) => uuid !== resolvedUp3Uuid)[0] ?? resolvedUp3Uuid ?? ''
+    setForm(emptyForm(defaultUnitId, resolvedUp3Uuid))
     setTab('utama')
     setFormError('')
     setDetail({ mode: 'add', row: null })
@@ -298,7 +321,7 @@ export default function SLADatabasePegawai({
   const proposedOf = () => ({
     nip: form.nip.trim(),
     name: form.name.trim(),
-    up3Id: form.up3Id || up3Id,
+    up3Id: form.up3Id || resolvedUp3Uuid,
     unitId: form.unitId,
     workLocationId: form.workLocationId.trim() || null,
     positionId: form.positionId,
@@ -322,7 +345,7 @@ export default function SLADatabasePegawai({
       setFormError(error)
       return
     }
-    if (mode === 'edit' && detail.row.employee?.up3Id !== up3Id) {
+    if (mode === 'edit' && detail.row.employee?.up3Id !== resolvedUp3Uuid) {
       setFormError('Pegawai berada di luar scope UP3 yang dipilih.')
       return
     }
@@ -339,8 +362,8 @@ export default function SLADatabasePegawai({
           old: mode === 'edit' ? snapshotOf(detail.row.employee) : null,
           status: 'Pending',
           note: '',
-          contractId: contractScope.contractId,
-          up3Id,
+          contractId: resolvedContractUuid,
+          up3Id: resolvedUp3Uuid,
           sourceUnitId: mode === 'edit' ? detail.row.employee.unitId : unitId,
           targetUnitId: proposed.unitId,
           createdBy: 'Admin ULP',
@@ -355,7 +378,7 @@ export default function SLADatabasePegawai({
     if (mode === 'add') {
       const employee = buildNewEmployee({
         ...proposed,
-        contractId: contractScope.contractId,
+        contractId: resolvedContractUuid,
         effectiveDate: now,
       })
       onEmployeesChange([...employees, employee])
@@ -369,8 +392,8 @@ export default function SLADatabasePegawai({
           old: null,
           status: 'Approved',
           note: '',
-          contractId: contractScope.contractId,
-          up3Id,
+          contractId: resolvedContractUuid,
+          up3Id: resolvedUp3Uuid,
           sourceUnitId: null,
           targetUnitId: proposed.unitId,
           createdBy: 'Admin UP3',
@@ -394,8 +417,8 @@ export default function SLADatabasePegawai({
           old: snapshotOf(detail.row.employee),
           status: 'Approved',
           note: '',
-          contractId: contractScope.contractId,
-          up3Id,
+          contractId: resolvedContractUuid,
+          up3Id: resolvedUp3Uuid,
           sourceUnitId: detail.row.employee.unitId,
           targetUnitId: proposed.unitId,
           createdBy: 'Admin UP3',
@@ -433,8 +456,8 @@ export default function SLADatabasePegawai({
     if (
       role !== 'up3' ||
       req.status !== 'Pending' ||
-      req.contractId !== contractScope.contractId ||
-      req.up3Id !== up3Id
+      req.contractId !== resolvedContractUuid ||
+      req.up3Id !== resolvedUp3Uuid
     ) {
       return
     }
@@ -442,8 +465,8 @@ export default function SLADatabasePegawai({
     if (req.type === 'add') {
       const employee = buildNewEmployee({
         ...req.proposed,
-        contractId: req.contractId ?? contractScope.contractId,
-        up3Id: req.up3Id ?? up3Id,
+        contractId: req.contractId ?? resolvedContractUuid,
+        up3Id: req.up3Id ?? resolvedUp3Uuid,
         effectiveDate: now,
       })
       onEmployeesChange([...employees, employee])
@@ -468,8 +491,8 @@ export default function SLADatabasePegawai({
     if (
       role !== 'up3' ||
       req.status !== 'Pending' ||
-      req.contractId !== contractScope.contractId ||
-      req.up3Id !== up3Id
+      req.contractId !== resolvedContractUuid ||
+      req.up3Id !== resolvedUp3Uuid
     ) {
       return
     }
@@ -488,8 +511,8 @@ export default function SLADatabasePegawai({
     .filter(
       (req) =>
         req.status === 'Pending' &&
-        req.contractId === contractScope.contractId &&
-        req.up3Id === up3Id &&
+        req.contractId === resolvedContractUuid &&
+        req.up3Id === resolvedUp3Uuid &&
         scopedUnitIds.includes(req.proposed.unitId),
     )
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
@@ -532,8 +555,8 @@ export default function SLADatabasePegawai({
   const requestsOfEmployee = (employeeId, nip) =>
     changeRequests.filter(
       (req) =>
-        req.contractId === contractScope.contractId &&
-        req.up3Id === up3Id &&
+        req.contractId === resolvedContractUuid &&
+        req.up3Id === resolvedUp3Uuid &&
         ((req.type === 'edit' && req.employeeId === employeeId) ||
           (req.type === 'add' && req.proposed.nip === nip)),
     )
@@ -659,7 +682,7 @@ export default function SLADatabasePegawai({
           >
             {scopeUnitIds.map((u) => (
               <option key={u} value={u}>
-                {currentNameOf(u) || u}
+                {unitName(u)}
               </option>
             ))}
           </select>
@@ -1279,7 +1302,7 @@ export default function SLADatabasePegawai({
               <option value="">Semua</option>
               {scopeUnitIds.map((u) => (
                 <option key={u} value={u}>
-                  {currentNameOf(u) || u}
+                  {unitName(u)}
                 </option>
               ))}
             </select>

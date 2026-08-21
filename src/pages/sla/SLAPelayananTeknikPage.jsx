@@ -34,6 +34,12 @@ import {
 } from '../../data/organisasiPelayananTeknik.js'
 import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
 import { reconcileLocationsFromUnits, seedWorkLocationsFromUnits } from '../../data/lokasiPelayananTeknik.js'
+import {
+  resolveLegacyKeyToUuid,
+  resolveContractCodeToUuid,
+  getChildUuidsOfUp3,
+  getOrgUnits,
+} from '../../data/orgIdMap.js'
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
 import {
@@ -81,6 +87,7 @@ export default function SLAPelayananTeknikPage({
   const auth = useAuth()
   const [employees, setEmployees] = useState([])
   const [employeesLoaded, setEmployeesLoaded] = useState(false)
+  const [orgMap, setOrgMap] = useState(null)
 
   useEffect(() => {
     if (!auth?.session) return
@@ -112,6 +119,27 @@ export default function SLAPelayananTeknikPage({
       })
     return () => { cancelled = true }
   }, [auth?.session])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      getOrgUnits(),
+      resolveLegacyKeyToUuid(up3Id),
+      resolveContractCodeToUuid(slaContractScope.contractId),
+    ]).then(([orgUnits, up3Uuid, contractUuid]) => {
+      if (cancelled) return
+      const up3ChildUuids = orgUnits
+        .filter((u) => u.type === 'ULP' && u.parentUuid === up3Uuid)
+        .map((u) => u.uuid)
+      setOrgMap({
+        units: orgUnits,
+        up3Uuid,
+        contractUuid,
+        scopedUnitUuids: [up3Uuid, ...up3ChildUuids],
+      })
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [up3Id, slaContractScope.contractId])
   const [pensionPolicies, setPensionPolicies] = useState(() =>
     initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id),
   )
@@ -155,12 +183,14 @@ export default function SLAPelayananTeknikPage({
       version.up3Id === up3Id,
   )
   const scopedUnitIds = [up3Id, ...ulpIdsOfUp3(units, up3Id)]
-  const scopedEmployees = employees.filter(
-    (employee) =>
-      employee.contractId === slaContractScope.contractId &&
-      employee.up3Id === up3Id &&
-      scopedUnitIds.includes(employee.unitId),
-  )
+  const scopedEmployees = orgMap
+    ? employees.filter(
+        (employee) =>
+          employee.contractId === orgMap.contractUuid &&
+          employee.up3Id === orgMap.up3Uuid &&
+          orgMap.scopedUnitUuids.includes(employee.unitId),
+      )
+    : []
   const effectiveUnitId = scopedUnitIds.includes(unitId)
     ? unitId
     : role === 'ulp'
@@ -460,6 +490,7 @@ export default function SLAPelayananTeknikPage({
           pensionPolicies={pensionPolicies}
           onPensionPoliciesChange={setPensionPolicies}
           locations={locations}
+          orgMap={orgMap}
         />
       ) : moduleId === 'sla' ? (
         role === 'ulp' && !effectiveUnitId ? (
