@@ -27,7 +27,6 @@ import {
   ulpIdsOfUp3,
 } from '../../data/organisasiPelayananTeknik.js'
 import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
-import { seedPegawaiFromCsv } from '../../data/pegawaiPelayananTeknik.js'
 import { reconcileLocationsFromUnits, seedWorkLocationsFromUnits } from '../../data/lokasiPelayananTeknik.js'
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
@@ -47,7 +46,7 @@ import {
   rollbackScopedVersion,
   updateScopedVersion,
 } from '../../data/versiSlaPelayananTeknik.js'
-import csvTadYantek from '../../data/dataTadYantek.csv?raw'
+
 
 const ROLE_NOTES = {
   up3: 'Admin UP3 \u2014 pilih view UP3 atau salah satu ULP. View UP3: Target UP3 dan data Manual (Satuan, WO, Realisasi, Pencapaian) dapat dikelola. View ULP: Target ULP dikelola Admin UP3, data input ULP hanya ditampilkan.',
@@ -74,10 +73,7 @@ export default function SLAPelayananTeknikPage({
     seedWorkLocationsFromUnits(units, slaContractScope.contractId),
   )
   const [employees, setEmployees] = useState(() => {
-    const seeded = seedPegawaiFromCsv(csvTadYantek, {
-      contractId: slaContractScope.contractId,
-      up3Id,
-    }).employees
+    const seeded = []
     const initialLocations = seedWorkLocationsFromUnits(
       units,
       slaContractScope.contractId,
