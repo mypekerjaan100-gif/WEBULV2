@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   currentNameOf,
   ulpIdsOfUp3,
@@ -99,6 +99,12 @@ export default function SLADatabasePegawai({
   const [page, setPage] = useState(1)
   const [tab, setTab] = useState('utama')
   const [detail, setDetail] = useState(null)
+  const detailRef = useRef(null)
+  useEffect(() => {
+    if (detail && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [detail])
   const [form, setForm] = useState(() =>
     emptyForm(
       role === 'ulp'
@@ -1165,7 +1171,7 @@ export default function SLADatabasePegawai({
       )}
 
       {detail && (
-        <div className="sla-sign-group sla-pegawai-detail">
+        <div ref={detailRef} className="sla-sign-group sla-pegawai-detail">
           <div className="sla-sign-group-head">
             <h3 className="sla-settings-title">
               {detail.mode === 'add'
