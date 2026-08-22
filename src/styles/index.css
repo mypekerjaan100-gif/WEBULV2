@@ -2161,6 +2161,78 @@ button {
   to { transform: rotate(360deg); }
 }
 
+/* Invite form */
+
+.modal-sm {
+  max-width: 440px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--color-text);
+}
+
+.input-field {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  background: var(--color-surface);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.15);
+}
+
+.invite-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 12px 0 0;
+  font-style: italic;
+}
+
+.invite-error-box {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+
+.invite-error-box p {
+  margin: 0;
+  font-size: 13px;
+  color: #991b1b;
+}
+
+.detail-hint {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #1e40af;
+  margin-top: 8px;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     position: fixed;

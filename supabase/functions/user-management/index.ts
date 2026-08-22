@@ -6,6 +6,7 @@ import {
   type UserManagementAction,
 } from "./contracts.ts";
 import { handleListUsers } from "./handlers/listUsers.ts";
+import { handleInviteUser } from "./handlers/inviteUser.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -72,6 +73,14 @@ Deno.serve(async (request: Request) => {
 
     if (body.action === "list_users") {
       const result = await handleListUsers(callerClient);
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (body.action === "invite_user") {
+      // Get actor user ID from auth
+      const { data: { user } } = await callerClient.auth.getUser();
+      if (!user) return jsonResponse(401, { error: "authentication_required" });
+      const result = await handleInviteUser(callerClient, body.payload, user.id);
       return jsonResponse(result.status, result.body);
     }
 

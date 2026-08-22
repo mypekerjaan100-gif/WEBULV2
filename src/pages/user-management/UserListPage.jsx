@@ -55,6 +55,9 @@ function SummaryBar({ users }) {
 
 function DetailModal({ user, onClose }) {
   if (!user) return null
+  const hasOrg = user.organizationMemberships.length > 0
+  const hasContract = user.contractMemberships.length > 0
+  const hasRole = user.isSuperAdmin || user.roles.length > 0
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -95,12 +98,12 @@ function DetailModal({ user, onClose }) {
                 ))}
               </div>
             ) : (
-              <span className="text-muted">Tidak ada role</span>
+              <span className="text-muted">Belum Ada</span>
             )}
           </section>
-          {user.organizationMemberships.length > 0 && (
-            <section className="detail-section">
-              <h4>Keanggotaan Organisasi</h4>
+          <section className="detail-section">
+            <h4>Keanggotaan Organisasi</h4>
+            {hasOrg ? (
               <table className="detail-table">
                 <thead>
                   <tr><th>Unit</th><th>Role</th><th>Status</th></tr>
@@ -115,11 +118,13 @@ function DetailModal({ user, onClose }) {
                   ))}
                 </tbody>
               </table>
-            </section>
-          )}
-          {user.contractMemberships.length > 0 && (
-            <section className="detail-section">
-              <h4>Keanggotaan Kontrak</h4>
+            ) : (
+              <span className="text-muted">Belum Ada</span>
+            )}
+          </section>
+          <section className="detail-section">
+            <h4>Keanggotaan Kontrak</h4>
+            {hasContract ? (
               <table className="detail-table">
                 <thead>
                   <tr><th>Kontrak</th><th>Role</th><th>UP3</th><th>ULP</th></tr>
@@ -135,14 +140,104 @@ function DetailModal({ user, onClose }) {
                   ))}
                 </tbody>
               </table>
-            </section>
-          )}
-          {user.organizationMemberships.length === 0 && user.contractMemberships.length === 0 && (
-            <section className="detail-section">
-              <p className="text-muted">Tidak ada keanggotaan organisasi atau kontrak.</p>
-            </section>
+            ) : (
+              <span className="text-muted">Belum Ada</span>
+            )}
+          </section>
+          {!hasRole && !hasOrg && !hasContract && (
+            <div className="detail-hint">
+              Atur akses pada tahap berikutnya.
+            </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function InviteUserModal({ onClose, onSuccess }) {
+  const [displayName, setDisplayName] = useState('')
+  const [email, setEmail] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    try {
+      const { data, error: fnError } = await callUserManagement('invite_user', {
+        payload: { email: email.trim(), displayName: displayName.trim() },
+      })
+      if (fnError) {
+        setError(fnError)
+        return
+      }
+      if (data?.error) {
+        setError(data.message || 'Gagal mengirim undangan.')
+        return
+      }
+      onSuccess(data)
+    } catch (err) {
+      setError(err.message || 'Terjadi kesalahan')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Tambah Pengguna</h3>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Tutup">
+            &times;
+          </button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {error && (
+              <div className="invite-error-box">
+                <p>{error}</p>
+              </div>
+            )}
+            <div className="form-group">
+              <label htmlFor="invite-name">Nama</label>
+              <input
+                id="invite-name"
+                type="text"
+                className="input-field"
+                placeholder="Nama lengkap"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="invite-email">Email</label>
+              <input
+                id="invite-email"
+                type="email"
+                className="input-field"
+                placeholder="email@contoh.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <p className="invite-hint">
+              Akses organisasi dan role diberikan setelah user berhasil diundang.
+            </p>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={onClose} disabled={submitting}>
+              Batal
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={submitting || !displayName.trim() || !email.trim()}>
+              {submitting ? 'Mengirim...' : 'Kirim Undangan'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -177,19 +272,19 @@ function UserListTable({ users, onSelect }) {
                 </td>
                 <td>{u.email}</td>
                 <td>
-                  {u.roles.length > 0 ? u.roles.join(', ') : <span className="text-muted">-</span>}
+                  {u.roles.length > 0 ? u.roles.join(', ') : <span className="text-muted">Belum Ditentukan</span>}
                 </td>
                 <td>
                   {u.organizationMemberships.length > 0
                     ? u.organizationMemberships.map((m) => m.unitName).join(', ')
-                    : <span className="text-muted">-</span>}
+                    : <span className="text-muted">Belum Ditentukan</span>}
                 </td>
                 <td>
                   {u.contractMemberships.length > 0
                     ? u.contractMemberships.map((m) => m.contractName).join(', ')
                     : u.contracts.length > 0
                       ? u.contracts.join(', ')
-                      : <span className="text-muted">-</span>}
+                      : <span className="text-muted">Belum Ditentukan</span>}
                 </td>
                 <td><StatusBadge status={u.status} /></td>
                 <td>
@@ -219,6 +314,7 @@ export default function UserListPage({ onBack }) {
   const [statusFilter, setStatusFilter] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [selectedUser, setSelectedUser] = useState(null)
+  const [showInvite, setShowInvite] = useState(false)
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -257,6 +353,11 @@ export default function UserListPage({ onBack }) {
         : u.roles.includes(roleFilter))
     return matchSearch && matchStatus && matchRole
   })
+
+  const handleInviteSuccess = () => {
+    setShowInvite(false)
+    fetchUsers()
+  }
 
   return (
     <div className="page">
@@ -302,9 +403,8 @@ export default function UserListPage({ onBack }) {
         </select>
         <button
           type="button"
-          className="btn btn-disabled"
-          disabled
-          title="Tahap berikutnya"
+          className="btn btn-primary"
+          onClick={() => setShowInvite(true)}
         >
           + Tambah User
         </button>
@@ -333,6 +433,10 @@ export default function UserListPage({ onBack }) {
 
       {selectedUser && (
         <DetailModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+      )}
+
+      {showInvite && (
+        <InviteUserModal onClose={() => setShowInvite(false)} onSuccess={handleInviteSuccess} />
       )}
     </div>
   )
