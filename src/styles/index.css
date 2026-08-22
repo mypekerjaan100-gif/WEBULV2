@@ -2321,3 +2321,334 @@ button {
     padding: 16px;
   }
 }
+
+/* ---------- Master Penandatangan Redesign ---------- */
+
+.sp-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sp-tabs {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.sp-tab {
+  padding: 7px 16px;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+  border-right: 1px solid var(--color-border);
+  font-weight: 500;
+}
+
+.sp-tab:last-child {
+  border-right: none;
+}
+
+.sp-tab:hover {
+  background: #f0f3f7;
+}
+
+.sp-tab-active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.sp-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+
+.sp-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sp-card-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #f0f3f7;
+}
+
+.sp-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sp-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sp-badge {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.sp-badge-aktif {
+  background: #e6f6ea;
+  color: #177c3d;
+}
+
+.sp-badge-nonaktif {
+  background: #eef1f4;
+  color: #66727f;
+}
+
+.sp-card-instansi {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.sp-card-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.sp-card-body {
+  padding: 10px 16px;
+  flex: 1;
+}
+
+.sp-card-empty-sig {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.sp-sig-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.sp-sig-item {
+  padding: 3px 0;
+  display: flex;
+  gap: 8px;
+}
+
+.sp-sig-name {
+  font-weight: 500;
+}
+
+.sp-sig-position {
+  color: var(--color-text-muted);
+}
+
+.sp-card-footer {
+  padding: 10px 16px;
+  border-top: 1px solid #f0f3f7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp-kebab-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.sp-kebab-trigger {
+  padding: 4px 10px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sp-kebab-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(10, 17, 29, 0.12);
+  z-index: 20;
+  min-width: 130px;
+}
+
+.sp-kebab-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.sp-kebab-item:hover {
+  background: #f0f3f7;
+}
+
+.sp-empty-state {
+  padding: 32px 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+/* Modal signer management */
+
+.sp-modal-body {
+  padding: 18px 20px;
+}
+
+.sp-modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-modal-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.sp-modal-row > .sla-context-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-modal-sigs {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sp-modal-sigs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.sp-modal-sigs-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sp-sig-add-form {
+  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sp-sig-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sp-sig-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.sp-sig-editor-order {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 28px;
+}
+
+.sp-sig-arrow {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-primary);
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.sp-sig-arrow:hover:not(:disabled) {
+  background: #e8f0fe;
+}
+
+.sp-sig-arrow:disabled {
+  color: var(--color-text-muted);
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sp-sig-order-num {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.sp-sig-editor-fields {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sp-sig-editor-fields > .sla-context-select {
+  min-width: 90px;
+}
+
+.sp-sig-editor-fields > .sla-input {
+  width: 100px;
+}
+
+@media (max-width: 900px) {
+  .sp-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .sp-modal-row {
+    flex-direction: column;
+  }
+  .sp-sig-editor-fields {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sp-sig-editor-fields > .sla-input,
+  .sp-sig-editor-fields > .sla-context-select {
+    width: 100%;
+  }
+}
