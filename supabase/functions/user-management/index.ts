@@ -5,6 +5,7 @@ import {
   parseRequest,
   type UserManagementAction,
 } from "./contracts.ts";
+import { handleListUsers } from "./handlers/listUsers.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,16 +24,6 @@ function requiredEnv(name: string) {
   const value = Deno.env.get(name);
   if (!value) throw new Error(`Missing server environment variable: ${name}`);
   return value;
-}
-
-// Reserved for Auth Admin operations implemented in later F4B phases.
-// The service-role key is read only inside the Edge Function runtime.
-export function createAdminClient() {
-  return createClient(
-    requiredEnv("SUPABASE_URL"),
-    requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    { auth: { persistSession: false, autoRefreshToken: false } },
-  );
 }
 
 Deno.serve(async (request: Request) => {
@@ -79,8 +70,13 @@ Deno.serve(async (request: Request) => {
       return jsonResponse(403, { error: "forbidden" });
     }
 
+    if (body.action === "list_users") {
+      const result = await handleListUsers(callerClient);
+      return jsonResponse(result.status, result.body);
+    }
+
     return jsonResponse(501, {
-      error: "operation_not_implemented_in_f4b1",
+      error: "operation_not_implemented",
       operation,
       authorization: authorizationResult,
     });

@@ -1,12 +1,20 @@
 import { contracts, siteTitle } from '../data/contracts.js'
 import SlaPreviewBar from './sla/SlaPreviewBar.jsx'
 
-export default function Header({ activeContractId, onOpenSidebar, preview }) {
+const PAGE_TITLES = {
+  'pengguna-akses': 'Pengguna & Akses',
+}
+
+export default function Header({ activeContractId, currentPage, onOpenSidebar, preview }) {
   const activeContract = contracts.find(
     (contract) => contract.id === activeContractId,
   )
 
-  const title = activeContract ? activeContract.title : 'Dashboard'
+  const title = currentPage
+    ? (PAGE_TITLES[currentPage] || currentPage)
+    : activeContract
+      ? activeContract.title
+      : 'Dashboard'
 
   return (
     <header className="header">

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Sidebar from '../components/Sidebar.jsx'
 import Header from '../components/Header.jsx'
 
-export default function AppLayout({ activeContractId, onNavigate, preview, children }) {
+export default function AppLayout({ activeContractId, currentPage, onNavigate, onNavigatePage, preview, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const closeSidebar = () => setSidebarOpen(false)
@@ -12,8 +12,13 @@ export default function AppLayout({ activeContractId, onNavigate, preview, child
       <Sidebar
         open={sidebarOpen}
         activeContractId={activeContractId}
+        currentPage={currentPage}
         onNavigate={(id) => {
           onNavigate(id)
+          closeSidebar()
+        }}
+        onNavigatePage={(id) => {
+          onNavigatePage(id)
           closeSidebar()
         }}
         onClose={closeSidebar}
@@ -21,6 +26,7 @@ export default function AppLayout({ activeContractId, onNavigate, preview, child
       <div className="app-main">
         <Header
           activeContractId={activeContractId}
+          currentPage={currentPage}
           onOpenSidebar={() => setSidebarOpen(true)}
           preview={preview}
         />

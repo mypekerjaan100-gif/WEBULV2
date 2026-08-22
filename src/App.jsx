@@ -3,6 +3,7 @@ import AppLayout from './layout/AppLayout.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import ContractPage from './pages/ContractPage.jsx'
 import SLAPelayananTeknikPage from './pages/sla/SLAPelayananTeknikPage.jsx'
+import UserListPage from './pages/user-management/UserListPage.jsx'
 import { SlaPreviewContext } from './context/SlaPreviewContext.js'
 import {
   effectiveStatusOf,
@@ -12,6 +13,7 @@ import { contracts } from './data/contracts.js'
 
 export default function App() {
   const [activeContractId, setActiveContractId] = useState(null)
+  const [currentPage, setCurrentPage] = useState(null)
   const [role, setRole] = useState('up3')
   const [units, setUnits] = useState(() =>
     initialOrganizationUnits.map((unit) => ({
@@ -33,6 +35,12 @@ export default function App() {
 
   const navigate = (contractId) => {
     setActiveContractId(contractId)
+    setCurrentPage(null)
+  }
+
+  const navigatePage = (pageId) => {
+    setCurrentPage(pageId)
+    setActiveContractId(null)
   }
 
   const handleRoleChange = (nextRole) => {
@@ -81,10 +89,14 @@ export default function App() {
     <SlaPreviewContext.Provider value={preview}>
       <AppLayout
         activeContractId={activeContractId}
+        currentPage={currentPage}
         onNavigate={navigate}
+        onNavigatePage={navigatePage}
         preview={preview}
       >
-        {activeContract ? (
+        {currentPage === 'pengguna-akses' ? (
+          <UserListPage onBack={() => navigatePage(null)} />
+        ) : activeContract ? (
           activeContract.id === 'pelayanan-teknik' ? (
             <SLAPelayananTeknikPage
               key={`${activeContractId}:${role}:${up3Id}:${unitId}`}
