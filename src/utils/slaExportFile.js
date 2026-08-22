@@ -580,7 +580,7 @@ const STYLES_XML =
   '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top/><bottom style="thin"><color rgb="FF000000"/></bottom></border>' +
   '</borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-  '<cellXfs count="13">' +
+  '<cellXfs count="15">' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">' +
   '<alignment wrapText="1" vertical="center" horizontal="center"/>' +
@@ -610,6 +610,8 @@ const STYLES_XML =
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="2" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="3" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="4" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="center"/></xf>' +
   '</cellXfs>' +
   '</styleSheet>'
 
@@ -682,12 +684,12 @@ function buildSheetXml(doc) {
 
   doc.rows.forEach((row) => {
     if (row.kind === 'section') {
-      addMergedRow(row.label, 9, colCount, 24)
+      addMergedRow(row.label, 13, colCount, 24)
       addSectionHeader()
       return
     }
     if (row.kind === 'total') {
-      addMergedRow(row.label, 9, colCount - 1, 24)
+      addMergedRow(row.label, 13, colCount - 1, 24)
       addCellRow([
         { col: colCount - 1, value: row.value, style: 7 },
       ], 24)
@@ -725,7 +727,7 @@ function buildSheetXml(doc) {
   })
 
   if (!doc.rows.some((row) => row.kind === 'total')) {
-    addMergedRow('TOTAL DENDA SLA', 9, colCount - 1, 24)
+    addMergedRow('TOTAL DENDA SLA', 13, colCount - 1, 24)
     addCellRow([
       { col: colCount - 1, value: doc.totalDenda ?? '-', style: 7 },
     ], 24)
@@ -741,15 +743,15 @@ function buildSheetXml(doc) {
     signatureGroups.find((group) =>
       String(group.title ?? '').toLowerCase().replace(/\s+/g, ' ').includes(label.toLowerCase()),
     )
-  const addSignatureRow = (cells, style = 6, height = 42) => {
+  const addSignatureRow = (cells, style = 3, height = 42) => {
     const anchors = signatureSlots.map((slot, index) => {
       mergeCells.push(`${colRef(slot.start)}${rowIndex}:${colRef(slot.end)}${rowIndex}`)
       return { col: slot.start, value: cells[index] ?? '', style }
     })
     addCellRow(anchors, height)
   }
-  addMergedRow(`Penandatangan yang berlaku pada periode ${doc.period ?? ''}`, 9, colCount, 24)
-  addSignatureRow(signatureSlots.map((slot) => slot.label), 1, 24)
+  addMergedRow(`Penandatangan yang berlaku pada periode ${doc.period ?? ''}`, 13, colCount, 24)
+  addSignatureRow(signatureSlots.map((slot) => slot.label), 14, 24)
   const groupedSignatures = signatureSlots.map((slot) => signatureFor(slot.label))
   const signatureRowCount = Math.max(1, ...groupedSignatures.map((group) => group?.members?.length ?? 0))
   for (let index = 0; index < signatureRowCount; index += 1) {
