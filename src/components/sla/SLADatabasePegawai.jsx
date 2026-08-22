@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import {
   currentNameOf,
   ulpIdsOfUp3,
@@ -99,12 +99,6 @@ export default function SLADatabasePegawai({
   const [page, setPage] = useState(1)
   const [tab, setTab] = useState('utama')
   const [detail, setDetail] = useState(null)
-  const detailRef = useRef(null)
-  useEffect(() => {
-    if (detail && detailRef.current) {
-      detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [detail])
   const [form, setForm] = useState(() =>
     emptyForm(
       role === 'ulp'
@@ -655,7 +649,7 @@ export default function SLADatabasePegawai({
         <div className="sla-detail-fields">
           <Field label="NIP" value={data.nip} />
           <Field label="Nama" value={data.name} />
-          <Field label="UP3" value={unitName(data.up3Id) || unitName(up3Unit?.id) || up3Id} />
+          <Field label="UP3" value={unitName(data.up3Id) || up3Id} />
           <Field label="Unit" value={unitName(data.unitId)} />
           <Field
             label="Lokasi Penempatan"
@@ -757,7 +751,7 @@ export default function SLADatabasePegawai({
           <span className="sla-context-label">Lokasi Penempatan</span>
           <select
             className="sla-context-select"
-            value={form.workLocationId}
+            value={form.workLocationId ?? ''}
             onChange={(e) => setForm((prev) => ({ ...prev, workLocationId: e.target.value }))}
           >
             <option value="">Belum ditentukan</option>
@@ -778,7 +772,7 @@ export default function SLADatabasePegawai({
           <span className="sla-context-label">Jabatan (Master Jabatan)</span>
           <select
             className="sla-context-select"
-            value={form.positionId}
+            value={form.positionId ?? ''}
             onChange={(e) => setForm((prev) => ({ ...prev, positionId: e.target.value }))}
           >
             {scopedJabatan.map((j) => (
@@ -807,7 +801,7 @@ export default function SLADatabasePegawai({
               <span className="sla-context-label">Alasan Nonaktif</span>
               <select
                 className="sla-context-select"
-                value={form.statusReason}
+                value={form.statusReason ?? ''}
                 onChange={(e) => setForm((prev) => ({ ...prev, statusReason: e.target.value }))}
               >
                 <option value="">Pilih alasan</option>
@@ -1171,60 +1165,60 @@ export default function SLADatabasePegawai({
       )}
 
       {detail && (
-        <div ref={detailRef} className="sla-sign-group sla-pegawai-detail">
-          <div className="sla-sign-group-head">
-            <h3 className="sla-settings-title">
-              {detail.mode === 'add'
-                ? 'Tambah Pegawai'
-                : `${detail.mode === 'edit' ? 'Edit Pegawai' : 'Detail Pegawai'} \u2014 ${(detail.row.employee ?? detail.row.request.proposed).nip}`}
-            </h3>
-            <div className="sla-master-actions">
+        <div className="sla-modal-overlay" onClick={() => setDetail(null)}>
+          <div className="sla-modal sp-pegawai-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="sla-modal-header">
+              <h3 className="sla-modal-title">
+                {detail.mode === 'add'
+                  ? 'Tambah Pegawai'
+                  : `${detail.mode === 'edit' ? 'Edit Pegawai' : 'Detail Pegawai'} \u2014 ${(detail.row.employee ?? detail.row.request.proposed).nip}`}
+              </h3>
+              <button type="button" className="sla-modal-close" onClick={() => setDetail(null)}>{'\u00d7'}</button>
+            </div>
+            <div className="sla-modal-body">
+              <div className="sla-detail-tabs">
+                {TABS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`sla-detail-tab ${tab === key ? 'sla-detail-tab-active' : ''}`}
+                    onClick={() => setTab(key)}
+                  >
+                    {TAB_LABEL[key]}
+                  </button>
+                ))}
+              </div>
+              {formError && <p className="sla-blocked-note">{formError}</p>}
+              {renderTabContent()}
+            </div>
+            <div className="sla-modal-actions">
               {detail.mode === 'view' && !detail.row.addPending && (
                 <button type="button" className="sla-btn" onClick={() => openEdit(detail.row)}>
                   Edit
                 </button>
+              )}
+              {detail.mode !== 'view' && (
+                <>
+                  {role === 'ulp' && (
+                    <span className="sla-export-note">
+                      Perubahan akan dikirim sebagai pengajuan dan menjadi data resmi
+                      setelah disetujui Admin UP3.
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="sla-btn sla-btn-primary"
+                    onClick={() => submitChange(detail.mode)}
+                  >
+                    {detail.mode === 'add' ? 'Simpan Pegawai' : 'Simpan Perubahan'}
+                  </button>
+                </>
               )}
               <button type="button" className="sla-btn" onClick={() => setDetail(null)}>
                 Tutup
               </button>
             </div>
           </div>
-          <div className="sla-detail-tabs">
-            {TABS.map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={`sla-detail-tab ${tab === key ? 'sla-detail-tab-active' : ''}`}
-                onClick={() => setTab(key)}
-              >
-                {TAB_LABEL[key]}
-              </button>
-            ))}
-          </div>
-          {formError && <p className="sla-blocked-note">{formError}</p>}
-          {renderTabContent()}
-          {detail.mode !== 'view' && (
-            <>
-              {role === 'ulp' && (
-                <p className="sla-table-hint">
-                  Perubahan akan dikirim sebagai pengajuan dan menjadi data resmi
-                  setelah disetujui Admin UP3.
-                </p>
-              )}
-              <div className="sla-master-actions">
-                <button
-                  type="button"
-                  className="sla-btn sla-btn-primary"
-                  onClick={() => submitChange(detail.mode)}
-                >
-                  {detail.mode === 'add' ? 'Simpan Pegawai' : 'Simpan Perubahan'}
-                </button>
-                <button type="button" className="sla-btn" onClick={() => setDetail(null)}>
-                  Batal
-                </button>
-              </div>
-            </>
-          )}
         </div>
       )}
 

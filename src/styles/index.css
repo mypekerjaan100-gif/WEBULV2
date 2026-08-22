@@ -2653,3 +2653,14 @@ button {
     width: 100%;
   }
 }
+
+/* ---------- Detail Pegawai Modal ---------- */
+
+.sp-pegawai-modal {
+  max-width: 740px;
+}
+
+.sp-pegawai-modal .sla-modal-body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
