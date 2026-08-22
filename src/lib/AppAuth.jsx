@@ -10,7 +10,7 @@ export function useAuth() {
 
 async function resolveAuthority() {
   try {
-    const { data, error } = await callUserManagement('capabilities')
+    const { data, error } = await callUserManagement('session_context')
     if (error) return { actor: null, error }
     if (!data?.actor) return { actor: null, error: 'Otoritas akun tidak tersedia.' }
     return { actor: data.actor, error: null }
@@ -142,6 +142,16 @@ export default function AppAuth({ children }) {
             setAuthority({ loading: false, actor, error: capabilityError })
           })
         }}
+        secondaryActionLabel="Keluar"
+        onSecondaryAction={signOut}
+      />
+    )
+  }
+
+  if (authority.actor.access_state === 'AWAITING_ASSIGNMENT') {
+    return (
+      <AuthState
+        message="Akun Anda sudah aktif, tetapi akses belum diberikan. Silakan hubungi administrator."
         secondaryActionLabel="Keluar"
         onSecondaryAction={signOut}
       />

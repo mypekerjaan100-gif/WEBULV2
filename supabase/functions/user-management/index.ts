@@ -7,6 +7,7 @@ import {
 } from "./contracts.ts";
 import { handleListUsers } from "./handlers/listUsers.ts";
 import { handleInviteUser } from "./handlers/inviteUser.ts";
+import { handleSessionContext } from "./handlers/sessionContext.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +58,11 @@ Deno.serve(async (request: Request) => {
       );
       if (error) return jsonResponse(403, { error: "forbidden" });
       return jsonResponse(200, { actor: data?.[0] ?? null });
+    }
+
+    if (body.action === "session_context") {
+      const result = await handleSessionContext(callerClient);
+      return jsonResponse(result.status, result.body);
     }
 
     const operation = ACTION_TO_OPERATION[body.action as UserManagementAction];

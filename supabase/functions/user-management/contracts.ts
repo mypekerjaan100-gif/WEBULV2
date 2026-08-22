@@ -12,7 +12,7 @@ export const ACTION_TO_OPERATION = {
 export type UserManagementAction = keyof typeof ACTION_TO_OPERATION;
 
 export interface UserManagementRequest {
-  action: "capabilities" | UserManagementAction;
+  action: "capabilities" | "session_context" | UserManagementAction;
   targetUserId?: string;
   targetRoleCode?: string;
   reason?: string;
@@ -29,6 +29,7 @@ export function parseRequest(value: unknown): UserManagementRequest {
   }
   if (
     request.action !== "capabilities" &&
+    request.action !== "session_context" &&
     !Object.hasOwn(ACTION_TO_OPERATION, request.action)
   ) {
     throw new Error("Unsupported action");

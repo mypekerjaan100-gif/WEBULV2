@@ -11,23 +11,18 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
-
 export async function handleInviteUser(
-  callerClient: SupabaseClient,
+  _callerClient: SupabaseClient,
   payload: unknown,
   actorUserId: string,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const p = payload as InviteUserPayload | undefined;
-  const email = normalizeEmail(p?.email ?? "");
-  const displayName = (p?.displayName ?? "").trim();
+  const request = payload as InviteUserPayload | undefined;
+  const email = (request?.email ?? "").trim().toLowerCase();
+  const displayName = (request?.displayName ?? "").trim();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { status: 400, body: { error: "invalid_email", message: "Email tidak valid" } };
   }
-
   if (!displayName) {
     return { status: 400, body: { error: "display_name_required", message: "Nama wajib diisi" } };
   }
@@ -37,159 +32,85 @@ export async function handleInviteUser(
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
-
-  // Check if auth user already exists
-  const { data: existingUsers } = await adminClient.auth.admin.listUsers({
+  const { data: users, error: usersError } = await adminClient.auth.admin.listUsers({
     perPage: 1000,
     page: 1,
   });
+  if (usersError) {
+    return { status: 500, body: { error: "identity_lookup_failed", message: "Gagal memeriksa pengguna" } };
+  }
 
-  const existingUser = (existingUsers?.users || []).find(
-    (u) => u.email?.toLowerCase() === email,
-  );
-
+  const existingUser = users.users.find((user) => user.email?.toLowerCase() === email);
   if (existingUser) {
-    // Check profile status
-    const { data: profile } = await callerClient
+    const { data: profile } = await adminClient
       .from("profiles")
-      .select("id, status")
+      .select("status")
       .eq("id", existingUser.id)
       .maybeSingle();
-
-    const profileStatus = (profile as { status: string } | null)?.status ?? "ACTIVE";
-
-    // If ACTIVE, return exists
-    if (profileStatus === "ACTIVE") {
-      return {
-        status: 409,
-        body: {
-          error: "EXISTS_ACTIVE",
-          message: "Email sudah terdaftar dan aktif",
-          userId: existingUser.id,
-        },
-      };
-    }
-
-    // If INVITED, try to resend invitation
-    if (profileStatus === "INVITED" || !existingUser.confirmed_at) {
-      const { error: resendError } = await adminClient.auth.admin.inviteUserByEmail(
-        email,
-        {
-          data: { display_name: displayName },
-          redirectTo: `${requiredEnv("SUPABASE_URL").replace("/rest/v1", "")}/auth/v1/verify`,
-        },
-      );
-
-      if (resendError) {
-        return {
-          status: 500,
-          body: {
-            error: "invite_resend_failed",
-            message: `Gagal mengirim ulang undangan: ${resendError.message}`,
-          },
-        };
-      }
-
-      // Update profile display_name if changed
-      await callerClient
-        .from("profiles")
-        .update({ display_name: displayName })
-        .eq("id", existingUser.id);
-
-      // Audit: USER_INVITED (re-invite)
-      await callerClient.rpc("append_authorization_audit", {
-        p_event_type: "USER_INVITED",
-        p_actor_user_id: actorUserId,
-        p_target_user_id: existingUser.id,
-        p_target_role_code: null,
-        p_reason: "Re-invite existing invited user",
-        p_request_id: crypto.randomUUID(),
-        p_before_state: JSON.stringify({ status: profileStatus }),
-        p_after_state: JSON.stringify({ status: "INVITED" }),
-        p_metadata: JSON.stringify({ email, display_name: displayName, re_invite: true }),
-      });
-
-      return {
-        status: 200,
-        body: {
-          status: "INVITED_RESENT",
-          message: "Undangan telah dikirim ulang",
-          userId: existingUser.id,
-        },
-      };
-    }
-
-    // Profile is DISABLED or other state
     return {
       status: 409,
       body: {
-        error: "EXISTS_DISABLED",
-        message: "Email sudah terdaftar dalam status nonaktif",
+        error: profile?.status === "INVITED" ? "EXISTING_INVITED" : "EXISTING_ACTIVE",
+        message: "Pengguna dengan email ini sudah terdaftar.",
         userId: existingUser.id,
       },
     };
   }
 
-  // Create new auth user via invitation
-  const { data: inviteData, error: inviteError } =
-    await adminClient.auth.admin.inviteUserByEmail(email, {
-      data: { display_name: displayName },
-      redirectTo: `${requiredEnv("SUPABASE_URL").replace("/rest/v1", "")}/auth/v1/verify`,
-    });
-
-  if (inviteError) {
+  const { data: invitation, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
+    data: { display_name: displayName },
+  });
+  if (inviteError || !invitation.user?.id) {
     return {
       status: 500,
       body: {
         error: "invite_failed",
-        message: `Gagal mengirim undangan: ${inviteError.message}`,
+        message: `Gagal mengirim undangan: ${inviteError?.message ?? "identity tidak dibuat"}`,
       },
     };
   }
 
-  const newUserId = inviteData?.id;
-
-  if (!newUserId) {
-    return {
-      status: 500,
-      body: { error: "invite_failed", message: "Undangan dibuat tanpa ID user" },
-    };
-  }
-
-  // Ensure profile exists with INVITED status
-  const { error: profileError } = await callerClient.from("profiles").upsert(
-    {
-      id: newUserId,
-      display_name: displayName,
-      status: "INVITED",
-    },
+  const targetUserId = invitation.user.id;
+  const { error: profileError } = await adminClient.from("profiles").upsert(
+    { id: targetUserId, display_name: displayName, status: "INVITED" },
     { onConflict: "id" },
   );
-
-  if (profileError) {
-    console.error("Profile creation failed after invite:", profileError);
-    // Auth user was created but profile failed — still report success with warning
-  }
-
-  // Audit: USER_INVITED
-  await callerClient.rpc("append_authorization_audit", {
-    p_event_type: "USER_INVITED",
-    p_actor_user_id: actorUserId,
-    p_target_user_id: newUserId,
-    p_target_role_code: null,
-    p_reason: "New user invitation",
-    p_request_id: crypto.randomUUID(),
-    p_before_state: null,
-    p_after_state: JSON.stringify({ status: "INVITED" }),
-    p_metadata: JSON.stringify({ email, display_name: displayName }),
+  const { error: trackingError } = await adminClient.from("user_invitations").insert({
+    email,
+    display_name: displayName,
+    target_user_id: targetUserId,
+    status: "PENDING",
+    requested_access: {},
+    invited_by: actorUserId,
   });
+  const { error: auditError } = await adminClient.from("authorization_audit_events").insert({
+    event_type: "USER_INVITED",
+    actor_user_id: actorUserId,
+    target_user_id: targetUserId,
+    reason: "New user invitation",
+    request_id: crypto.randomUUID(),
+    after_state: { status: "INVITED" },
+    metadata: { email, display_name: displayName, invitation_status: "PENDING" },
+  });
+
+  if (profileError || trackingError || auditError) {
+    console.error("Invitation persistence failed");
+    return {
+      status: 500,
+      body: {
+        error: "invitation_persistence_failed",
+        message: "Undangan telah dibuat, tetapi pencatatan akses belum lengkap.",
+        userId: targetUserId,
+      },
+    };
+  }
 
   return {
     status: 200,
     body: {
       status: "INVITED",
       message: "Undangan telah dikirim",
-      userId: newUserId,
+      userId: targetUserId,
       email,
       displayName,
     },
