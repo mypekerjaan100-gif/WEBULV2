@@ -80,7 +80,7 @@ export async function handleListUsers(
   );
 
   // 3. Fetch system role memberships with role names
-  const { data: memberships, error: membershipsError } = await callerClient
+  const { data: memberships, error: membershipsError } = await adminClient
     .from("system_role_memberships")
     .select("user_id, status, authorization_roles!inner(code)")
     .in("user_id", userIds);
