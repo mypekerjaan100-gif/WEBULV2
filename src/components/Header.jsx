@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { contracts, siteTitle } from '../data/contracts.js'
 import SlaPreviewBar from './sla/SlaPreviewBar.jsx'
 import { useAuth } from '../lib/AppAuth.jsx'
@@ -7,7 +8,8 @@ const PAGE_TITLES = {
 }
 
 export default function Header({ activeContractId, currentPage, onOpenSidebar, preview }) {
-  const { authority } = useAuth()
+  const { authority, signOut } = useAuth()
+  const [signingOut, setSigningOut] = useState(false)
   const activeContract = contracts.find(
     (contract) => contract.id === activeContractId,
   )
@@ -17,6 +19,12 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
     : activeContract
       ? activeContract.title
       : 'Dashboard'
+
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    await signOut()
+    setSigningOut(false)
+  }
 
   return (
     <header className="header">
@@ -34,9 +42,17 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
       </div>
       <div className="header-right">
         <span className="header-login-status">
-          Login: {authority?.actor?.is_super_admin ? 'SUPER_ADMIN' : 'Authenticated'}
+          Login: {authority?.actor?.is_super_admin ? 'SUPER_ADMIN' : 'Akses terverifikasi'}
         </span>
         {preview && <SlaPreviewBar preview={preview} />}
+        <button
+          type="button"
+          className="header-logout-button"
+          onClick={handleSignOut}
+          disabled={signingOut}
+        >
+          {signingOut ? 'Keluar...' : 'Keluar'}
+        </button>
         <div className="header-placeholder">Prototype &middot; Dummy Data</div>
       </div>
     </header>

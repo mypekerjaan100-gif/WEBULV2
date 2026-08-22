@@ -8,6 +8,17 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
+async function resolveAuthority() {
+  try {
+    const { data, error } = await callUserManagement('capabilities')
+    if (error) return { actor: null, error }
+    if (!data?.actor) return { actor: null, error: 'Otoritas akun tidak tersedia.' }
+    return { actor: data.actor, error: null }
+  } catch {
+    return { actor: null, error: 'Gagal memverifikasi otoritas akun.' }
+  }
+}
+
 export default function AppAuth({ children }) {
   const [session, setSession] = useState(null)
   const [view, setView] = useState('loading')
@@ -33,9 +44,10 @@ export default function AppAuth({ children }) {
       setSession(s)
       if (event === 'PASSWORD_RECOVERY') {
         setView('recovery')
-      } else if (event === 'SIGNED_IN' && view === 'loading') {
+      } else if (event === 'SIGNED_IN') {
         setView('app')
       } else if (event === 'SIGNED_OUT') {
+        setAuthority({ loading: false, actor: null, error: null })
         setView('signin')
       }
     })
@@ -51,11 +63,11 @@ export default function AppAuth({ children }) {
 
     let cancelled = false
     setAuthority({ loading: true, actor: null, error: null })
-    callUserManagement('capabilities').then(({ data, error: capabilityError }) => {
+    resolveAuthority().then(({ actor, error: capabilityError }) => {
       if (cancelled) return
       setAuthority({
         loading: false,
-        actor: data?.actor ?? null,
+        actor,
         error: capabilityError,
       })
     })
@@ -65,7 +77,7 @@ export default function AppAuth({ children }) {
 
   const signIn = async (email, password) => {
     setError(null)
-    const { error: authErr } = await supabase.auth.signInWithPassword({
+    const { data, error: authErr } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -73,13 +85,22 @@ export default function AppAuth({ children }) {
       setError(authErr.message)
       return false
     }
+    setAuthority({ loading: true, actor: null, error: null })
+    setSession(data.session)
     setView('app')
     return true
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    const { error: authErr } = await supabase.auth.signOut()
+    if (authErr) {
+      setError(authErr.message)
+      return false
+    }
+    setSession(null)
+    setAuthority({ loading: false, actor: null, error: null })
     setView('signin')
+    return true
   }
 
   if (view === 'loading') {
@@ -106,10 +127,51 @@ export default function AppAuth({ children }) {
     return <SignInForm onSignIn={signIn} error={error} />
   }
 
+  if (authority.loading) {
+    return <AuthState message="Memverifikasi otoritas akun..." />
+  }
+
+  if (authority.error || !authority.actor) {
+    return (
+      <AuthState
+        message={authority.error || 'Otoritas akun tidak tersedia.'}
+        actionLabel="Coba Lagi"
+        onAction={() => {
+          setAuthority({ loading: true, actor: null, error: null })
+          resolveAuthority().then(({ actor, error: capabilityError }) => {
+            setAuthority({ loading: false, actor, error: capabilityError })
+          })
+        }}
+        secondaryActionLabel="Keluar"
+        onSecondaryAction={signOut}
+      />
+    )
+  }
+
   return (
     <AuthContext.Provider value={{ session, user: session.user, authority, signOut }}>
       {children}
     </AuthContext.Provider>
+  )
+}
+
+function AuthState({ message, actionLabel, onAction, secondaryActionLabel, onSecondaryAction }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 12,
+        height: '100vh',
+        fontFamily: 'sans-serif',
+      }}
+    >
+      <p>{message}</p>
+      {actionLabel && <button type="button" onClick={onAction}>{actionLabel}</button>}
+      {secondaryActionLabel && <button type="button" onClick={onSecondaryAction}>{secondaryActionLabel}</button>}
+    </div>
   )
 }
 
