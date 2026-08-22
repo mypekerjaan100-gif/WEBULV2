@@ -1,26 +1,8 @@
 import { useAuth } from '../lib/AppAuth.jsx'
-import { callUserManagement } from '../lib/userManagement.js'
-import { useState, useEffect } from 'react'
 
 export default function Sidebar({ open, activeContractId, currentPage, onNavigate, onNavigatePage, onClose }) {
-  const { user } = useAuth()
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-
-  useEffect(() => {
-    if (!user) {
-      setIsSuperAdmin(false)
-      return
-    }
-    let cancelled = false
-    callUserManagement('capabilities')
-      .then(({ data }) => {
-        if (!cancelled) setIsSuperAdmin(!!data?.actor?.is_super_admin)
-      })
-      .catch(() => {
-        if (!cancelled) setIsSuperAdmin(false)
-      })
-    return () => { cancelled = true }
-  }, [user])
+  const { authority } = useAuth()
+  const isSuperAdmin = authority?.actor?.is_super_admin === true
 
   return (
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>

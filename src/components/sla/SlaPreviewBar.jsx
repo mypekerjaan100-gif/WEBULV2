@@ -25,7 +25,7 @@ export default function SlaPreviewBar({ preview }) {
 
   return (
     <div className="header-preview">
-      <span className="header-preview-label">Role Preview</span>
+      <span className="header-preview-label">View As</span>
       <div className="sla-role-switch">
         {slaRoles.map((item) => (
           <button

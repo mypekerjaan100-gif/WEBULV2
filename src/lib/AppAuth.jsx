@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { supabase } from './supabaseClient.js'
+import { callUserManagement } from './userManagement.js'
 
 const AuthContext = createContext(null)
 
@@ -11,6 +12,7 @@ export default function AppAuth({ children }) {
   const [session, setSession] = useState(null)
   const [view, setView] = useState('loading')
   const [error, setError] = useState(null)
+  const [authority, setAuthority] = useState({ loading: true, actor: null, error: null })
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -40,6 +42,26 @@ export default function AppAuth({ children }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!session?.user) {
+      setAuthority({ loading: false, actor: null, error: null })
+      return
+    }
+
+    let cancelled = false
+    setAuthority({ loading: true, actor: null, error: null })
+    callUserManagement('capabilities').then(({ data, error: capabilityError }) => {
+      if (cancelled) return
+      setAuthority({
+        loading: false,
+        actor: data?.actor ?? null,
+        error: capabilityError,
+      })
+    })
+
+    return () => { cancelled = true }
+  }, [session?.user?.id])
 
   const signIn = async (email, password) => {
     setError(null)
@@ -85,7 +107,7 @@ export default function AppAuth({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user: session.user, signOut }}>
+    <AuthContext.Provider value={{ session, user: session.user, authority, signOut }}>
       {children}
     </AuthContext.Provider>
   )

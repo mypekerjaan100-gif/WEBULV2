@@ -214,6 +214,17 @@ button {
   margin-left: 0;
 }
 
+.header-login-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5b21b6;
+  background: #ede9fe;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
 .header-preview {
   display: flex;
   align-items: center;
