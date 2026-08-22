@@ -259,6 +259,7 @@ export default function SLADatabasePegawai({
       { label: 'Masa Pensiun', width: 24 },
       { label: 'Bank', width: 14 },
       { label: 'No Rekening', width: 22 },
+      { label: 'Tarif Lembur/Jam', width: 20 },
       { label: 'Status', width: 14 },
       { label: 'Approval', width: 14 },
     ]
@@ -279,6 +280,7 @@ export default function SLADatabasePegawai({
         { value: pensionLabel },
         { value: data.bank ?? '' },
         { value: data.accountNumber ?? '' },
+        { value: data.hourlyRate && data.hourlyRate > 0 ? `Rp ${Number(data.hourlyRate).toLocaleString('id-ID')}/jam` : '\u2014' },
         { value: data.employmentStatus ?? '' },
         { value: approvalOf(row) },
       ]
@@ -1059,15 +1061,26 @@ export default function SLADatabasePegawai({
     <section className="sla-settings">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Master Pegawai</h2>
-        {scopedUnitIds.length > 0 && (
-          <button type="button" className="sla-btn" onClick={exportMasterPegawai}>
-            Export Excel
+        <div className="sla-toolbar-actions">
+          {role === 'up3' && (
+            <button
+              type="button"
+              className="sla-btn"
+              onClick={() => setPensionOpen((prev) => !prev)}
+            >
+              {pensionOpen ? 'Tutup Pengaturan Pensiun' : 'Pengaturan Pensiun'}
+            </button>
+          )}
+          {scopedUnitIds.length > 0 && (
+            <button type="button" className="sla-btn" onClick={exportMasterPegawai}>
+              Export Excel
+            </button>
+          )}
+          <button type="button" className="sla-btn sla-btn-primary" onClick={openAdd}>
+            + Tambah Pegawai
           </button>
-        )}
-        <button type="button" className="sla-btn sla-btn-primary" onClick={openAdd}>
-          Tambah Pegawai
-        </button>
-        <span className="sla-status-badge sla-status-active">Supabase</span>
+          <span className="sla-status-badge sla-status-active">Supabase</span>
+        </div>
       </div>
       <p className="sla-flat-note">
         Data TAD Pelayanan Teknik (Supabase, NIP sebagai kunci stabil) untuk kontrak{' '}
@@ -1083,20 +1096,8 @@ export default function SLADatabasePegawai({
         </p>
       )}
 
-      {role === 'up3' && (
-        <div className="sla-master-actions" style={{ marginBottom: '12px' }}>
-          <button
-            type="button"
-            className="sla-btn"
-            onClick={() => setPensionOpen((prev) => !prev)}
-          >
-            {pensionOpen ? 'Tutup Pengaturan Pensiun' : 'Pengaturan Pensiun'}
-          </button>
-        </div>
-      )}
-
       {role === 'up3' && pensionOpen && (
-        <div className="sla-approval-panel">
+        <div className="sla-approval-panel sla-pension-panel">
           <h3 className="sla-settings-title">Kebijakan Pensiun</h3>
           {pensionPolicy ? (
             <p className="sla-flat-note">
@@ -1261,120 +1262,123 @@ export default function SLADatabasePegawai({
         </div>
       )}
 
-      <div className="sla-pegawai-filters">
-        <div className="sla-context-field">
-          <span className="sla-context-label">Cari Nama/NIP</span>
-          <input
-            className={inputClass}
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              resetPage()
-            }}
-          />
-        </div>
-        <div className="sla-context-field">
-          <span className="sla-context-label">Jabatan</span>
-          <select
-            className="sla-context-select"
-            value={filterJabatan}
-            onChange={(e) => {
-              setFilterJabatan(e.target.value)
-              resetPage()
-            }}
-          >
-            <option value="">Semua</option>
-            {scopedJabatan.map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="sla-context-field">
-          <span className="sla-context-label">Status</span>
-          <select
-            className="sla-context-select"
-            value={filterStatus}
-            onChange={(e) => {
-              setFilterStatus(e.target.value)
-              resetPage()
-            }}
-          >
-            <option value="">Semua</option>
-            <option value="Aktif">Aktif</option>
-            <option value="Nonaktif">Nonaktif</option>
-          </select>
-        </div>
-        <div className="sla-context-field">
-          <span className="sla-context-label">Pensiun</span>
-          <select
-            className="sla-context-select"
-            value={filterPension}
-            onChange={(e) => {
-              setFilterPension(e.target.value)
-              resetPage()
-            }}
-          >
-            <option value="">Semua</option>
-            <option value="aktif">Aktif</option>
-            <option value="mendekati-pensiun">Mendekati Pensiun</option>
-            <option value="pensiun">Pensiun</option>
-          </select>
-        </div>
-        <div className="sla-context-field">
-          <span className="sla-context-label">Lokasi Penempatan</span>
-          <select
-            className="sla-context-select"
-            value={filterLocation}
-            onChange={(e) => {
-              setFilterLocation(e.target.value)
-              resetPage()
-            }}
-          >
-            <option value="">Semua</option>
-            {filterLocationOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="sla-context-field">
-          <span className="sla-context-label">Approval</span>
-          <select
-            className="sla-context-select"
-            value={filterApproval}
-            onChange={(e) => {
-              setFilterApproval(e.target.value)
-              resetPage()
-            }}
-          >
-            <option value="">Semua</option>
-            <option value="Approved">Approved</option>
-            <option value="Pending">Pending</option>
-          </select>
-        </div>
-        {role === 'up3' && (
-          <div className="sla-context-field">
-            <span className="sla-context-label">Unit</span>
-            <select
-              className="sla-context-select"
-              value={filterUnit}
+      <div className="sla-filter-panel">
+        <div className="sla-filter-grid">
+          <div className="sla-filter-field">
+            <span className="sla-filter-label">Cari Nama/NIP</span>
+            <input
+              className={inputClass}
+              value={search}
               onChange={(e) => {
-                setFilterUnit(e.target.value)
+                setSearch(e.target.value)
+                resetPage()
+              }}
+              placeholder="Cari..."
+            />
+          </div>
+          <div className="sla-filter-field">
+            <span className="sla-filter-label">Jabatan</span>
+            <select
+              className="sla-filter-select"
+              value={filterJabatan}
+              onChange={(e) => {
+                setFilterJabatan(e.target.value)
                 resetPage()
               }}
             >
               <option value="">Semua</option>
-              {scopeUnitIds.map((u) => (
-                <option key={u} value={u}>
-                  {unitName(u)}
+              {scopedJabatan.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.name}
                 </option>
               ))}
             </select>
           </div>
-        )}
+          <div className="sla-filter-field">
+            <span className="sla-filter-label">Status</span>
+            <select
+              className="sla-filter-select"
+              value={filterStatus}
+              onChange={(e) => {
+                setFilterStatus(e.target.value)
+                resetPage()
+              }}
+            >
+              <option value="">Semua</option>
+              <option value="Aktif">Aktif</option>
+              <option value="Nonaktif">Nonaktif</option>
+            </select>
+          </div>
+          <div className="sla-filter-field">
+            <span className="sla-filter-label">Pensiun</span>
+            <select
+              className="sla-filter-select"
+              value={filterPension}
+              onChange={(e) => {
+                setFilterPension(e.target.value)
+                resetPage()
+              }}
+            >
+              <option value="">Semua</option>
+              <option value="aktif">Aktif</option>
+              <option value="mendekati-pensiun">Mendekati Pensiun</option>
+              <option value="pensiun">Pensiun</option>
+            </select>
+          </div>
+          <div className="sla-filter-field">
+            <span className="sla-filter-label">Lokasi Penempatan</span>
+            <select
+              className="sla-filter-select"
+              value={filterLocation}
+              onChange={(e) => {
+                setFilterLocation(e.target.value)
+                resetPage()
+              }}
+            >
+              <option value="">Semua</option>
+              {filterLocationOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sla-filter-field">
+            <span className="sla-filter-label">Approval</span>
+            <select
+              className="sla-filter-select"
+              value={filterApproval}
+              onChange={(e) => {
+                setFilterApproval(e.target.value)
+                resetPage()
+              }}
+            >
+              <option value="">Semua</option>
+              <option value="Approved">Approved</option>
+              <option value="Pending">Pending</option>
+            </select>
+          </div>
+          {role === 'up3' && (
+            <div className="sla-filter-field">
+              <span className="sla-filter-label">Unit</span>
+              <select
+                className="sla-filter-select"
+                value={filterUnit}
+                onChange={(e) => {
+                  setFilterUnit(e.target.value)
+                  resetPage()
+                }}
+              >
+                <option value="">Semua</option>
+                {scopeUnitIds.map((u) => (
+                  <option key={u} value={u}>
+                    {unitName(u)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="sla-preview-scroll">
@@ -1390,6 +1394,7 @@ export default function SLADatabasePegawai({
               <th>Masa Pensiun</th>
               <th>Bank</th>
               <th>No Rekening</th>
+              <th>Tarif Lembur/Jam</th>
               <th>Status</th>
               <th>Approval</th>
               <th>Aksi</th>
@@ -1454,6 +1459,11 @@ export default function SLADatabasePegawai({
                   <td>{data.bank || '\u2014'}</td>
                   <td>{data.accountNumber || '\u2014'}</td>
                   <td>
+                    {data.hourlyRate && data.hourlyRate > 0
+                      ? `Rp ${Number(data.hourlyRate).toLocaleString('id-ID')}/jam`
+                      : '\u2014'}
+                  </td>
+                  <td>
                     <span
                       className={`sla-status-badge ${data.employmentStatus === 'Aktif' ? 'sla-status-active' : 'sla-status-archive'}`}
                     >
@@ -1484,7 +1494,7 @@ export default function SLADatabasePegawai({
             })}
             {!visibleRows.length && (
               <tr>
-                <td colSpan={12} className="sla-table-hint">
+                <td colSpan={13} className="sla-table-hint">
                   Tidak ada pegawai yang cocok dengan filter.
                 </td>
               </tr>
