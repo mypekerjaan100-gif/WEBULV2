@@ -566,7 +566,7 @@ const STYLES_XML =
   '<font><b/><sz val="11"/><name val="Calibri"/></font>' +
   '<font><b/><sz val="14"/><name val="Calibri"/></font>' +
   '</fonts>' +
-  '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>' +
+  '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE1E1E1"/><bgColor indexed="64"/></patternFill></fill></fills>' +
   '<borders count="5">' +
   '<border/>' +
   '<border>' +
@@ -580,7 +580,7 @@ const STYLES_XML =
   '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top/><bottom style="thin"><color rgb="FF000000"/></bottom></border>' +
   '</borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-  '<cellXfs count="15">' +
+  '<cellXfs count="16">' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">' +
   '<alignment wrapText="1" vertical="center" horizontal="center"/>' +
@@ -612,6 +612,7 @@ const STYLES_XML =
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="4" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="center"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
   '</cellXfs>' +
   '</styleSheet>'
 
@@ -673,9 +674,7 @@ function buildSheetXml(doc) {
   if (doc.opening) addMergedRow(doc.opening, 3)
   rowIndex += 1
 
-  let firstHeaderRow = null
   const addSectionHeader = () => {
-    if (firstHeaderRow == null) firstHeaderRow = rowIndex
     addCellRow(
       doc.columns.map((col, index) => ({ col: index, value: col.label, style: 1 })),
       34,
@@ -684,12 +683,12 @@ function buildSheetXml(doc) {
 
   doc.rows.forEach((row) => {
     if (row.kind === 'section') {
-      addMergedRow(row.label, 13, colCount, 24)
+      addMergedRow(row.label, 15, colCount, 24)
       addSectionHeader()
       return
     }
     if (row.kind === 'total') {
-      addMergedRow(row.label, 13, colCount - 1, 24)
+      addMergedRow(row.label, 9, colCount - 1, 24)
       addCellRow([
         { col: colCount - 1, value: row.value, style: 7 },
       ], 24)
@@ -727,40 +726,42 @@ function buildSheetXml(doc) {
   })
 
   if (!doc.rows.some((row) => row.kind === 'total')) {
-    addMergedRow('TOTAL DENDA SLA', 13, colCount - 1, 24)
+    addMergedRow('TOTAL DENDA SLA', 9, colCount - 1, 24)
     addCellRow([
       { col: colCount - 1, value: doc.totalDenda ?? '-', style: 7 },
     ], 24)
   }
 
-  const signatureSlots = [
-    { label: 'Pihak Pertama', start: 0, end: 4 },
-    { label: 'Pihak Kedua', start: 5, end: 9 },
-    { label: 'Saksi', start: 10, end: 13 },
-  ]
   const signatureGroups = doc.signatureGroups ?? []
-  const signatureFor = (label) =>
-    signatureGroups.find((group) =>
-      String(group.title ?? '').toLowerCase().replace(/\s+/g, ' ').includes(label.toLowerCase()),
-    )
-  const addSignatureRow = (cells, style = 3, height = 42) => {
-    const anchors = signatureSlots.map((slot, index) => {
+  const signatureRows = []
+  for (let index = 0; index < signatureGroups.length; index += 3) {
+    signatureRows.push(signatureGroups.slice(index, index + 3))
+  }
+  if (signatureRows.length > 0) rowIndex += 1
+  const signatureSlots = (count) => {
+    if (count === 1) return [{ start: 0, end: 13 }]
+    if (count === 2) return [{ start: 0, end: 6 }, { start: 7, end: 13 }]
+    return [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 10, end: 13 }]
+  }
+  const addSignatureRow = (groups, cells, style = 4, height = 24) => {
+    const slots = signatureSlots(groups.length)
+    const anchors = slots.map((slot, index) => {
       mergeCells.push(`${colRef(slot.start)}${rowIndex}:${colRef(slot.end)}${rowIndex}`)
       return { col: slot.start, value: cells[index] ?? '', style }
     })
     addCellRow(anchors, height)
   }
-  addMergedRow(`Penandatangan yang berlaku pada periode ${doc.period ?? ''}`, 13, colCount, 24)
-  addSignatureRow(signatureSlots.map((slot) => slot.label), 14, 24)
-  const groupedSignatures = signatureSlots.map((slot) => signatureFor(slot.label))
-  const signatureRowCount = Math.max(1, ...groupedSignatures.map((group) => group?.members?.length ?? 0))
-  for (let index = 0; index < signatureRowCount; index += 1) {
-    addSignatureRow(groupedSignatures.map((group) => {
-      const member = group?.members?.[index]
-      if (!member) return group?.institution ?? ''
-      return `${member.name ?? ''}${member.position ? `\n${member.position}` : ''}`
-    }))
-  }
+  signatureRows.forEach((groups, groupRowIndex) => {
+    if (groupRowIndex > 0) rowIndex += 1
+    addSignatureRow(groups, groups.map((group) => group.title ?? ''), 14, 24)
+    addSignatureRow(groups, groups.map((group) => group.institution ?? ''), 4, 24)
+    const memberCount = Math.max(1, ...groups.map((group) => group.members?.length ?? 0))
+    for (let memberIndex = 0; memberIndex < memberCount; memberIndex += 1) {
+      addSignatureRow(groups, groups.map(() => ''), 4, 72)
+      addSignatureRow(groups, groups.map((group) => group.members?.[memberIndex]?.name ?? ''), 14, 24)
+      addSignatureRow(groups, groups.map((group) => group.members?.[memberIndex]?.position ?? ''), 4, 24)
+    }
+  })
 
   const mergeCellsXml =
     mergeCells.length > 0
@@ -773,7 +774,7 @@ function buildSheetXml(doc) {
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
     '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' +
-    `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${Math.max(0, (firstHeaderRow ?? 1) - 1)}" topLeftCell="A${firstHeaderRow ?? 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+    '<sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>' +
     colsXml +
     `<sheetData>${sheetRows}</sheetData>` +
     mergeCellsXml +
