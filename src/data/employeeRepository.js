@@ -50,7 +50,9 @@ export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = 
 
   const { data: employees, error: empErr } = await supabase
     .from('employees')
-    .select('*')
+    .select(
+      'id, nip, name, birth_date, source_position, retirement_date_override, pension_override_reason, created_at',
+    )
     .order('nip')
 
   if (empErr) throw empErr
@@ -61,6 +63,17 @@ export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = 
 
   const employeeIds = employees.map((e) => e.id)
 
+  let sensitiveByEmployee = new Map()
+  if (hasSensitiveRead) {
+    const { data: sensitiveRows, error: sensitiveError } = await supabase.rpc(
+      'employee_sensitive_fields',
+    )
+    if (sensitiveError) throw sensitiveError
+    sensitiveByEmployee = new Map(
+      (sensitiveRows ?? []).map((row) => [row.employee_id, row]),
+    )
+  }
+
   const [unitHist, posHist, statusHist, rateHist, locHist] = await Promise.all([
     supabase.from('employee_unit_history').select('*').in('employee_id', employeeIds),
     supabase.from('employee_position_history').select('*').in('employee_id', employeeIds),
@@ -68,6 +81,9 @@ export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = 
     supabase.from('employee_hourly_rate_history').select('*').in('employee_id', employeeIds),
     supabase.from('employee_work_location_history').select('*').in('employee_id', employeeIds),
   ])
+  for (const result of [unitHist, posHist, statusHist, rateHist, locHist]) {
+    if (result.error) throw result.error
+  }
 
   const histByEmployee = (rows, fieldMap) => {
     const grouped = {}
@@ -110,11 +126,19 @@ export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = 
     const currentRate = resolveCurrentEntry(hourlyRateHistory, today)
     const currentLocation = resolveCurrentEntry(workLocationHistory, today)
 
-    const mapped = mapEmployeeRow(emp, {
-      unitName: currentUnit?.unitId ?? null,
-      positionName: currentPosition?.positionId ?? null,
-      locationName: currentLocation?.workLocationId ?? null,
-    })
+    const sensitive = sensitiveByEmployee.get(emp.id)
+    const mapped = mapEmployeeRow(
+      {
+        ...emp,
+        bank: sensitive?.bank,
+        account_number: sensitive?.account_number,
+      },
+      {
+        unitName: currentUnit?.unitId ?? null,
+        positionName: currentPosition?.positionId ?? null,
+        locationName: currentLocation?.workLocationId ?? null,
+      },
+    )
 
     mapped.contractId = currentUnit?.contractId ?? null
     mapped.up3Id = currentUnit?.up3Id ?? null
