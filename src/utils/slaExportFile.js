@@ -367,6 +367,7 @@ export function buildSlaExportDoc({
     opening,
     columns,
     rows,
+    totalDenda: totalDenda > 0 ? formatPercent(totalDenda) : '-',
     signatureGroups: activeGroups,
     isUp3Scope,
     regionName,
@@ -608,7 +609,6 @@ const STYLES_XML =
 
 function buildSheetXml(doc) {
   const colCount = doc.columns.length
-  const lastCol = colRef(colCount - 1)
 
   const colsXml =
     '<cols>' +
@@ -624,17 +624,17 @@ function buildSheetXml(doc) {
   let rowIndex = 1
   let sheetRows = ''
 
-  const addMergedRow = (text, style, refCount = colCount) => {
+  const addMergedRow = (text, style, refCount = colCount, height = null) => {
     mergeCells.push(`A${rowIndex}:${colRef(refCount - 1)}${rowIndex}`)
     sheetRows +=
-      `<row r="${rowIndex}">` +
+      `<row r="${rowIndex}"${height ? ` ht="${height}" customHeight="1"` : ''}>` +
       `<c r="A${rowIndex}" t="inlineStr"${style ? ` s="${style}"` : ''}>` +
-      `<is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>` +
+      `<is><t xml:space="preserve">${xmlEscape(text ?? '')}</t></is></c>` +
       '</row>'
     rowIndex += 1
   }
 
-  const addCellRow = (cells) => {
+  const addCellRow = (cells, height = 36) => {
     const parts = cells
       .map((cell) => {
         const ref = `${colRef(cell.col)}${rowIndex}`
@@ -643,11 +643,11 @@ function buildSheetXml(doc) {
         }
         return (
           `<c r="${ref}" t="inlineStr"${cell.style ? ` s="${cell.style}"` : ''}>` +
-          `<is><t xml:space="preserve">${xmlEscape(cell.value)}</t></is></c>`
+          `<is><t xml:space="preserve">${xmlEscape(cell.value ?? '')}</t></is></c>`
         )
       })
       .join('')
-    sheetRows += `<row r="${rowIndex}">${parts}</row>`
+    sheetRows += `<row r="${rowIndex}"${height ? ` ht="${height}" customHeight="1"` : ''}>${parts}</row>`
     rowIndex += 1
   }
 
@@ -657,27 +657,34 @@ function buildSheetXml(doc) {
     return 6
   }
 
+  const xlsxScope = String(doc.scope ?? '').replace(/^SLA ULP\s+/, '')
   addMergedRow(doc.title, 2)
-  addMergedRow(`Periode Pekerjaan : ${doc.period}`)
-  addMergedRow(`Tanggal Laporan (N+1) : ${doc.reportDate}`)
-  addMergedRow(`Scope Laporan : ${doc.scope}`)
+  addMergedRow(`Periode Pekerjaan : ${doc.period ?? ''}`)
+  addMergedRow(`Tanggal Laporan (N+1) : ${doc.reportDate ?? ''}`)
+  addMergedRow(`Scope Laporan : ${xlsxScope}`)
   if (doc.opening) addMergedRow(doc.opening, 3)
   rowIndex += 1
 
-  addCellRow(
-    doc.columns.map((col, index) => ({ col: index, value: col.label, style: 1 })),
-  )
+  let firstHeaderRow = null
+  const addSectionHeader = () => {
+    if (firstHeaderRow == null) firstHeaderRow = rowIndex
+    addCellRow(
+      doc.columns.map((col, index) => ({ col: index, value: col.label, style: 1 })),
+      34,
+    )
+  }
 
   doc.rows.forEach((row) => {
     if (row.kind === 'section') {
-      addMergedRow(row.label, 9)
+      addMergedRow(row.label, 9, colCount, 24)
+      addSectionHeader()
       return
     }
     if (row.kind === 'total') {
-      addMergedRow(row.label, 9, colCount - 1)
+      addMergedRow(row.label, 9, colCount - 1, 24)
       addCellRow([
         { col: colCount - 1, value: row.value, style: 7 },
-      ])
+      ], 24)
       return
     }
     // data row
@@ -707,19 +714,40 @@ function buildSheetXml(doc) {
     addCellRow(cells)
   })
 
+  if (!doc.rows.some((row) => row.kind === 'total')) {
+    addMergedRow('TOTAL DENDA SLA', 9, colCount - 1, 24)
+    addCellRow([
+      { col: colCount - 1, value: doc.totalDenda ?? '-', style: 7 },
+    ], 24)
+  }
+
+  const signatureSlots = [
+    { label: 'Pihak Pertama', start: 0, end: 4 },
+    { label: 'Pihak Kedua', start: 5, end: 9 },
+    { label: 'Saksi', start: 10, end: 13 },
+  ]
   const signatureGroups = doc.signatureGroups ?? []
-  if (signatureGroups.length > 0) {
-    addMergedRow(`Penandatangan yang berlaku pada periode ${doc.period}`, 1)
-    signatureGroups.forEach((group) => {
-      addMergedRow(`${group.title} : ${group.institution}`, 1)
-      if (group.members.length === 0) {
-        addMergedRow('Tidak ada penandatangan yang berlaku pada periode ini.', 3)
-        return
-      }
-      group.members.forEach((member) => {
-        addMergedRow(`${member.name} \u2014 ${member.position}`, 3)
-      })
+  const signatureFor = (label) =>
+    signatureGroups.find((group) =>
+      String(group.title ?? '').toLowerCase().replace(/\s+/g, ' ').includes(label.toLowerCase()),
+    )
+  const addSignatureRow = (cells, style = 6, height = 42) => {
+    const anchors = signatureSlots.map((slot, index) => {
+      mergeCells.push(`${colRef(slot.start)}${rowIndex}:${colRef(slot.end)}${rowIndex}`)
+      return { col: slot.start, value: cells[index] ?? '', style }
     })
+    addCellRow(anchors, height)
+  }
+  addMergedRow(`Penandatangan yang berlaku pada periode ${doc.period ?? ''}`, 9, colCount, 24)
+  addSignatureRow(signatureSlots.map((slot) => slot.label), 1, 24)
+  const groupedSignatures = signatureSlots.map((slot) => signatureFor(slot.label))
+  const signatureRowCount = Math.max(1, ...groupedSignatures.map((group) => group?.members?.length ?? 0))
+  for (let index = 0; index < signatureRowCount; index += 1) {
+    addSignatureRow(groupedSignatures.map((group) => {
+      const member = group?.members?.[index]
+      if (!member) return group?.institution ?? ''
+      return `${member.name ?? ''}${member.position ? `\n${member.position}` : ''}`
+    }))
   }
 
   const mergeCellsXml =
@@ -732,9 +760,13 @@ function buildSheetXml(doc) {
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' +
+    `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${Math.max(0, (firstHeaderRow ?? 1) - 1)}" topLeftCell="A${firstHeaderRow ?? 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
     colsXml +
     `<sheetData>${sheetRows}</sheetData>` +
     mergeCellsXml +
+    '<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>' +
+    '<pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/>' +
     '</worksheet>'
   )
 }
