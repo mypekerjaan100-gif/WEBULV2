@@ -24,6 +24,7 @@ import {
   retirementEffectiveDateFor,
 } from '../../data/pensiunPelayananTeknik.js'
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
+import { buildMasterPegawaiXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 
 const inputClass = 'sla-input sla-input-text'
 const PAGE_SIZE = 20
@@ -245,6 +246,52 @@ export default function SLADatabasePegawai({
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const visibleRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  const exportMasterPegawai = () => {
+    const columns = [
+      { label: 'No', width: 8 },
+      { label: 'NIP', width: 18 },
+      { label: 'Nama', width: 28 },
+      { label: 'Unit', width: 22 },
+      { label: 'Lokasi Penempatan', width: 26 },
+      { label: 'Jabatan', width: 26 },
+      { label: 'Tanggal Lahir', width: 16 },
+      { label: 'Masa Pensiun', width: 24 },
+      { label: 'Bank', width: 14 },
+      { label: 'No Rekening', width: 22 },
+      { label: 'Status', width: 14 },
+      { label: 'Approval', width: 14 },
+    ]
+    const rows = filtered.map((row, index) => {
+      const data = row.employee ?? row.request.proposed
+      const pension = pensionStateOf(data, todayStr, pensionPolicy)
+      const pensionLabel = pension.retirementDate
+        ? `${pension.state} (${pension.retirementDate})`
+        : (pension.state ?? '')
+      return [
+        { value: String(index + 1) },
+        { value: data.nip ?? '' },
+        { value: data.name ?? '' },
+        { value: unitName(data.unitId) },
+        { value: data.workLocationId ? (locationName(data.workLocationId) ?? 'Belum Ditentukan') : 'Belum ditentukan' },
+        { value: positionName(data.positionId) ?? 'Belum Ditentukan' },
+        { value: data.birthDate ?? '', type: 'date' },
+        { value: pensionLabel },
+        { value: data.bank ?? '' },
+        { value: data.accountNumber ?? '' },
+        { value: data.employmentStatus ?? '' },
+        { value: approvalOf(row) },
+      ]
+    })
+    const scopeName = role === 'ulp'
+      ? `ULP_${unitName(selectedPreviewUnitUuid)}`
+      : `UP3_${unitName(resolvedUp3Uuid)}`
+    const filenameScope = scopeName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+    downloadExportFile(
+      buildMasterPegawaiXlsx(columns, rows),
+      `Master_Pegawai_${filenameScope}_${todayStr}.xlsx`,
+    )
+  }
 
   const resetPage = () => setPage(1)
 
@@ -1012,6 +1059,11 @@ export default function SLADatabasePegawai({
     <section className="sla-settings">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Master Pegawai</h2>
+        {scopedUnitIds.length > 0 && (
+          <button type="button" className="sla-btn" onClick={exportMasterPegawai}>
+            Export Excel
+          </button>
+        )}
         <button type="button" className="sla-btn sla-btn-primary" onClick={openAdd}>
           Tambah Pegawai
         </button>

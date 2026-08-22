@@ -45,10 +45,11 @@ export default function App() {
       setRealScope(null)
       return undefined
     }
-    const access = contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_ULP'
+    const access = contractAccess.length === 1 && ['ADMIN_UP3', 'ADMIN_ULP'].includes(contractAccess[0]?.role)
       ? contractAccess[0]
       : null
-    if (!access?.contract_code || !access.operational_up3_id || !access.operational_unit_id) {
+    if (!access?.contract_code || !access.operational_up3_id ||
+      (access.role === 'ADMIN_ULP' && !access.operational_unit_id)) {
       setRealScope(null)
       return undefined
     }
@@ -56,15 +57,22 @@ export default function App() {
       .then((orgUnits) => {
         if (cancelled) return
         const up3 = orgUnits.find((unit) => unit.uuid === access.operational_up3_id && unit.type === 'UP3')
-        const unit = orgUnits.find(
-          (entry) => entry.uuid === access.operational_unit_id && entry.type === 'ULP' && entry.parentUuid === up3?.uuid,
-        )
+        const unit = access.role === 'ADMIN_UP3'
+          ? up3
+          : orgUnits.find(
+            (entry) => entry.uuid === access.operational_unit_id && entry.type === 'ULP' && entry.parentUuid === up3?.uuid,
+          )
         const contract = contracts.find((entry) => entry.id === access.contract_code)
         if (!up3?.legacyKey || !unit?.legacyKey || !contract) {
           setRealScope(null)
           return
         }
-        setRealScope({ contractId: contract.id, up3Id: up3.legacyKey, unitId: unit.legacyKey })
+        setRealScope({
+          contractId: contract.id,
+          up3Id: up3.legacyKey,
+          unitId: unit.legacyKey,
+          role: access.role === 'ADMIN_UP3' ? 'up3' : 'ulp',
+        })
       })
       .catch(() => {
         if (!cancelled) setRealScope(null)
@@ -73,7 +81,7 @@ export default function App() {
   }, [isSuperAdmin, contractAccess])
 
   const isRealScopedUser = !isSuperAdmin && realScope !== null
-  const actualRole = isRealScopedUser ? 'ulp' : role
+  const actualRole = isRealScopedUser ? realScope.role : role
   const actualUp3Id = isRealScopedUser ? realScope.up3Id : up3Id
   const actualUnitId = isRealScopedUser ? realScope.unitId : unitId
   const authorizedContractIds = isSuperAdmin

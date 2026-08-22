@@ -751,6 +751,73 @@ export function buildXlsx(doc) {
   return buildZip(files)
 }
 
+const EMPLOYEE_EXPORT_STYLES_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+  '<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/></numFmts>' +
+  '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+  '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>' +
+  '<borders count="2"><border/><border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom></border></borders>' +
+  '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+  '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf></cellXfs>' +
+  '</styleSheet>'
+
+function excelDateSerial(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const [year, month, day] = value.split('-').map(Number)
+  return Math.floor((Date.UTC(year, month - 1, day) - Date.UTC(1899, 11, 30)) / 86400000)
+}
+
+function buildEmployeeSheetXml(columns, rows) {
+  const lastCol = colRef(columns.length - 1)
+  const colsXml = `<cols>${columns
+    .map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${column.width}" customWidth="1"/>`)
+    .join('')}</cols>`
+  const header = columns
+    .map((column, index) => `<c r="${colRef(index)}1" t="inlineStr" s="1"><is><t xml:space="preserve">${xmlEscape(column.label)}</t></is></c>`)
+    .join('')
+  const dataRows = rows
+    .map((row, rowIndex) => {
+      const cells = row
+        .map((cell, columnIndex) => {
+          const ref = `${colRef(columnIndex)}${rowIndex + 2}`
+          if (cell?.type === 'date') {
+            const serial = excelDateSerial(cell.value)
+            if (serial != null) return `<c r="${ref}" s="2"><v>${serial}</v></c>`
+          }
+          return `<c r="${ref}" t="inlineStr" s="0"><is><t xml:space="preserve">${xmlEscape(cell?.value ?? '')}</t></is></c>`
+        })
+        .join('')
+      return `<row r="${rowIndex + 2}">${cells}</row>`
+    })
+    .join('')
+
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+    colsXml +
+    `<sheetData><row r="1">${header}</row>${dataRows}</sheetData>` +
+    `<autoFilter ref="A1:${lastCol}${Math.max(1, rows.length + 1)}"/>` +
+    '</worksheet>'
+  )
+}
+
+export function buildMasterPegawaiXlsx(columns, rows) {
+  const workbook =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets><sheet name="Master Pegawai" sheetId="1" r:id="rId1"/></sheets></workbook>'
+  return buildZip([
+    { name: '[Content_Types].xml', data: encode(CONTENT_TYPES_XML) },
+    { name: '_rels/.rels', data: encode(ROOT_RELS_XML) },
+    { name: 'xl/workbook.xml', data: encode(workbook) },
+    { name: 'xl/_rels/workbook.xml.rels', data: encode(WORKBOOK_RELS_XML) },
+    { name: 'xl/styles.xml', data: encode(EMPLOYEE_EXPORT_STYLES_XML) },
+    { name: 'xl/worksheets/sheet1.xml', data: encode(buildEmployeeSheetXml(columns, rows)) },
+  ])
+}
+
 // ---------- PDF (base-14 fonts, no dependencies) ----------
 
 const pdfEscape = (value) =>
