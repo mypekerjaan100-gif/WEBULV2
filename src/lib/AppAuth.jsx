@@ -23,6 +23,7 @@ export default function AppAuth({ children }) {
   const [session, setSession] = useState(null)
   const [view, setView] = useState('loading')
   const [error, setError] = useState(null)
+  const [recoveryEmail, setRecoveryEmail] = useState('')
   const [authority, setAuthority] = useState({ loading: true, actor: null, error: null })
 
   useEffect(() => {
@@ -123,8 +124,26 @@ export default function AppAuth({ children }) {
     return <UpdatePasswordForm />
   }
 
+  if (view === 'forgot-password') {
+    return (
+      <ForgotPasswordForm
+        initialEmail={recoveryEmail}
+        onBack={() => setView('signin')}
+      />
+    )
+  }
+
   if (view === 'signin' || !session) {
-    return <SignInForm onSignIn={signIn} error={error} />
+    return (
+      <SignInForm
+        onSignIn={signIn}
+        onForgotPassword={(email) => {
+          setRecoveryEmail(email)
+          setView('forgot-password')
+        }}
+        error={error}
+      />
+    )
   }
 
   if (authority.loading) {
@@ -303,7 +322,79 @@ function UpdatePasswordForm() {
   )
 }
 
-function SignInForm({ onSignIn, error }) {
+function ForgotPasswordForm({ initialEmail, onBack }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setSubmitting(true)
+    setError('')
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    })
+    setSubmitting(false)
+    if (resetError) {
+      setError(resetError.message)
+      return
+    }
+    setSuccess(true)
+  }
+
+  return (
+    <AuthFormShell title="Reset Password">
+      <p style={{ fontSize: 14, color: '#555', marginTop: 0 }}>
+        Masukkan email untuk menerima tautan reset password.
+      </p>
+      {error && <p style={{ color: '#d32f2f', fontSize: 14 }}>{error}</p>}
+      {success ? (
+        <p style={{ color: '#2e7d32', fontSize: 14 }}>
+          Jika email terdaftar, tautan reset password telah dikirim.
+        </p>
+      ) : (
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+            />
+          </div>
+          <button type="submit" disabled={submitting} style={primaryButtonStyle}>
+            {submitting ? 'Mengirim...' : 'Kirim Tautan Reset Password'}
+          </button>
+        </form>
+      )}
+      <button type="button" onClick={onBack} style={linkButtonStyle}>Kembali ke Login</button>
+    </AuthFormShell>
+  )
+}
+
+function AuthFormShell({ title, children }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
+      <div style={{ minWidth: 320, padding: 24, border: '1px solid #ddd', borderRadius: 8 }}>
+        <h2 style={{ marginTop: 0 }}>{title}</h2>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+const primaryButtonStyle = {
+  width: '100%', padding: '10px', backgroundColor: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 14,
+}
+
+const linkButtonStyle = {
+  marginTop: 12, padding: 0, background: 'none', border: 'none', color: '#1976d2', cursor: 'pointer', fontSize: 14,
+}
+
+function SignInForm({ onSignIn, onForgotPassword, error }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -377,6 +468,13 @@ function SignInForm({ onSignIn, error }) {
           }}
         >
           {submitting ? 'Masuk...' : 'Masuk'}
+        </button>
+        <button
+          type="button"
+          onClick={() => onForgotPassword(email)}
+          style={linkButtonStyle}
+        >
+          Lupa Password?
         </button>
       </form>
     </div>
