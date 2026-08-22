@@ -1,0 +1,93 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import {
+  ACTION_TO_OPERATION,
+  parseRequest,
+  type UserManagementAction,
+} from "./contracts.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function jsonResponse(status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function requiredEnv(name: string) {
+  const value = Deno.env.get(name);
+  if (!value) throw new Error(`Missing server environment variable: ${name}`);
+  return value;
+}
+
+// Reserved for Auth Admin operations implemented in later F4B phases.
+// The service-role key is read only inside the Edge Function runtime.
+export function createAdminClient() {
+  return createClient(
+    requiredEnv("SUPABASE_URL"),
+    requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+}
+
+Deno.serve(async (request: Request) => {
+  if (request.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  if (request.method !== "POST") {
+    return jsonResponse(405, { error: "method_not_allowed" });
+  }
+
+  const authorization = request.headers.get("Authorization");
+  if (!authorization?.startsWith("Bearer ")) {
+    return jsonResponse(401, { error: "authentication_required" });
+  }
+
+  try {
+    const body = parseRequest(await request.json());
+    const callerClient = createClient(
+      requiredEnv("SUPABASE_URL"),
+      requiredEnv("SUPABASE_ANON_KEY"),
+      {
+        global: { headers: { Authorization: authorization } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    );
+
+    if (body.action === "capabilities") {
+      const { data, error } = await callerClient.rpc(
+        "user_management_actor_context",
+      );
+      if (error) return jsonResponse(403, { error: "forbidden" });
+      return jsonResponse(200, { actor: data?.[0] ?? null });
+    }
+
+    const operation = ACTION_TO_OPERATION[body.action as UserManagementAction];
+    const { data: authorizationResult, error: authorizationError } =
+      await callerClient.rpc("user_management_authorize_operation", {
+        p_operation: operation,
+        p_target_user_id: body.targetUserId ?? null,
+        p_target_role_code: body.targetRoleCode ?? null,
+        p_reason: body.reason ?? null,
+      });
+    if (authorizationError) {
+      return jsonResponse(403, { error: "forbidden" });
+    }
+
+    return jsonResponse(501, {
+      error: "operation_not_implemented_in_f4b1",
+      operation,
+      authorization: authorizationResult,
+    });
+  } catch (error) {
+    return jsonResponse(400, {
+      error: "invalid_request",
+      message: error instanceof Error ? error.message : "Invalid request",
+    });
+  }
+});
