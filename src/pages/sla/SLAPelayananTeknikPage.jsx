@@ -75,6 +75,7 @@ export default function SLAPelayananTeknikPage({
   up3Id,
   units,
   onUnitsChange,
+  isRealScopedUser = false,
 }) {
   const [moduleId, setModuleId] = useState('sla')
   const [period, setPeriod] = useState('Agustus 2026')
@@ -501,7 +502,7 @@ export default function SLAPelayananTeknikPage({
           up3Id={up3Id}
           role={role}
           units={units}
-          onUnitsChange={onUnitsChange}
+          onUnitsChange={isRealScopedUser ? () => {} : onUnitsChange}
           referencesContext={{ employees, signatureGroups, slaUnitIds }}
         />
       ) : moduleId === 'master-lokasi' && orgMapStatus === 'loading' ? (

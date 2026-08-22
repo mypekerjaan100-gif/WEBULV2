@@ -24,7 +24,7 @@ export async function handleSessionContext(
       adminClient.from("system_role_memberships").select("authorization_roles!inner(code)").eq("user_id", user.id).eq("status", "ACTIVE"),
       adminClient.from("organization_memberships").select("id").eq("user_id", user.id).eq("status", "ACTIVE"),
       adminClient.from("contract_memberships").select("contract_id, contract_role, operational_up3_id, operational_unit_id").eq("user_id", user.id).eq("status", "ACTIVE"),
-      adminClient.from("contracts").select("id, title"),
+      adminClient.from("contracts").select("id, code, title"),
       adminClient.from("organization_name_history").select("organization_unit_id, name, effective_from, effective_to"),
     ]);
 
@@ -34,22 +34,30 @@ export async function handleSessionContext(
   const assigned = roles.length > 0 || (organizationMemberships || []).length > 0 || (contractMemberships || []).length > 0;
   const accountStatus = profile?.status || (user.confirmed_at ? "ACTIVE" : "INVITED");
   const today = new Date().toISOString().slice(0, 10);
-  const contractNames = new Map((contracts || []).map((contract) => [contract.id as string, contract.title as string]));
+  const contractsById = new Map((contracts || []).map((contract) => [contract.id as string, contract]));
   const organizationNamesById = new Map<string, string>();
   for (const name of organizationNames || []) {
     if (name.effective_from <= today && (!name.effective_to || name.effective_to > today)) {
       organizationNamesById.set(name.organization_unit_id as string, name.name as string);
     }
   }
-  const contractAccess = (contractMemberships || []).map((membership) => ({
-    contract_id: membership.contract_id,
-    contract_name: contractNames.get(membership.contract_id as string) ?? "Unknown",
-    role: membership.contract_role,
-    up3: organizationNamesById.get(membership.operational_up3_id as string) ?? "Unknown",
-    ulp: membership.operational_unit_id
-      ? organizationNamesById.get(membership.operational_unit_id as string) ?? "Unknown"
-      : null,
-  }));
+  const contractAccess = (contractMemberships || []).map((membership) => {
+    const contract = contractsById.get(membership.contract_id as string) as
+      | { code: string; title: string }
+      | undefined;
+    return {
+      contract_id: membership.contract_id,
+      contract_code: contract?.code ?? null,
+      contract_title: contract?.title ?? "Unknown",
+      operational_up3_id: membership.operational_up3_id,
+      operational_up3_name: organizationNamesById.get(membership.operational_up3_id as string) ?? "Unknown",
+      operational_unit_id: membership.operational_unit_id,
+      operational_unit_name: membership.operational_unit_id
+        ? organizationNamesById.get(membership.operational_unit_id as string) ?? "Unknown"
+        : null,
+      role: membership.contract_role,
+    };
+  });
 
   return {
     status: 200,

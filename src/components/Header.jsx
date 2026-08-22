@@ -10,6 +10,10 @@ const PAGE_TITLES = {
 export default function Header({ activeContractId, currentPage, onOpenSidebar, preview }) {
   const { authority, signOut } = useAuth()
   const [signingOut, setSigningOut] = useState(false)
+  const isSuperAdmin = authority?.actor?.is_super_admin === true
+  const loginRole = isSuperAdmin
+    ? 'SUPER_ADMIN'
+    : authority?.actor?.contract_access?.[0]?.role ?? 'Akses terverifikasi'
   const activeContract = contracts.find(
     (contract) => contract.id === activeContractId,
   )
@@ -42,9 +46,9 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
       </div>
       <div className="header-right">
         <span className="header-login-status">
-          Login: {authority?.actor?.is_super_admin ? 'SUPER_ADMIN' : 'Akses terverifikasi'}
+          Login: {loginRole}
         </span>
-        {preview && <SlaPreviewBar preview={preview} />}
+        {isSuperAdmin && preview && <SlaPreviewBar preview={preview} />}
         <button
           type="button"
           className="header-logout-button"

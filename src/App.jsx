@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import AppLayout from './layout/AppLayout.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import ContractPage from './pages/ContractPage.jsx'
@@ -10,8 +10,11 @@ import {
   initialOrganizationUnits,
 } from './data/organisasiPelayananTeknik.js'
 import { contracts } from './data/contracts.js'
+import { getOrgUnits } from './data/orgIdMap.js'
+import { useAuth } from './lib/AppAuth.jsx'
 
 export default function App() {
+  const { authority } = useAuth()
   const [activeContractId, setActiveContractId] = useState(null)
   const [currentPage, setCurrentPage] = useState(null)
   const [role, setRole] = useState('up3')
@@ -32,18 +35,67 @@ export default function App() {
       effectiveStatusOf(units, unit.id) === 'Aktif',
   )
   const [unitId, setUnitId] = useState(() => seedUp3Id)
+  const [realScope, setRealScope] = useState(null)
+  const isSuperAdmin = authority?.actor?.is_super_admin === true
+  const contractAccess = authority?.actor?.contract_access ?? []
+
+  useEffect(() => {
+    let cancelled = false
+    if (isSuperAdmin) {
+      setRealScope(null)
+      return undefined
+    }
+    const access = contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_ULP'
+      ? contractAccess[0]
+      : null
+    if (!access?.contract_code || !access.operational_up3_id || !access.operational_unit_id) {
+      setRealScope(null)
+      return undefined
+    }
+    getOrgUnits()
+      .then((orgUnits) => {
+        if (cancelled) return
+        const up3 = orgUnits.find((unit) => unit.uuid === access.operational_up3_id && unit.type === 'UP3')
+        const unit = orgUnits.find(
+          (entry) => entry.uuid === access.operational_unit_id && entry.type === 'ULP' && entry.parentUuid === up3?.uuid,
+        )
+        const contract = contracts.find((entry) => entry.id === access.contract_code)
+        if (!up3?.legacyKey || !unit?.legacyKey || !contract) {
+          setRealScope(null)
+          return
+        }
+        setRealScope({ contractId: contract.id, up3Id: up3.legacyKey, unitId: unit.legacyKey })
+      })
+      .catch(() => {
+        if (!cancelled) setRealScope(null)
+      })
+    return () => { cancelled = true }
+  }, [isSuperAdmin, contractAccess])
+
+  const isRealScopedUser = !isSuperAdmin && realScope !== null
+  const actualRole = isRealScopedUser ? 'ulp' : role
+  const actualUp3Id = isRealScopedUser ? realScope.up3Id : up3Id
+  const actualUnitId = isRealScopedUser ? realScope.unitId : unitId
+  const authorizedContractIds = isSuperAdmin
+    ? null
+    : realScope
+      ? [realScope.contractId]
+      : []
 
   const navigate = (contractId) => {
+    if (contractId && !isSuperAdmin && !authorizedContractIds.includes(contractId)) return
     setActiveContractId(contractId)
     setCurrentPage(null)
   }
 
   const navigatePage = (pageId) => {
+    if (pageId && !isSuperAdmin) return
     setCurrentPage(pageId)
     setActiveContractId(null)
   }
 
   const handleRoleChange = (nextRole) => {
+    if (isRealScopedUser) return
     setRole(nextRole)
     if (nextRole === 'ulp') {
       const staysUlp =
@@ -57,6 +109,7 @@ export default function App() {
   }
 
   const handleUp3Change = (nextUp3Id) => {
+    if (isRealScopedUser) return
     setSelectedUp3Id(nextUp3Id)
     if (role === 'ulp') {
       const childUlps = units.filter(
@@ -71,16 +124,16 @@ export default function App() {
     }
   }
 
-  const activeContract = contracts.find(
-    (contract) => contract.id === activeContractId,
+  const activeContract = contracts.find((contract) =>
+    contract.id === activeContractId && (isSuperAdmin || authorizedContractIds.includes(contract.id)),
   )
 
   const preview = {
-    role,
+    role: actualRole,
     onRoleChange: handleRoleChange,
-    unitId,
-    onUnitChange: setUnitId,
-    up3Id,
+    unitId: actualUnitId,
+    onUnitChange: isRealScopedUser ? () => {} : setUnitId,
+    up3Id: actualUp3Id,
     onUp3Change: handleUp3Change,
     units,
   }
@@ -99,22 +152,26 @@ export default function App() {
         ) : activeContract ? (
           activeContract.id === 'pelayanan-teknik' ? (
             <SLAPelayananTeknikPage
-              key={`${activeContractId}:${role}:${up3Id}:${unitId}`}
+              key={`${activeContractId}:${actualRole}:${actualUp3Id}:${actualUnitId}`}
               contractId={activeContractId}
               onBack={() => navigate(null)}
-              role={role}
+              role={actualRole}
               onRoleChange={handleRoleChange}
-              unitId={unitId}
-              onUnitChange={setUnitId}
-              up3Id={up3Id}
+              unitId={actualUnitId}
+              onUnitChange={isRealScopedUser ? () => {} : setUnitId}
+              up3Id={actualUp3Id}
               units={units}
               onUnitsChange={setUnits}
+              isRealScopedUser={isRealScopedUser}
             />
           ) : (
             <ContractPage contract={activeContract} onBack={() => navigate(null)} />
           )
         ) : (
-          <DashboardPage onSelectContract={navigate} />
+          <DashboardPage
+            onSelectContract={navigate}
+            authorizedContractIds={authorizedContractIds}
+          />
         )}
       </AppLayout>
     </SlaPreviewContext.Provider>

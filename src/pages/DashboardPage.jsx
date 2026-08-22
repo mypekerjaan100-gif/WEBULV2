@@ -1,7 +1,11 @@
 import { contracts, siteTitle, siteSubtitle } from '../data/contracts.js'
 import ContractCard from '../components/ContractCard.jsx'
 
-export default function DashboardPage({ onSelectContract }) {
+export default function DashboardPage({ onSelectContract, authorizedContractIds }) {
+  const visibleContracts = authorizedContractIds === null
+    ? contracts
+    : contracts.filter((contract) => authorizedContractIds.includes(contract.id))
+
   return (
     <div className="page">
       <section className="page-hero">
@@ -13,7 +17,7 @@ export default function DashboardPage({ onSelectContract }) {
         </p>
       </section>
       <section className="contract-grid">
-        {contracts.map((contract) => (
+        {visibleContracts.map((contract) => (
           <ContractCard
             key={contract.id}
             contract={contract}

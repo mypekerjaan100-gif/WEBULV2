@@ -3,6 +3,9 @@ import { useAuth } from '../lib/AppAuth.jsx'
 export default function Sidebar({ open, activeContractId, currentPage, onNavigate, onNavigatePage, onClose }) {
   const { authority } = useAuth()
   const isSuperAdmin = authority?.actor?.is_super_admin === true
+  const allowedContractCodes = new Set(
+    (authority?.actor?.contract_access ?? []).map((access) => access.contract_code),
+  )
 
   return (
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
@@ -35,7 +38,7 @@ export default function Sidebar({ open, activeContractId, currentPage, onNavigat
           { id: 'billing-management', title: 'Billing Management', icon: '\u2740' },
           { id: 'operator-gardu-induk', title: 'Operator Gardu Induk', icon: '\u26A1' },
           { id: 'ground-patrol', title: 'Ground Patrol', icon: '\u231A' },
-        ].map((contract) => (
+        ].filter((contract) => isSuperAdmin || allowedContractCodes.has(contract.id)).map((contract) => (
           <button
             key={contract.id}
             type="button"
