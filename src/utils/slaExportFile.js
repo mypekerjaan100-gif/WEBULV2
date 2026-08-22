@@ -549,6 +549,7 @@ const WORKBOOK_XML =
   '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
   '<sheets><sheet name="SLA" sheetId="1" r:id="rId1"/></sheets>' +
+  '<definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">&apos;SLA&apos;!$A:$N</definedName></definedNames>' +
   '</workbook>'
 
 const WORKBOOK_RELS_XML =
@@ -567,7 +568,7 @@ const STYLES_XML =
   '<font><b/><sz val="14"/><name val="Calibri"/></font>' +
   '</fonts>' +
   '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE1E1E1"/><bgColor indexed="64"/></patternFill></fill></fills>' +
-  '<borders count="5">' +
+  '<borders count="8">' +
   '<border/>' +
   '<border>' +
   '<left style="thin"><color rgb="FF000000"/></left>' +
@@ -578,9 +579,12 @@ const STYLES_XML =
   '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom/></border>' +
   '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top/><bottom/></border>' +
   '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top/><bottom style="thin"><color rgb="FF000000"/></bottom></border>' +
+  '<border><left style="thin"><color rgb="FF000000"/></left><right/><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom></border>' +
+  '<border><left/><right/><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom></border>' +
+  '<border><left/><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom></border>' +
   '</borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-  '<cellXfs count="16">' +
+  '<cellXfs count="21">' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">' +
   '<alignment wrapText="1" vertical="center" horizontal="center"/>' +
@@ -612,7 +616,12 @@ const STYLES_XML =
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="4" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="center"/></xf>' +
-  '<xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="1" borderId="5" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="1" borderId="6" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="1" borderId="7" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="0" borderId="5" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="0" borderId="6" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="0" borderId="7" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center" horizontal="left"/></xf>' +
   '</cellXfs>' +
   '</styleSheet>'
 
@@ -660,6 +669,31 @@ function buildSheetXml(doc) {
     rowIndex += 1
   }
 
+  const addPerimeterMergedRow = ({ text, endCol, leftStyle, middleStyle, rightStyle, height }) => {
+    mergeCells.push(`A${rowIndex}:${colRef(endCol)}${rowIndex}`)
+    addCellRow(
+      Array.from({ length: endCol + 1 }, (_, col) => ({
+        col,
+        value: col === 0 ? text : '',
+        style: col === 0 ? leftStyle : col === endCol ? rightStyle : middleStyle,
+      })),
+      height,
+    )
+  }
+
+  const addTotalRow = (label, value) => {
+    mergeCells.push(`A${rowIndex}:M${rowIndex}`)
+    const labelCells = Array.from({ length: 13 }, (_, col) => ({
+      col,
+      value: col === 0 ? label : '',
+      style: col === 0 ? 18 : col === 12 ? 20 : 19,
+    }))
+    addCellRow([
+      ...labelCells,
+      { col: 13, value: value ?? '-', style: 7 },
+    ], 24)
+  }
+
   const alignStyle = (align) => {
     if (align === 'center') return 7
     if (align === 'right') return 8
@@ -683,15 +717,19 @@ function buildSheetXml(doc) {
 
   doc.rows.forEach((row) => {
     if (row.kind === 'section') {
-      addMergedRow(row.label, 15, colCount, 24)
+      addPerimeterMergedRow({
+        text: row.label,
+        endCol: colCount - 1,
+        leftStyle: 15,
+        middleStyle: 16,
+        rightStyle: 17,
+        height: 24,
+      })
       addSectionHeader()
       return
     }
     if (row.kind === 'total') {
-      addMergedRow(row.label, 9, colCount - 1, 24)
-      addCellRow([
-        { col: colCount - 1, value: row.value, style: 7 },
-      ], 24)
+      addTotalRow(row.label, row.value)
       return
     }
     // data row
@@ -726,10 +764,7 @@ function buildSheetXml(doc) {
   })
 
   if (!doc.rows.some((row) => row.kind === 'total')) {
-    addMergedRow('TOTAL DENDA SLA', 9, colCount - 1, 24)
-    addCellRow([
-      { col: colCount - 1, value: doc.totalDenda ?? '-', style: 7 },
-    ], 24)
+    addTotalRow('TOTAL DENDA SLA', doc.totalDenda)
   }
 
   const signatureGroups = doc.signatureGroups ?? []
