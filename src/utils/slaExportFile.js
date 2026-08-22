@@ -567,7 +567,7 @@ const STYLES_XML =
   '<font><b/><sz val="14"/><name val="Calibri"/></font>' +
   '</fonts>' +
   '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>' +
-  '<borders count="2">' +
+  '<borders count="5">' +
   '<border/>' +
   '<border>' +
   '<left style="thin"><color rgb="FF000000"/></left>' +
@@ -575,9 +575,12 @@ const STYLES_XML =
   '<top style="thin"><color rgb="FF000000"/></top>' +
   '<bottom style="thin"><color rgb="FF000000"/></bottom>' +
   '</border>' +
+  '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom/></border>' +
+  '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top/><bottom/></border>' +
+  '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top/><bottom style="thin"><color rgb="FF000000"/></bottom></border>' +
   '</borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-  '<cellXfs count="10">' +
+  '<cellXfs count="13">' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">' +
   '<alignment wrapText="1" vertical="center" horizontal="center"/>' +
@@ -604,6 +607,9 @@ const STYLES_XML =
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">' +
   '<alignment wrapText="1" vertical="center" horizontal="left"/>' +
   '</xf>' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="2" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="3" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="4" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top" horizontal="center"/></xf>' +
   '</cellXfs>' +
   '</styleSheet>'
 
@@ -697,18 +703,22 @@ function buildSheetXml(doc) {
     }))
     if (row.runLen > 1) {
       if (row.runIndex === 0) {
-        // anchor: clear the merged follower cells so Excel shows a clean merge
+        // The two visible merged columns stay independent: No in A and scope in B.
         cells[0].value = row.no ?? row.cells[0]
         cells[1].value = row.scope ?? row.cells[1]
+        cells[0].style = 10
+        cells[1].style = 10
       } else {
         cells[0].value = null
         cells[1].value = null
-        cells[0].style = 6
-        cells[1].style = 6
+        const isLast = row.runIndex === row.runLen - 1
+        cells[0].style = isLast ? 12 : 11
+        cells[1].style = isLast ? 12 : 11
       }
-      // record merge for the anchor
+      // Record independent vertical merge ranges. Never merge A:B together.
       if (row.runIndex === 0) {
-        mergeCells.push(`A${baseRow}:B${baseRow + (row.runLen - 1)}`)
+        mergeCells.push(`A${baseRow}:A${baseRow + (row.runLen - 1)}`)
+        mergeCells.push(`B${baseRow}:B${baseRow + (row.runLen - 1)}`)
       }
     }
     addCellRow(cells)
