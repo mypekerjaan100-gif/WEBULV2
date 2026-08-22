@@ -80,15 +80,23 @@ export async function handleListUsers(
   );
 
   // 3. Fetch system role memberships with role names
-  const { data: memberships } = await callerClient
+  const { data: memberships, error: membershipsError } = await callerClient
     .from("system_role_memberships")
-    .select("user_id, status, system_roles!inner(code)")
+    .select("user_id, status, authorization_roles!inner(code)")
     .in("user_id", userIds);
+
+  if (membershipsError) {
+    console.error("System role membership query failed");
+    return {
+      status: 500,
+      body: { error: "system_role_query_failed", message: "Unable to load system roles" },
+    };
+  }
 
   const roleMap = new Map<string, string[]>();
   for (const m of memberships || []) {
     const uid = m.user_id as string;
-    const code = (m.system_roles as { code: string })?.code;
+    const code = (m.authorization_roles as { code: string })?.code;
     if (!code) continue;
     if (!roleMap.has(uid)) roleMap.set(uid, []);
     roleMap.get(uid)!.push(code);
