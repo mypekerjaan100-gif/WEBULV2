@@ -186,10 +186,19 @@ export async function fetchPositionsFromSupabase() {
 export async function fetchLocationsFromSupabase() {
   const { data, error } = await supabase
     .from('locations')
-    .select('*')
-    .order('name')
+    .select('id, legacy_key, contract_id, up3_id, unit_id, type, own_status')
+    .order('legacy_key')
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map((location) => ({
+    id: location.id,
+    legacyKey: location.legacy_key,
+    contractId: location.contract_id,
+    up3Id: location.up3_id,
+    unitId: location.unit_id,
+    type: location.type,
+    ownStatus: location.own_status,
+    nameHistory: [],
+  }))
 }
 
 export async function fetchOrganizationUnitsFromSupabase() {

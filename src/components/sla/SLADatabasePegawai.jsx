@@ -23,7 +23,7 @@ import {
   retirementAgeDateFor,
   retirementEffectiveDateFor,
 } from '../../data/pensiunPelayananTeknik.js'
-import { currentLocationNameOf, effectiveStatusOfLocation } from '../../data/lokasiPelayananTeknik.js'
+import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 
 const inputClass = 'sla-input sla-input-text'
 const PAGE_SIZE = 20
@@ -116,12 +116,23 @@ export default function SLADatabasePegawai({
   const orgUnitByKey = orgMap
     ? new Map(orgMap.units.map((u) => [u.legacyKey, u]))
     : new Map()
+  const resolveUnitUuid = (id) =>
+    orgUnitByUuid.get(id)?.uuid ?? orgUnitByKey.get(id)?.uuid ?? null
+  const resolvedContractUuid = orgMap?.contractUuid ?? null
+  const resolvedUp3Uuid = orgMap?.up3Uuid ?? null
+  const selectedPreviewUnitUuid = resolveUnitUuid(unitId)
+  const resolvedUnitUuids = orgMap?.scopedUnitUuids ?? []
+  const scopeUnitIds = role === 'ulp'
+    ? [selectedPreviewUnitUuid]
+    : resolvedUnitUuids
+  const scopedUnitIds = scopeUnitIds.filter(Boolean)
   const scopedJabatan = jabatanOfScope(jabatan, contractScope.contractId, up3Id)
   const jabatanById = new Map(scopedJabatan.map((j) => [j.id, j]))
   const scopedLocations = locations.filter(
     (l) =>
-      (l.contractId == null || l.contractId === contractScope.contractId) &&
-      (l.up3Id == null || l.up3Id === up3Id),
+      l.contractId === resolvedContractUuid &&
+      l.up3Id === resolvedUp3Uuid &&
+      scopedUnitIds.includes(l.unitId),
   )
   const locationById = new Map(scopedLocations.map((l) => [l.id, l]))
   const unitName = (id) => {
@@ -135,28 +146,27 @@ export default function SLADatabasePegawai({
     return id
   }
   const positionName = (posId) => jabatanById.get(posId)?.name ?? null
-  const locationName = (locId) => currentLocationNameOf(locationById.get(locId)) ?? null
-  const resolvedContractUuid = orgMap?.contractUuid ?? contractScope.contractId
-  const resolvedUp3Uuid = orgMap?.up3Uuid ?? up3Id
-  const resolvedUnitUuids = orgMap?.scopedUnitUuids ?? []
-  const scopeUnitIds = role === 'ulp'
-    ? [unitId]
-    : [resolvedUp3Uuid, ...resolvedUnitUuids.filter((uuid) => uuid !== resolvedUp3Uuid)]
-  const scopedUnitIds = scopeUnitIds.filter(Boolean)
+  const locationName = (locId) => {
+    const location = locationById.get(locId)
+    if (!location) return null
+    return (
+      currentLocationNameOf(location) ||
+      (location.type === 'UNIT_OFFICE' ? unitName(location.unitId) : location.legacyKey) ||
+      location.id
+    )
+  }
   const todayStr = today()
   const pensionPolicy = activePensionPolicy(pensionPolicies, contractScope.contractId, up3Id, todayStr)
-  const up3Unit = units.find((u) => u.type === 'UP3' && u.id === up3Id)
-  const up3Office = scopedLocations.find(
-    (l) => l.unitId === up3Unit?.id && l.type === 'UNIT_OFFICE',
+  const activeScopedLocations = scopedLocations.filter(
+    (location) =>
+      location.ownStatus === 'Aktif' &&
+      orgUnitByUuid.get(location.unitId)?.status === 'Aktif',
   )
   const locationOptionsFor = (unitId) =>
-    scopedLocations.filter(
-      (l) => l.unitId === unitId && effectiveStatusOfLocation(scopedLocations, units, l.id) === 'Aktif',
-    )
-  const filterLocationOptions = (role === 'ulp' ? [unitId] : scopeUnitIds)
+    activeScopedLocations.filter((location) => location.unitId === unitId)
+  const filterLocationOptions = scopeUnitIds
     .flatMap((unitId) =>
-      scopedLocations
-        .filter((l) => l.unitId === unitId)
+      locationOptionsFor(unitId)
         .map((l) => ({ id: l.id, label: `${locationName(l.id)} (${unitName(unitId)})` })),
     )
     .sort((a, b) => (a.label < b.label ? -1 : 1))
@@ -291,7 +301,7 @@ export default function SLADatabasePegawai({
   const openAdd = () => {
     const defaultUnitId =
       role === 'ulp'
-        ? unitId
+        ? selectedPreviewUnitUuid
         : resolvedUnitUuids.filter((uuid) => uuid !== resolvedUp3Uuid)[0] ?? resolvedUp3Uuid ?? ''
     setForm(emptyForm(defaultUnitId, resolvedUp3Uuid))
     setTab('utama')
@@ -1015,6 +1025,11 @@ export default function SLADatabasePegawai({
         perubahannya menjadi Pending Approval; perpindahan antar-ULP hanya Admin
         UP3. Penambahan/edit pegawai masih disimpan di state lokal (prototype).
       </p>
+      {orgMap?.warning && (
+        <p className="sla-blocked-note">
+          Nama organisasi Supabase tidak dapat dimuat: {orgMap.warning}
+        </p>
+      )}
 
       {role === 'up3' && (
         <div className="sla-master-actions" style={{ marginBottom: '12px' }}>

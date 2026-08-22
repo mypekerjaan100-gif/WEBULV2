@@ -34,12 +34,7 @@ import {
 } from '../../data/organisasiPelayananTeknik.js'
 import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
 import { reconcileLocationsFromUnits, seedWorkLocationsFromUnits } from '../../data/lokasiPelayananTeknik.js'
-import {
-  resolveLegacyKeyToUuid,
-  resolveContractCodeToUuid,
-  getChildUuidsOfUp3,
-  getOrgUnits,
-} from '../../data/orgIdMap.js'
+import { getOrganizationScope } from '../../data/orgIdMap.js'
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
 import {
@@ -87,7 +82,12 @@ export default function SLAPelayananTeknikPage({
   const auth = useAuth()
   const [employees, setEmployees] = useState([])
   const [employeesLoaded, setEmployeesLoaded] = useState(false)
+  const [employeeLocations, setEmployeeLocations] = useState([])
+  const [locationLoadStatus, setLocationLoadStatus] = useState('loading')
+  const [locationLoadError, setLocationLoadError] = useState('')
   const [orgMap, setOrgMap] = useState(null)
+  const [orgMapStatus, setOrgMapStatus] = useState('loading')
+  const [orgMapError, setOrgMapError] = useState('')
 
   useEffect(() => {
     if (!auth?.session) return
@@ -95,9 +95,8 @@ export default function SLAPelayananTeknikPage({
     Promise.all([
       fetchEmployeesFromSupabase({ hasSensitiveRead: true }),
       fetchPositionsFromSupabase(),
-      fetchLocationsFromSupabase(),
     ])
-      .then(([empResult, posRows, locRows]) => {
+      .then(([empResult, posRows]) => {
         if (cancelled) return
         setEmployees(empResult.employees)
         if (posRows.length) {
@@ -117,29 +116,54 @@ export default function SLAPelayananTeknikPage({
       .catch(() => {
         if (!cancelled) setEmployeesLoaded(true)
       })
+    setLocationLoadStatus('loading')
+    setLocationLoadError('')
+    fetchLocationsFromSupabase()
+      .then((locationRows) => {
+        if (cancelled) return
+        setEmployeeLocations(locationRows)
+        setLocationLoadStatus('ready')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setEmployeeLocations([])
+        setLocationLoadError(error.message || 'Gagal memuat lokasi Supabase.')
+        setLocationLoadStatus('error')
+      })
     return () => { cancelled = true }
   }, [auth?.session])
 
   useEffect(() => {
+    if (!auth?.session) {
+      setOrgMap(null)
+      setOrgMapStatus('loading')
+      setOrgMapError('')
+      return undefined
+    }
     let cancelled = false
-    Promise.all([
-      getOrgUnits(),
-      resolveLegacyKeyToUuid(up3Id),
-      resolveContractCodeToUuid(slaContractScope.contractId),
-    ]).then(([orgUnits, up3Uuid, contractUuid]) => {
-      if (cancelled) return
-      const up3ChildUuids = orgUnits
-        .filter((u) => u.type === 'ULP' && u.parentUuid === up3Uuid)
-        .map((u) => u.uuid)
-      setOrgMap({
-        units: orgUnits,
-        up3Uuid,
-        contractUuid,
-        scopedUnitUuids: [up3Uuid, ...up3ChildUuids],
+    setOrgMap(null)
+    setOrgMapStatus('loading')
+    setOrgMapError('')
+    const displayNameByLegacyKey = Object.fromEntries(
+      units.map((unit) => [unit.id, currentNameOf(unit)]),
+    )
+    getOrganizationScope({
+      up3Id,
+      contractCode: slaContractScope.contractId,
+      displayNameByLegacyKey,
+    })
+      .then((scope) => {
+        if (cancelled) return
+        setOrgMap(scope)
+        setOrgMapStatus('ready')
       })
-    }).catch(() => {})
+      .catch((error) => {
+        if (cancelled) return
+        setOrgMapError(error.message || 'Gagal memuat organisasi Supabase.')
+        setOrgMapStatus('error')
+      })
     return () => { cancelled = true }
-  }, [up3Id, slaContractScope.contractId])
+  }, [auth?.session, up3Id, units])
   const [pensionPolicies, setPensionPolicies] = useState(() =>
     initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id),
   )
@@ -475,6 +499,26 @@ export default function SLAPelayananTeknikPage({
           jabatan={jabatan}
           onJabatanChange={setJabatan}
         />
+      ) : moduleId === 'database-pegawai' && orgMapStatus === 'loading' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Memuat organisasi</h2>
+          <p className="placeholder-text">Menyiapkan unit dan lokasi Master Pegawai dari Supabase.</p>
+        </section>
+      ) : moduleId === 'database-pegawai' && orgMapStatus === 'error' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Organisasi tidak dapat dimuat</h2>
+          <p className="sla-blocked-note">{orgMapError}</p>
+        </section>
+      ) : moduleId === 'database-pegawai' && locationLoadStatus === 'loading' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Memuat lokasi</h2>
+          <p className="placeholder-text">Menyiapkan lokasi penempatan dari Supabase.</p>
+        </section>
+      ) : moduleId === 'database-pegawai' && locationLoadStatus === 'error' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Lokasi tidak dapat dimuat</h2>
+          <p className="sla-blocked-note">{locationLoadError}</p>
+        </section>
       ) : moduleId === 'database-pegawai' ? (
         <SLADatabasePegawai
           contractScope={slaContractScope}
@@ -489,7 +533,7 @@ export default function SLAPelayananTeknikPage({
           unitId={effectiveUnitId}
           pensionPolicies={pensionPolicies}
           onPensionPoliciesChange={setPensionPolicies}
-          locations={locations}
+          locations={employeeLocations}
           orgMap={orgMap}
         />
       ) : moduleId === 'sla' ? (
