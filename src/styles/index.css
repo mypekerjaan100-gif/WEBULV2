@@ -2950,8 +2950,179 @@ button {
   }
 }
 
-/* Preview scroll for table */
-.sla-preview-scroll {
+/* ---------- Master Pegawai Table Horizontal Scroll ---------- */
+
+.sla-pegawai-table-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
   border-radius: var(--radius);
-  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+}
+
+.sla-pegawai-table {
+  min-width: 1600px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sla-pegawai-table th,
+.sla-pegawai-table td {
+  padding: 12px 14px;
+  vertical-align: middle;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sla-pegawai-table th {
+  position: sticky;
+  top: 0;
+  background: #eef1f5;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 2;
+}
+
+.sla-pegawai-table td {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sla-pegawai-table tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.sla-pegawai-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Sticky Aksi column */
+.sla-pegawai-table th:last-child,
+.sla-pegawai-table td:last-child {
+  position: sticky;
+  right: 0;
+  background: var(--color-surface);
+  z-index: 3;
+  border-left: 1px solid var(--color-border);
+}
+
+.sla-pegawai-table th:last-child {
+  z-index: 4;
+}
+
+.sla-pegawai-table td:last-child {
+  border-right: none;
+}
+
+/* Allow wrapping for specific columns */
+.sla-pegawai-table td:nth-child(2),   /* Nama */
+.sla-pegawai-table td:nth-child(4),   /* Lokasi Penempatan */
+.sla-pegawai-table td:nth-child(5) {  /* Jabatan */
+  white-space: normal;
+  word-break: break-word;
+  max-width: 220px;
+}
+
+.sla-pegawai-table th:nth-child(2),
+.sla-pegawai-table th:nth-child(4),
+.sla-pegawai-table th:nth-child(5) {
+  white-space: normal;
+}
+
+/* Keep numeric/id columns from wrapping */
+.sla-pegawai-table td:nth-child(1),   /* NIP */
+.sla-pegawai-table td:nth-child(6),   /* Tgl Lahir */
+.sla-pegawai-table td:nth-child(7),   /* Masa Pensiun */
+.sla-pegawai-table td:nth-child(8),   /* Bank */
+.sla-pegawai-table td:nth-child(9),   /* No Rekening */
+.sla-pegawai-table td:nth-child(10),  /* Tarif Lembur/Jam */
+.sla-pegawai-table td:nth-child(11),  /* Status */
+.sla-pegawai-table td:nth-child(12) { /* Approval */
+  white-space: nowrap;
+}
+
+/* Status/Approval badges in table */
+.sla-pegawai-table .sla-status-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sla-table-sub {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* Pagination improvements */
+.sla-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sla-pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  flex-wrap: wrap;
+}
+
+.sla-pagination-sep {
+  color: var(--color-border);
+}
+
+.sla-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sla-page-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sla-page-size-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.sla-page-size-select {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+  min-width: 60px;
+}
+
+.sla-page-size-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+  .sla-pagination {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .sla-pagination-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
 }

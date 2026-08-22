@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   currentNameOf,
   ulpIdsOfUp3,
@@ -243,9 +243,12 @@ export default function SLADatabasePegawai({
     }
     return true
   })
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const [pageSize, setPageSize] = useState(30)
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, pageCount)
-  const visibleRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const visibleRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const startRow = filtered.length > 0 ? (currentPage - 1) * pageSize + 1 : 0
+  const endRow = Math.min(currentPage * pageSize, filtered.length)
 
   const exportMasterPegawai = () => {
     const columns = [
@@ -1381,8 +1384,8 @@ export default function SLADatabasePegawai({
         </div>
       </div>
 
-      <div className="sla-preview-scroll">
-        <table className="sla-preview-table">
+      <div className="sla-table-wrap sla-pegawai-table-wrap">
+        <table className="sla-preview-table sla-pegawai-table">
           <thead>
             <tr>
               <th>NIP</th>
@@ -1504,25 +1507,46 @@ export default function SLADatabasePegawai({
       </div>
 
       <div className="sla-pagination">
-        <button
-          type="button"
-          className="sla-btn"
-          disabled={currentPage <= 1}
-          onClick={() => setPage((prev) => prev - 1)}
-        >
-          &lsaquo; Sebelumnya
-        </button>
-        <span className="sla-table-hint">
-          Hal {currentPage} dari {pageCount} ({filtered.length} pegawai)
-        </span>
-        <button
-          type="button"
-          className="sla-btn"
-          disabled={currentPage >= pageCount}
-          onClick={() => setPage((prev) => prev + 1)}
-        >
-          Berikutnya &rsaquo;
-        </button>
+        <div className="sla-pagination-info">
+          <span>{startRow}\u2013{endRow} dari {filtered.length} pegawai</span>
+          <span className="sla-pagination-sep">|</span>
+          <span>Halaman {currentPage} dari {pageCount}</span>
+        </div>
+        <div className="sla-pagination-controls">
+          <div className="sla-page-size">
+            <span className="sla-page-size-label">Tampilkan</span>
+            <select
+              className="sla-page-size-select"
+              value={pageSize}
+              onChange={(e) => {
+                const newSize = Number(e.target.value)
+                setPageSize(newSize)
+                setPage(1)
+              }}
+            >
+              <option value={10}>10</option>
+              <option value={30}>30</option>
+              <option value={50}>50</option>
+            </select>
+            <span className="sla-page-size-label">baris</span>
+          </div>
+          <button
+            type="button"
+            className="sla-btn"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((prev) => prev - 1)}
+          >
+            &lsaquo; Sebelumnya
+          </button>
+          <button
+            type="button"
+            className="sla-btn"
+            disabled={currentPage >= pageCount}
+            onClick={() => setPage((prev) => prev + 1)}
+          >
+            Berikutnya &rsaquo;
+          </button>
+        </div>
       </div>
     </section>
   )
