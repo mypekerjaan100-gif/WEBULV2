@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 interface UserSummary {
   id: string;
@@ -22,8 +22,10 @@ interface UserSummary {
     contractId: string;
     contractName: string;
     role: string;
-    up3Ids: string[];
-    ulpIds: string[];
+    up3Id: string;
+    up3Name: string;
+    ulpId: string | null;
+    ulpName: string | null;
   }[];
 }
 
@@ -33,17 +35,16 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-export async function handleListUsers(
-  callerClient: SupabaseClient,
-): Promise<{ status: number; body: Record<string, unknown> }> {
-  // Create admin client for auth.users access
+export async function handleListUsers(): Promise<{
+  status: number;
+  body: Record<string, unknown>;
+}> {
   const adminClient = createClient(
     requiredEnv("SUPABASE_URL"),
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
-  // 1. Fetch auth users (safe fields only) via admin
   const { data: authUsers, error: authError } =
     await adminClient.auth.admin.listUsers({
       perPage: 1000,
@@ -66,11 +67,31 @@ export async function handleListUsers(
     };
   }
 
-  // 2. Fetch profiles
-  const { data: profiles } = await callerClient
-    .from("profiles")
-    .select("id, display_name, status")
-    .in("id", userIds);
+  const [{ data: profiles }, { data: memberships, error: membershipsError }, { data: employees }, { data: orgMemberships }, { data: contractMemberships }, { data: contracts }, { data: organizationNames }] = await Promise.all([
+    adminClient
+      .from("profiles")
+      .select("id, display_name, status")
+      .in("id", userIds),
+    adminClient
+      .from("system_role_memberships")
+      .select("user_id, status, authorization_roles!inner(code)")
+      .in("user_id", userIds)
+      .eq("status", "ACTIVE"),
+    adminClient.from("employees").select("user_id, contract_id, id").in("user_id", userIds),
+    adminClient
+      .from("organization_memberships")
+      .select("user_id, internal_org_unit_id, organization_role, status, effective_from")
+      .in("user_id", userIds),
+    adminClient
+      .from("contract_memberships")
+      .select("user_id, contract_id, contract_role, operational_up3_id, operational_unit_id, status")
+      .in("user_id", userIds)
+      .eq("status", "ACTIVE"),
+    adminClient.from("contracts").select("id, title"),
+    adminClient
+      .from("organization_name_history")
+      .select("organization_unit_id, name, effective_from, effective_to"),
+  ]);
 
   const profileMap = new Map(
     (profiles || []).map((p: Record<string, unknown>) => [
@@ -78,12 +99,6 @@ export async function handleListUsers(
       p as { id: string; display_name: string; status: string },
     ]),
   );
-
-  // 3. Fetch system role memberships with role names
-  const { data: memberships, error: membershipsError } = await adminClient
-    .from("system_role_memberships")
-    .select("user_id, status, authorization_roles!inner(code)")
-    .in("user_id", userIds);
 
   if (membershipsError) {
     console.error("System role membership query failed");
@@ -101,12 +116,6 @@ export async function handleListUsers(
     if (!roleMap.has(uid)) roleMap.set(uid, []);
     roleMap.get(uid)!.push(code);
   }
-
-  // 4. Fetch employee data for contract summaries
-  const { data: employees } = await callerClient
-    .from("employees")
-    .select("user_id, contract_id, id")
-    .in("user_id", userIds);
 
   const employeeMap = new Map<
     string,
@@ -131,35 +140,27 @@ export async function handleListUsers(
     }
   }
 
-  // 5. Fetch organization memberships
-  const { data: orgMemberships } = await callerClient
-    .from("organization_memberships")
-    .select(
-      "user_id, unit_id, organization_units!inner(name), role_code, status, assigned_at",
-    )
-    .in("user_id", userIds);
+  const today = new Date().toISOString().slice(0, 10);
+  const nameMap = new Map<string, string>();
+  for (const name of organizationNames || []) {
+    if (name.effective_from <= today && (!name.effective_to || name.effective_to > today)) {
+      nameMap.set(name.organization_unit_id as string, name.name as string);
+    }
+  }
+  const contractNameMap = new Map((contracts || []).map((contract) => [contract.id as string, contract.title as string]));
 
   const orgMap = new Map<string, UserSummary["organizationMemberships"]>();
   for (const om of orgMemberships || []) {
     const uid = om.user_id as string;
     if (!orgMap.has(uid)) orgMap.set(uid, []);
     orgMap.get(uid)!.push({
-      unitId: om.unit_id as string,
-      unitName:
-        (om.organization_units as { name: string })?.name ?? "Unknown",
-      role: om.role_code as string,
+      unitId: om.internal_org_unit_id as string,
+      unitName: nameMap.get(om.internal_org_unit_id as string) ?? "Unknown",
+      role: om.organization_role as string,
       status: om.status as string,
-      assignedAt: om.assigned_at as string,
+      assignedAt: om.effective_from as string,
     });
   }
-
-  // 6. Fetch contract memberships
-  const { data: contractMemberships } = await callerClient
-    .from("contract_memberships")
-    .select(
-      "user_id, contract_id, contracts!inner(name), role_code, operational_up3_ids, operational_ulp_ids",
-    )
-    .in("user_id", userIds);
 
   const contractMap = new Map<string, UserSummary["contractMemberships"]>();
   for (const cm of contractMemberships || []) {
@@ -167,15 +168,17 @@ export async function handleListUsers(
     if (!contractMap.has(uid)) contractMap.set(uid, []);
     contractMap.get(uid)!.push({
       contractId: cm.contract_id as string,
-      contractName:
-        (cm.contracts as { name: string })?.name ?? "Unknown",
-      role: cm.role_code as string,
-      up3Ids: (cm.operational_up3_ids as string[]) || [],
-      ulpIds: (cm.operational_ulp_ids as string[]) || [],
+      contractName: contractNameMap.get(cm.contract_id as string) ?? "Unknown",
+      role: cm.contract_role as string,
+      up3Id: cm.operational_up3_id as string,
+      up3Name: nameMap.get(cm.operational_up3_id as string) ?? "Unknown",
+      ulpId: cm.operational_unit_id as string | null,
+      ulpName: cm.operational_unit_id
+        ? nameMap.get(cm.operational_unit_id as string) ?? "Unknown"
+        : null,
     });
   }
 
-  // 7. Assemble response
   const users: UserSummary[] = (authUsers.users || []).map((authUser) => {
     const profile = profileMap.get(authUser.id);
     const roles = roleMap.get(authUser.id) || [];

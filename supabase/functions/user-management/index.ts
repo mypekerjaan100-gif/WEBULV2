@@ -8,6 +8,8 @@ import {
 import { handleListUsers } from "./handlers/listUsers.ts";
 import { handleInviteUser } from "./handlers/inviteUser.ts";
 import { handleSessionContext } from "./handlers/sessionContext.ts";
+import { handleAccessOptions } from "./handlers/accessOptions.ts";
+import { handleAssignContractAccess } from "./handlers/assignContractAccess.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,6 +53,10 @@ Deno.serve(async (request: Request) => {
         auth: { persistSession: false, autoRefreshToken: false },
       },
     );
+    const { data: { user }, error: userError } = await callerClient.auth.getUser();
+    if (userError || !user) {
+      return jsonResponse(401, { error: "authentication_required" });
+    }
 
     if (body.action === "capabilities") {
       const { data, error } = await callerClient.rpc(
@@ -61,7 +67,7 @@ Deno.serve(async (request: Request) => {
     }
 
     if (body.action === "session_context") {
-      const result = await handleSessionContext(callerClient);
+      const result = await handleSessionContext(callerClient, user.id);
       return jsonResponse(result.status, result.body);
     }
 
@@ -78,15 +84,27 @@ Deno.serve(async (request: Request) => {
     }
 
     if (body.action === "list_users") {
-      const result = await handleListUsers(callerClient);
+      const result = await handleListUsers();
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (body.action === "access_options") {
+      const result = await handleAccessOptions();
       return jsonResponse(result.status, result.body);
     }
 
     if (body.action === "invite_user") {
-      // Get actor user ID from auth
-      const { data: { user } } = await callerClient.auth.getUser();
-      if (!user) return jsonResponse(401, { error: "authentication_required" });
       const result = await handleInviteUser(callerClient, body.payload, user.id);
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (body.action === "assign_contract_access") {
+      const result = await handleAssignContractAccess(
+        body.targetUserId,
+        body.targetRoleCode,
+        body.payload,
+        user.id,
+      );
       return jsonResponse(result.status, result.body);
     }
 

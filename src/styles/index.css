@@ -2112,6 +2112,27 @@ button {
   letter-spacing: 0.04em;
 }
 
+.detail-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.detail-section-heading h4 {
+  margin-bottom: 0;
+}
+
+.contract-access-form {
+  border-top: 1px solid var(--color-border);
+  padding-top: 14px;
+}
+
+.contract-access-form .input-select {
+  width: 100%;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: auto 1fr;

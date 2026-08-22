@@ -53,7 +53,120 @@ function SummaryBar({ users }) {
   )
 }
 
-function DetailModal({ user, onClose }) {
+function ContractAccessForm({ user, onSuccess }) {
+  const [options, setOptions] = useState({ contracts: [], scopes: [] })
+  const [contractId, setContractId] = useState('')
+  const [role, setRole] = useState('ADMIN_UP3')
+  const [up3Id, setUp3Id] = useState('')
+  const [ulpId, setUlpId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    callUserManagement('access_options').then(({ data, error: fnError }) => {
+      if (cancelled) return
+      if (fnError) setError(fnError)
+      else setOptions({ contracts: data?.contracts || [], scopes: data?.scopes || [] })
+      setLoading(false)
+    }).catch((err) => {
+      if (!cancelled) {
+        setError(err.message || 'Gagal memuat opsi akses.')
+        setLoading(false)
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const scopes = options.scopes.filter((scope) => scope.contractId === contractId)
+  const selectedScope = scopes.find((scope) => scope.up3Id === up3Id)
+
+  const handleContractChange = (nextContractId) => {
+    setContractId(nextContractId)
+    setUp3Id('')
+    setUlpId('')
+  }
+
+  const handleUp3Change = (nextUp3Id) => {
+    setUp3Id(nextUp3Id)
+    setUlpId('')
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError(null)
+    if (!contractId || !up3Id || (role === 'ADMIN_ULP' && !ulpId)) {
+      setError('Lengkapi kontrak, role, dan scope operasional.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const { data, error: fnError } = await callUserManagement('assign_contract_access', {
+        targetUserId: user.id,
+        targetRoleCode: role,
+        payload: {
+          contractId,
+          contractRole: role,
+          operationalUp3Id: up3Id,
+          operationalUnitId: role === 'ADMIN_ULP' ? ulpId : null,
+        },
+      })
+      if (fnError) {
+        setError(fnError)
+        return
+      }
+      await onSuccess(data)
+    } catch (err) {
+      setError(err.message || 'Gagal mengatur akses.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) return <p className="text-muted">Memuat opsi akses...</p>
+  return (
+    <form onSubmit={handleSubmit} className="contract-access-form">
+      {error && <div className="invite-error-box"><p>{error}</p></div>}
+      <div className="form-group">
+        <label htmlFor="access-contract">Kontrak</label>
+        <select id="access-contract" className="input-select" value={contractId} onChange={(e) => handleContractChange(e.target.value)} required>
+          <option value="">Pilih kontrak</option>
+          {options.contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.title}</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label htmlFor="access-role">Role Kontrak</label>
+        <select id="access-role" className="input-select" value={role} onChange={(e) => { setRole(e.target.value); setUlpId('') }}>
+          <option value="ADMIN_UP3">ADMIN_UP3</option>
+          <option value="ADMIN_ULP">ADMIN_ULP</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label htmlFor="access-up3">UP3</label>
+        <select id="access-up3" className="input-select" value={up3Id} onChange={(e) => handleUp3Change(e.target.value)} disabled={!contractId} required>
+          <option value="">Pilih UP3</option>
+          {scopes.map((scope) => <option key={scope.up3Id} value={scope.up3Id}>{scope.up3Name}</option>)}
+        </select>
+      </div>
+      {role === 'ADMIN_ULP' && (
+        <div className="form-group">
+          <label htmlFor="access-ulp">ULP</label>
+          <select id="access-ulp" className="input-select" value={ulpId} onChange={(e) => setUlpId(e.target.value)} disabled={!up3Id} required>
+            <option value="">Pilih ULP</option>
+            {(selectedScope?.ulps || []).map((ulp) => <option key={ulp.id} value={ulp.id}>{ulp.name}</option>)}
+          </select>
+        </div>
+      )}
+      <button type="submit" className="btn btn-primary" disabled={submitting}>
+        {submitting ? 'Menyimpan...' : 'Simpan Akses'}
+      </button>
+    </form>
+  )
+}
+
+function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
+  const [showAccessForm, setShowAccessForm] = useState(false)
   if (!user) return null
   const hasOrg = user.organizationMemberships.length > 0
   const hasContract = user.contractMemberships.length > 0
@@ -134,8 +247,8 @@ function DetailModal({ user, onClose }) {
                     <tr key={i}>
                       <td>{cm.contractName}</td>
                       <td>{cm.role}</td>
-                      <td>{cm.up3Ids.length > 0 ? cm.up3Ids.join(', ') : '-'}</td>
-                      <td>{cm.ulpIds.length > 0 ? cm.ulpIds.join(', ') : '-'}</td>
+                       <td>{cm.up3Name}</td>
+                       <td>{cm.ulpName || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -146,8 +259,27 @@ function DetailModal({ user, onClose }) {
           </section>
           {!hasRole && !hasOrg && !hasContract && (
             <div className="detail-hint">
-              Atur akses pada tahap berikutnya.
+               Belum ada akses yang ditetapkan.
             </div>
+          )}
+          {isSuperAdmin && (
+            <section className="detail-section">
+              <div className="detail-section-heading">
+                <h4>Atur Akses</h4>
+                <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAccessForm((visible) => !visible)}>
+                  {showAccessForm ? 'Tutup' : 'Atur Akses'}
+                </button>
+              </div>
+              {showAccessForm && (
+                <ContractAccessForm
+                  user={user}
+                  onSuccess={async () => {
+                    await onRefresh()
+                    onClose()
+                  }}
+                />
+              )}
+            </section>
           )}
         </div>
       </div>
@@ -279,9 +411,9 @@ function UserListTable({ users, onSelect }) {
                     ? u.organizationMemberships.map((m) => m.unitName).join(', ')
                     : <span className="text-muted">Belum Ditentukan</span>}
                 </td>
-                <td>
-                  {u.contractMemberships.length > 0
-                    ? u.contractMemberships.map((m) => m.contractName).join(', ')
+                 <td>
+                   {u.contractMemberships.length > 0
+                     ? u.contractMemberships.map((m) => `${m.contractName} / ${m.role} (${m.up3Name}${m.ulpName ? `, ${m.ulpName}` : ''})`).join(', ')
                     : u.contracts.length > 0
                       ? u.contracts.join(', ')
                       : <span className="text-muted">Belum Ditentukan</span>}
@@ -306,7 +438,8 @@ function UserListTable({ users, onSelect }) {
 }
 
 export default function UserListPage({ onBack }) {
-  const { session } = useAuth()
+  const { authority } = useAuth()
+  const isSuperAdmin = authority?.actor?.is_super_admin === true
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -432,7 +565,12 @@ export default function UserListPage({ onBack }) {
       )}
 
       {selectedUser && (
-        <DetailModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        <DetailModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+          isSuperAdmin={isSuperAdmin}
+          onRefresh={fetchUsers}
+        />
       )}
 
       {showInvite && (
