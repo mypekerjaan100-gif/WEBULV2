@@ -3,8 +3,14 @@ import { useAuth } from '../../lib/AppAuth.jsx'
 import {
   fetchEmployeesFromSupabase,
   fetchPositionsFromSupabase,
-  fetchLocationsFromSupabase,
 } from '../../data/employeeRepository.js'
+import {
+  createKantorJaga,
+  deleteKantorJaga,
+  fetchLocationsFromSupabase,
+  renameKantorJaga,
+  setKantorJagaStatus,
+} from '../../data/locationRepository.js'
 import SLAContextBar from '../../components/sla/SLAContextBar.jsx'
 import SLAIndicatorTable from '../../components/sla/SLAIndicatorTable.jsx'
 import SLAExportPreview from '../../components/sla/SLAExportPreview.jsx'
@@ -33,7 +39,6 @@ import {
   ulpIdsOfUp3,
 } from '../../data/organisasiPelayananTeknik.js'
 import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
-import { reconcileLocationsFromUnits, seedWorkLocationsFromUnits } from '../../data/lokasiPelayananTeknik.js'
 import { getOrganizationScope } from '../../data/orgIdMap.js'
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
@@ -76,9 +81,6 @@ export default function SLAPelayananTeknikPage({
   const [versionId, setVersionId] = useState(() => slaVersions[0]?.id ?? '')
   const [exportOpen, setExportOpen] = useState(false)
   const [changeRequests, setChangeRequests] = useState([])
-  const [locations, setLocations] = useState(() =>
-    seedWorkLocationsFromUnits(units, slaContractScope.contractId),
-  )
   const auth = useAuth()
   const [employees, setEmployees] = useState([])
   const [employeesLoaded, setEmployeesLoaded] = useState(false)
@@ -88,6 +90,22 @@ export default function SLAPelayananTeknikPage({
   const [orgMap, setOrgMap] = useState(null)
   const [orgMapStatus, setOrgMapStatus] = useState('loading')
   const [orgMapError, setOrgMapError] = useState('')
+
+  const refreshLocations = useCallback(async () => {
+    setLocationLoadStatus('loading')
+    setLocationLoadError('')
+    try {
+      const locationRows = await fetchLocationsFromSupabase()
+      setEmployeeLocations(locationRows)
+      setLocationLoadStatus('ready')
+      return locationRows
+    } catch (error) {
+      setEmployeeLocations([])
+      setLocationLoadError(error.message || 'Gagal memuat lokasi Supabase.')
+      setLocationLoadStatus('error')
+      throw error
+    }
+  }, [])
 
   useEffect(() => {
     if (!auth?.session) return
@@ -116,22 +134,13 @@ export default function SLAPelayananTeknikPage({
       .catch(() => {
         if (!cancelled) setEmployeesLoaded(true)
       })
-    setLocationLoadStatus('loading')
-    setLocationLoadError('')
-    fetchLocationsFromSupabase()
-      .then((locationRows) => {
-        if (cancelled) return
-        setEmployeeLocations(locationRows)
-        setLocationLoadStatus('ready')
-      })
-      .catch((error) => {
-        if (cancelled) return
-        setEmployeeLocations([])
-        setLocationLoadError(error.message || 'Gagal memuat lokasi Supabase.')
-        setLocationLoadStatus('error')
-      })
     return () => { cancelled = true }
   }, [auth?.session])
+
+  useEffect(() => {
+    if (!auth?.session) return
+    refreshLocations().catch(() => {})
+  }, [auth?.session, refreshLocations])
 
   useEffect(() => {
     if (!auth?.session) {
@@ -222,6 +231,26 @@ export default function SLAPelayananTeknikPage({
       : (ulpUnits[0]?.id ?? up3Id)
   const selectedUnit = units.find((unit) => unit.id === effectiveUnitId)
   const isUp3View = effectiveUnitId === up3Id
+  const masterLocationUnits = (orgMap?.units ?? []).map((unit) => ({
+    id: unit.uuid,
+    type: unit.type,
+    parentUnitId: unit.parentUuid,
+    status: unit.status,
+    nameHistory: [
+      {
+        id: `org-name-${unit.uuid}`,
+        name: unit.displayName,
+        validFrom: null,
+        validTo: null,
+      },
+    ],
+  }))
+  const masterLocationUnitId = orgMap?.units.find(
+    (unit) => unit.uuid === effectiveUnitId || unit.legacyKey === effectiveUnitId,
+  )?.uuid ?? null
+  const masterLocationContractScope = orgMap
+    ? { ...slaContractScope, contractId: orgMap.contractUuid }
+    : slaContractScope
   const slaUnitIds = [
     ...new Set([
       ...Object.keys(slaUlpEntries),
@@ -249,12 +278,6 @@ export default function SLAPelayananTeknikPage({
   const activeVcCount = flatIndicators.filter(
     (indicator) => indicator.inputMode === 'variable-cost',
   ).length
-
-  useEffect(() => {
-    setLocations((prev) =>
-      reconcileLocationsFromUnits(prev, units, slaContractScope.contractId),
-    )
-  }, [units])
 
   useEffect(() => {
     setJabatan((prev) =>
@@ -481,15 +504,54 @@ export default function SLAPelayananTeknikPage({
           onUnitsChange={onUnitsChange}
           referencesContext={{ employees, signatureGroups, slaUnitIds }}
         />
+      ) : moduleId === 'master-lokasi' && orgMapStatus === 'loading' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Memuat organisasi</h2>
+          <p className="placeholder-text">Menyiapkan hierarki Master Lokasi dari Supabase.</p>
+        </section>
+      ) : moduleId === 'master-lokasi' && orgMapStatus === 'error' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Organisasi tidak dapat dimuat</h2>
+          <p className="sla-blocked-note">{orgMapError}</p>
+        </section>
+      ) : moduleId === 'master-lokasi' && locationLoadStatus === 'loading' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Memuat lokasi</h2>
+          <p className="placeholder-text">Menyiapkan Master Lokasi dari Supabase.</p>
+        </section>
+      ) : moduleId === 'master-lokasi' && locationLoadStatus === 'error' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Lokasi tidak dapat dimuat</h2>
+          <p className="sla-blocked-note">{locationLoadError}</p>
+        </section>
       ) : moduleId === 'master-lokasi' ? (
         <SLAMasterLokasi
-          contractScope={slaContractScope}
-          up3Id={up3Id}
-          units={scopedUnits}
-          locations={locations}
-          onLocationsChange={setLocations}
+          contractScope={masterLocationContractScope}
+          up3Id={orgMap.up3Uuid}
+          units={masterLocationUnits}
+          locations={employeeLocations}
           role={role}
-          unitId={effectiveUnitId}
+          unitId={masterLocationUnitId}
+          canMutate={Boolean(auth?.session)}
+          onCreateLocation={async (draft) => {
+            await createKantorJaga({
+              ...draft,
+              contractId: orgMap.contractUuid,
+            })
+            await refreshLocations()
+          }}
+          onRenameLocation={async (draft) => {
+            await renameKantorJaga(draft)
+            await refreshLocations()
+          }}
+          onStatusLocation={async (draft) => {
+            await setKantorJagaStatus(draft)
+            await refreshLocations()
+          }}
+          onDeleteLocation={async (locationId) => {
+            await deleteKantorJaga(locationId)
+            await refreshLocations()
+          }}
           referencesContext={{ employees, changeRequests }}
         />
       ) : moduleId === 'master-jabatan' ? (

@@ -1,14 +1,11 @@
 import { Fragment, useState } from 'react'
 import { currentNameOf, effectiveStatusOf } from '../../data/organisasiPelayananTeknik.js'
 import {
-  addWorkLocation,
   collectLocationReferences,
   currentLocationNameOf,
   currentLocationUsers,
-  deleteWorkLocation,
   effectiveStatusOfLocation,
-  renameWorkLocation,
-  setLocationOwnStatus,
+  today,
 } from '../../data/lokasiPelayananTeknik.js'
 
 const inputClass = 'sla-input sla-input-text'
@@ -27,29 +24,40 @@ export default function SLAMasterLokasi({
   up3Id,
   units,
   locations,
-  onLocationsChange,
   role,
   unitId,
+  canMutate,
+  onCreateLocation,
+  onRenameLocation,
+  onStatusLocation,
+  onDeleteLocation,
   referencesContext = {},
 }) {
   const [expanded, setExpanded] = useState(() => new Set())
   const [addingFor, setAddingFor] = useState(null)
-  const [form, setForm] = useState({ up3Id: '', unitId: '', name: '', ownStatus: 'Aktif' })
+  const [form, setForm] = useState({
+    up3Id: '',
+    unitId: '',
+    name: '',
+    effectiveFrom: today(),
+  })
   const [editingId, setEditingId] = useState(null)
   const [historyId, setHistoryId] = useState(null)
   const [menuFor, setMenuFor] = useState(null)
   const [blocked, setBlocked] = useState(null)
+  const [mutationError, setMutationError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const unitById = new Map(units.map((unit) => [unit.id, unit]))
   const unitName = (id) => currentNameOf(unitById.get(id)) ?? id
   const up3Units = units.filter((unit) => unit.type === 'UP3' && unit.id === up3Id)
-  const isUp3 = role === 'up3'
+  const isUp3Preview = role === 'up3'
   const visibleLocations = locations.filter(
     (location) =>
       (location.contractId == null ||
         location.contractId === contractScope.contractId) &&
       (location.up3Id == null || location.up3Id === up3Id) &&
-      (isUp3 || location.unitId === unitId),
+      (isUp3Preview || location.unitId === unitId),
   )
   const employees = referencesContext.employees ?? []
 
@@ -63,11 +71,12 @@ export default function SLAMasterLokasi({
 
   const resetForms = () => {
     setAddingFor(null)
-    setForm({ up3Id: '', unitId: '', name: '', ownStatus: 'Aktif' })
+    setForm({ up3Id: '', unitId: '', name: '', effectiveFrom: today() })
     setEditingId(null)
     setHistoryId(null)
     setMenuFor(null)
     setBlocked(null)
+    setMutationError('')
   }
 
   const startAdd = (unit) => {
@@ -81,7 +90,7 @@ export default function SLAMasterLokasi({
       up3Id: up3?.id ?? unit.id,
       unitId: firstUlp,
       name: '',
-      ownStatus: 'Aktif',
+      effectiveFrom: today(),
     })
     setAddingFor(unit.id)
     setExpanded((prev) => new Set(prev).add(unit.id))
@@ -90,7 +99,12 @@ export default function SLAMasterLokasi({
   const startEdit = (location) => {
     resetForms()
     setEditingId(location.id)
-    setForm({ up3Id: '', unitId: '', name: currentLocationNameOf(location), ownStatus: 'Aktif' })
+    setForm({
+      up3Id: '',
+      unitId: '',
+      name: currentLocationNameOf(location),
+      effectiveFrom: today(),
+    })
   }
 
   const startHistory = (location) => {
@@ -98,38 +112,63 @@ export default function SLAMasterLokasi({
     setHistoryId(location.id)
   }
 
-  const submitAdd = () => {
-    if (!isUp3 || form.up3Id !== up3Id) return
+  const submitAdd = async () => {
+    if (!canMutate || form.up3Id !== up3Id) return
     const name = form.name.trim()
-    if (!name || !form.unitId || !addingFor) return
-    onLocationsChange(
-      addWorkLocation(locations, {
-        contractId: contractScope.contractId,
-        up3Id: form.up3Id,
+    if (!name || !form.unitId || !form.effectiveFrom || !addingFor) return
+    setSaving(true)
+    setMutationError('')
+    try {
+      await onCreateLocation({
         unitId: form.unitId,
         name,
-        ownStatus: form.ownStatus,
-      }),
-    )
-    resetForms()
+        effectiveFrom: form.effectiveFrom,
+      })
+      resetForms()
+    } catch (error) {
+      setMutationError(error.message || 'Gagal menambah Kantor Jaga.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const submitRename = (location) => {
-    if (!isUp3 || location.up3Id !== up3Id) return
-    if (!form.name.trim()) return
-    onLocationsChange(renameWorkLocation(locations, location.id, form.name))
-    resetForms()
+  const submitRename = async (location) => {
+    if (!canMutate || location.up3Id !== up3Id) return
+    if (!form.name.trim() || !form.effectiveFrom) return
+    setSaving(true)
+    setMutationError('')
+    try {
+      await onRenameLocation({
+        locationId: location.id,
+        name: form.name.trim(),
+        effectiveFrom: form.effectiveFrom,
+      })
+      resetForms()
+    } catch (error) {
+      setMutationError(error.message || 'Gagal mengubah nama Kantor Jaga.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const toggleStatus = (location) => {
-    if (!isUp3 || location.up3Id !== up3Id) return
-    onLocationsChange(
-      setLocationOwnStatus(locations, location.id, location.ownStatus === 'Aktif' ? 'Nonaktif' : 'Aktif'),
-    )
+  const toggleStatus = async (location) => {
+    if (!canMutate || location.up3Id !== up3Id) return
+    setSaving(true)
+    setMutationError('')
+    try {
+      await onStatusLocation({
+        locationId: location.id,
+        ownStatus: location.ownStatus === 'Aktif' ? 'Nonaktif' : 'Aktif',
+      })
+    } catch (error) {
+      setMutationError(error.message || 'Gagal mengubah status Kantor Jaga.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const requestDelete = (location) => {
-    if (!isUp3 || location.up3Id !== up3Id) return
+  const requestDelete = async (location) => {
+    if (!canMutate || location.up3Id !== up3Id) return
     const refs = collectLocationReferences(location.id, referencesContext)
     if (refs.length) {
       setMenuFor(null)
@@ -138,7 +177,17 @@ export default function SLAMasterLokasi({
     }
     setMenuFor(null)
     const ok = window.confirm(`Hapus permanen lokasi "${currentLocationNameOf(location)}"?`)
-    if (ok) onLocationsChange(deleteWorkLocation(locations, location.id))
+    if (!ok) return
+    setSaving(true)
+    setMutationError('')
+    try {
+      await onDeleteLocation(location.id)
+      resetForms()
+    } catch (error) {
+      setMutationError(error.message || 'Gagal menghapus Kantor Jaga.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const renderStatusBadge = (ownStatus) => (
@@ -175,13 +224,13 @@ export default function SLAMasterLokasi({
   }
 
   const renderKjActions = (location) => {
-    if (!isUp3) return <span className="sla-loc-hint">read-only</span>
+    if (!canMutate) return <span className="sla-loc-hint">read-only</span>
     return (
       <div className="sla-loc-actions">
-        <button type="button" className="sla-btn" onClick={() => startEdit(location)}>
+        <button type="button" className="sla-btn" disabled={saving} onClick={() => startEdit(location)}>
           Edit
         </button>
-        <button type="button" className="sla-btn" onClick={() => toggleStatus(location)}>
+        <button type="button" className="sla-btn" disabled={saving} onClick={() => toggleStatus(location)}>
           {location.ownStatus === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}
         </button>
         <div className="sla-loc-menu-wrap">
@@ -197,7 +246,7 @@ export default function SLAMasterLokasi({
               <button type="button" className="sla-loc-menu-item" onClick={() => startHistory(location)}>
                 Riwayat
               </button>
-              <button type="button" className="sla-loc-menu-item" onClick={() => requestDelete(location)}>
+              <button type="button" className="sla-loc-menu-item" disabled={saving} onClick={() => requestDelete(location)}>
                 Hapus
               </button>
             </div>
@@ -226,7 +275,7 @@ export default function SLAMasterLokasi({
         <td>{currentLocationUsers(employees, location.id)} pegawai</td>
         <td>
           {location.type === 'UNIT_OFFICE' ? (
-            isUp3 ? (
+            canMutate ? (
               <div className="sla-loc-actions">
                 <button type="button" className="sla-btn" onClick={() => startHistory(location)}>
                   Riwayat
@@ -252,8 +301,19 @@ export default function SLAMasterLokasi({
                   onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
                 />
               </div>
+              <div className="sla-context-field">
+                <span className="sla-context-label">Berlaku mulai</span>
+                <input
+                  className={inputClass}
+                  type="date"
+                  value={form.effectiveFrom}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))
+                  }
+                />
+              </div>
               <div className="sla-master-actions">
-                <button type="button" className="sla-btn sla-btn-primary" onClick={() => submitRename(location)}>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={() => submitRename(location)}>
                   Simpan
                 </button>
                 <button type="button" className="sla-btn" onClick={resetForms}>
@@ -303,7 +363,7 @@ export default function SLAMasterLokasi({
       (unit) =>
         unit.type === 'ULP' &&
         (form.up3Id ? unit.parentUnitId === form.up3Id : true) &&
-        (isUp3 || unit.id === unitId),
+        (isUp3Preview || unit.id === unitId),
     )
     return (
       <tr className="sla-edit-row">
@@ -314,7 +374,7 @@ export default function SLAMasterLokasi({
               <select
                 className="sla-context-select"
                 value={form.up3Id}
-                disabled={!isUp3}
+                disabled={!canMutate}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, up3Id: event.target.value, unitId: '' }))
                 }
@@ -331,7 +391,7 @@ export default function SLAMasterLokasi({
               <select
                 className="sla-context-select"
                 value={form.unitId}
-                disabled={!isUp3}
+                disabled={!canMutate}
                 onChange={(event) => setForm((prev) => ({ ...prev, unitId: event.target.value }))}
               >
                 {ulpOptions.length ? (
@@ -355,18 +415,18 @@ export default function SLAMasterLokasi({
               />
             </div>
             <div className="sla-context-field">
-              <span className="sla-context-label">Status</span>
-              <select
-                className="sla-context-select"
-                value={form.ownStatus}
-                onChange={(event) => setForm((prev) => ({ ...prev, ownStatus: event.target.value }))}
-              >
-                <option value="Aktif">Aktif</option>
-                <option value="Nonaktif">Nonaktif</option>
-              </select>
+              <span className="sla-context-label">Berlaku mulai</span>
+              <input
+                className={inputClass}
+                type="date"
+                value={form.effectiveFrom}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))
+                }
+              />
             </div>
             <div className="sla-master-actions">
-              <button type="button" className="sla-btn sla-btn-primary" onClick={submitAdd}>
+              <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={submitAdd}>
                 Simpan
               </button>
               <button type="button" className="sla-btn" onClick={resetForms}>
@@ -396,16 +456,17 @@ export default function SLAMasterLokasi({
     <section className="sla-settings">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Master Lokasi</h2>
-        <span className="sla-status-badge sla-status-draft">Prototype</span>
+        <span className="sla-status-badge sla-status-active">Supabase</span>
       </div>
       <p className="sla-flat-note">
         Lokasi penempatan kerja pegawai ({contractScope.contractName}). UNIT_OFFICE
         adalah lokasi bawaan otomatis yang namanya mengikuti Master Organisasi
         (sinkron otomatis, tidak dapat di-rename manual). KANTOR_JAGA dikelola
-        Admin UP3. Effective Status lokasi mengikuti parent tanpa menimpa own
-        status. Lokasi yang sudah digunakan pegawai tidak dapat dihapus permanen.
+        SUPER_ADMIN pada fase bootstrap. Effective Status lokasi mengikuti parent
+        tanpa menimpa own status. Lokasi yang sudah digunakan pegawai tidak dapat dihapus permanen.
         {role === 'ulp' && ' Admin ULP hanya dapat melihat lokasi unitnya sendiri.'}
       </p>
+      {mutationError && <p className="sla-blocked-note">{mutationError}</p>}
 
       <div className="sla-preview-scroll">
         <table className="sla-preview-table">
@@ -422,7 +483,7 @@ export default function SLAMasterLokasi({
           <tbody>
             {up3Units.map((up3) => {
               const ulps = units.filter((unit) => unit.type === 'ULP' && unit.parentUnitId === up3.id)
-              const visibleUlps = isUp3 ? ulps : ulps.filter((ulp) => ulp.id === unitId)
+              const visibleUlps = isUp3Preview ? ulps : ulps.filter((ulp) => ulp.id === unitId)
               const ulpCount = ulps.length
               return (
                 <Fragment key={up3.id}>
@@ -438,7 +499,7 @@ export default function SLAMasterLokasi({
                     <td>{renderUnitStatus(up3)}</td>
                     <td>{'\u2014'}</td>
                     <td>
-                      {isUp3 && (
+                      {canMutate && (
                         <div className="sla-loc-actions">
                           <button type="button" className="sla-btn" onClick={() => startAdd(up3)}>
                             + Tambah Kantor Jaga
@@ -471,7 +532,7 @@ export default function SLAMasterLokasi({
                             <td>{renderUnitStatus(ulp)}</td>
                             <td>{'\u2014'}</td>
                             <td>
-                              {isUp3 && (
+                              {canMutate && (
                                 <div className="sla-loc-actions">
                                   <button type="button" className="sla-btn" onClick={() => startAdd(ulp)}>
                                     + Tambah Kantor Jaga
