@@ -239,7 +239,7 @@ export default function SLAMasterLokasi({
             className="sla-btn"
             onClick={() => setMenuFor(menuFor === location.id ? null : location.id)}
           >
-            Lainnya {menuFor === location.id ? '\u25b2' : '\u25bc'}
+            {'\u22ee'}
           </button>
           {menuFor === location.id && (
             <div className="sla-loc-menu">
@@ -256,43 +256,40 @@ export default function SLAMasterLokasi({
     )
   }
 
-  const renderLocationRow = (location) => (
-    <Fragment key={location.id}>
-      <tr className="sla-loc-row-loc">
-        <td className="sla-loc-indent-2">
-          {currentLocationNameOf(location)}
-          <div className="sla-table-sub">ID: {location.id}</div>
-        </td>
-        <td>
-          <span
-            className={`sla-loc-badge ${location.type === 'UNIT_OFFICE' ? 'sla-loc-badge-office' : 'sla-loc-badge-kj'}`}
-          >
-            {location.type === 'UNIT_OFFICE' ? 'UNIT OFFICE' : 'KANTOR JAGA'}
-          </span>
-        </td>
-        <td>{unitName(location.unitId)}</td>
-        <td>{renderLocationStatus(location)}</td>
-        <td>{currentLocationUsers(employees, location.id)} pegawai</td>
-        <td>
-          {location.type === 'UNIT_OFFICE' ? (
-            canMutate ? (
-              <div className="sla-loc-actions">
+  const renderLocationCard = (location) => {
+    const typeLabel = location.type === 'UNIT_OFFICE' ? 'UNIT OFFICE' : 'KANTOR JAGA'
+    const typeClass = location.type === 'UNIT_OFFICE' ? 'sla-loc-badge-office' : 'sla-loc-badge-kj'
+    const empCount = currentLocationUsers(employees, location.id)
+    const isUnitOffice = location.type === 'UNIT_OFFICE'
+
+    return (
+      <Fragment key={location.id}>
+        <div className="sla-loc-card sla-loc-card-loc">
+          <div className="sla-loc-card-header">
+            <div className="sla-loc-card-name-row">
+              <span className={`sla-loc-badge ${typeClass}`}>{typeLabel}</span>
+              <span className="sla-loc-card-name">{currentLocationNameOf(location)}</span>
+            </div>
+            <div className="sla-loc-card-meta">
+              <span className="sla-loc-card-emp">{empCount} pegawai</span>
+              {renderLocationStatus(location)}
+            </div>
+          </div>
+          <div className="sla-loc-card-actions">
+            {isUnitOffice ? (
+              canMutate ? (
                 <button type="button" className="sla-btn" onClick={() => startHistory(location)}>
                   Riwayat
                 </button>
-              </div>
+              ) : (
+                <span className="sla-loc-hint">read-only</span>
+              )
             ) : (
-              <span className="sla-loc-hint">read-only</span>
-            )
-          ) : (
-            renderKjActions(location)
-          )}
-        </td>
-      </tr>
-      {editingId === location.id && (
-        <tr className="sla-edit-row">
-          <td colSpan={6}>
-            <div className="sla-sign-group-head">
+              renderKjActions(location)
+            )}
+          </div>
+          {editingId === location.id && (
+            <div className="sla-loc-edit-form">
               <div className="sla-context-field">
                 <span className="sla-context-label">Nama baru</span>
                 <input
@@ -321,43 +318,39 @@ export default function SLAMasterLokasi({
                 </button>
               </div>
             </div>
-          </td>
-        </tr>
-      )}
-      {historyId === location.id && (
-        <tr className="sla-history-row">
-          <td colSpan={6}>
-            <div className="sla-history-list">
-              {[...(location.nameHistory ?? [])]
-                .sort((a, b) => ((a.validFrom ?? '') < (b.validFrom ?? '') ? -1 : 1))
-                .map((entry) => (
-                  <div key={entry.id}>
-                    {entry.name} (sejak {entry.validFrom ?? 'awal'} {'\u2014'}{' '}
-                    {entry.validTo == null ? 'sekarang' : entry.validTo})
-                  </div>
-                ))}
+          )}
+          {historyId === location.id && (
+            <div className="sla-loc-history">
+              <div className="sla-history-list">
+                {[...(location.nameHistory ?? [])]
+                  .sort((a, b) => ((a.validFrom ?? '') < (b.validFrom ?? '') ? -1 : 1))
+                  .map((entry) => (
+                    <div key={entry.id}>
+                      {entry.name} (sejak {entry.validFrom ?? 'awal'} {'\u2014'}{' '}
+                      {entry.validTo == null ? 'sekarang' : entry.validTo})
+                    </div>
+                  ))}
+              </div>
             </div>
-          </td>
-        </tr>
-      )}
-      {blocked?.locationId === location.id && (
-        <tr className="sla-blocked-row">
-          <td colSpan={6}>
-            <p className="sla-blocked-note">
-              Lokasi sudah digunakan oleh {referenceText(blocked.refs)}. Tidak dapat
-              dihapus permanen. Gunakan Nonaktifkan agar lokasi tidak aktif secara
-              efektif.
-            </p>
-            <button type="button" className="sla-btn" onClick={() => setBlocked(null)}>
-              Tutup
-            </button>
-          </td>
-        </tr>
-      )}
-    </Fragment>
-  )
+          )}
+          {blocked?.locationId === location.id && (
+            <div className="sla-blocked-row">
+              <p className="sla-blocked-note">
+                Lokasi sudah digunakan oleh {referenceText(blocked.refs)}. Tidak dapat
+                dihapus permanen. Gunakan Nonaktifkan agar lokasi tidak aktif secara
+                efektif.
+              </p>
+              <button type="button" className="sla-btn" onClick={() => setBlocked(null)}>
+                Tutup
+              </button>
+            </div>
+          )}
+        </div>
+      </Fragment>
+    )
+  }
 
-  const renderAddRow = () => {
+  const renderAddForm = () => {
     if (!addingFor) return null
     const ulpOptions = units.filter(
       (unit) =>
@@ -366,91 +359,168 @@ export default function SLAMasterLokasi({
         (isUp3Preview || unit.id === unitId),
     )
     return (
-      <tr className="sla-edit-row">
-        <td colSpan={6}>
-          <div className="sla-sign-group-head">
-            <div className="sla-context-field">
-              <span className="sla-context-label">UP3</span>
-              <select
-                className="sla-context-select"
-                value={form.up3Id}
-                disabled={!canMutate}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, up3Id: event.target.value, unitId: '' }))
-                }
-              >
-                {up3Units.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {currentNameOf(unit)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="sla-context-field">
-              <span className="sla-context-label">ULP</span>
-              <select
-                className="sla-context-select"
-                value={form.unitId}
-                disabled={!canMutate}
-                onChange={(event) => setForm((prev) => ({ ...prev, unitId: event.target.value }))}
-              >
-                {ulpOptions.length ? (
-                  <option value="" disabled>
-                    Pilih ULP
-                  </option>
-                ) : null}
-                {ulpOptions.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {currentNameOf(unit)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="sla-context-field">
-              <span className="sla-context-label">Nama Kantor Jaga</span>
-              <input
-                className={inputClass}
-                value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-              />
-            </div>
-            <div className="sla-context-field">
-              <span className="sla-context-label">Berlaku mulai</span>
-              <input
-                className={inputClass}
-                type="date"
-                value={form.effectiveFrom}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))
-                }
-              />
-            </div>
-            <div className="sla-master-actions">
-              <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={submitAdd}>
-                Simpan
-              </button>
-              <button type="button" className="sla-btn" onClick={resetForms}>
-                Batal
-              </button>
-            </div>
+      <div className="sla-loc-card sla-loc-card-add">
+        <div className="sla-loc-card-header">
+          <span className="sla-loc-badge sla-loc-badge-add">Tambah Kantor Jaga</span>
+        </div>
+        <div className="sla-loc-add-form">
+          <div className="sla-context-field">
+            <span className="sla-context-label">UP3</span>
+            <select
+              className="sla-context-select"
+              value={form.up3Id}
+              disabled={!canMutate}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, up3Id: event.target.value, unitId: '' }))
+              }
+            >
+              {up3Units.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {currentNameOf(unit)}
+                </option>
+              ))}
+            </select>
           </div>
-        </td>
-      </tr>
+          <div className="sla-context-field">
+            <span className="sla-context-label">ULP</span>
+            <select
+              className="sla-context-select"
+              value={form.unitId}
+              disabled={!canMutate}
+              onChange={(event) => setForm((prev) => ({ ...prev, unitId: event.target.value }))}
+            >
+              {ulpOptions.length ? (
+                <option value="" disabled>
+                  Pilih ULP
+                </option>
+              ) : null}
+              {ulpOptions.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {currentNameOf(unit)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sla-context-field">
+            <span className="sla-context-label">Nama Kantor Jaga</span>
+            <input
+              className={inputClass}
+              value={form.name}
+              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+            />
+          </div>
+          <div className="sla-context-field">
+            <span className="sla-context-label">Berlaku mulai</span>
+            <input
+              className={inputClass}
+              type="date"
+              value={form.effectiveFrom}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))
+              }
+            />
+          </div>
+          <div className="sla-master-actions">
+            <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={submitAdd}>
+              Simpan
+            </button>
+            <button type="button" className="sla-btn" onClick={resetForms}>
+              Batal
+            </button>
+          </div>
+        </div>
+      </div>
     )
   }
 
-  const renderNameCell = (unit, { indentClass, summary }) => (
-    <td className={indentClass}>
-      <button type="button" className="sla-loc-name-btn" onClick={() => toggleExpand(unit.id)}>
-        <span className="sla-tree-toggle" aria-hidden="true">
-          {expanded.has(unit.id) ? '\u25be' : '\u25b8'}
-        </span>
-        {currentNameOf(unit)}
-      </button>
-      {summary != null && <span className="sla-loc-summary">{summary}</span>}
-      <div className="sla-table-sub">ID: {unit.id}</div>
-    </td>
-  )
+  const renderUp3Card = (up3) => {
+    const ulps = units.filter((unit) => unit.type === 'ULP' && unit.parentUnitId === up3.id)
+    const visibleUlps = isUp3Preview ? ulps : ulps.filter((ulp) => ulp.id === unitId)
+    const ulpCount = ulps.length
+    const totalKjCount = units.filter(
+      (unit) => unit.type === 'ULP' && unit.parentUnitId === up3.id
+    ).reduce((sum, ulp) => sum + (visibleLocations.filter((loc) => loc.unitId === ulp.id && loc.type === 'KANTOR_JAGA').length), 0)
+
+    const isExpanded = expanded.has(up3.id)
+
+    return (
+      <Fragment key={up3.id}>
+        <div className="sla-loc-card sla-loc-card-up3">
+          <div className="sla-loc-card-header up3" onClick={() => toggleExpand(up3.id)}>
+            <div className="sla-loc-card-name-row">
+              <span className="sla-tree-toggle" aria-hidden="true">
+                {isExpanded ? '\u25be' : '\u25b8'}
+              </span>
+              <span className="sla-loc-badge sla-loc-badge-up3">UP3</span>
+              <span className="sla-loc-card-name">{currentNameOf(up3)}</span>
+            </div>
+            <div className="sla-loc-card-meta up3">
+              <span className="sla-loc-summary">{ulpCount} ULP · {totalKjCount} Kantor Jaga</span>
+              {renderUnitStatus(up3)}
+            </div>
+          </div>
+          <div className="sla-loc-card-actions">
+            {canMutate && (
+              <button type="button" className="sla-btn" onClick={() => startAdd(up3)}>
+                + Tambah Kantor Jaga
+              </button>
+            )}
+          </div>
+          {addingFor === up3.id && renderAddForm()}
+          {isExpanded && (
+            <div className="sla-up3-children">
+              <div className="sla-up3-locations">
+                {visibleLocations
+                  .filter((location) => location.unitId === up3.id)
+                  .map(renderLocationCard)}
+              </div>
+              {visibleUlps.map((ulp) => {
+                const kjCount = visibleLocations.filter(
+                  (location) => location.unitId === ulp.id && location.type === 'KANTOR_JAGA',
+                ).length
+                const isUlpExpanded = expanded.has(ulp.id)
+
+                return (
+                  <Fragment key={ulp.id}>
+                    <div className="sla-loc-card sla-loc-card-ulp">
+                      <div className="sla-loc-card-header ulp" onClick={() => toggleExpand(ulp.id)}>
+                        <div className="sla-loc-card-name-row">
+                          <span className="sla-tree-toggle" aria-hidden="true">
+                            {isUlpExpanded ? '\u25be' : '\u25b8'}
+                          </span>
+                          <span className="sla-loc-badge sla-loc-badge-ulp">ULP</span>
+                          <span className="sla-loc-card-name">{currentNameOf(ulp)}</span>
+                        </div>
+                        <div className="sla-loc-card-meta ulp">
+                          <span className="sla-loc-summary">{kjCount} Kantor Jaga</span>
+                          {renderUnitStatus(ulp)}
+                        </div>
+                      </div>
+                      <div className="sla-loc-card-actions">
+                        {canMutate && (
+                          <button type="button" className="sla-btn" onClick={() => startAdd(ulp)}>
+                            + Tambah Kantor Jaga
+                          </button>
+                        )}
+                      </div>
+                      {addingFor === ulp.id && renderAddForm()}
+                      {isUlpExpanded && (
+                        <div className="sla-ulp-children">
+                          {visibleLocations
+                            .filter((location) => location.unitId === ulp.id)
+                            .map(renderLocationCard)}
+                        </div>
+                      )}
+                    </div>
+                  </Fragment>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </Fragment>
+    )
+  }
 
   return (
     <section className="sla-settings">
@@ -468,92 +538,8 @@ export default function SLAMasterLokasi({
       </p>
       {mutationError && <p className="sla-blocked-note">{mutationError}</p>}
 
-      <div className="sla-preview-scroll">
-        <table className="sla-preview-table">
-          <thead>
-            <tr>
-              <th>Nama / Hierarki</th>
-              <th>Tipe</th>
-              <th>Unit Induk</th>
-              <th>Status</th>
-              <th>Dipakai Pegawai</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            {up3Units.map((up3) => {
-              const ulps = units.filter((unit) => unit.type === 'ULP' && unit.parentUnitId === up3.id)
-              const visibleUlps = isUp3Preview ? ulps : ulps.filter((ulp) => ulp.id === unitId)
-              const ulpCount = ulps.length
-              return (
-                <Fragment key={up3.id}>
-                  <tr className="sla-loc-row-up3">
-                    {renderNameCell(up3, {
-                      indentClass: 'sla-loc-indent',
-                      summary: `${ulpCount} ULP`,
-                    })}
-                    <td>
-                      <span className="sla-loc-badge sla-loc-badge-up3">UP3</span>
-                    </td>
-                    <td>{'\u2014'}</td>
-                    <td>{renderUnitStatus(up3)}</td>
-                    <td>{'\u2014'}</td>
-                    <td>
-                      {canMutate && (
-                        <div className="sla-loc-actions">
-                          <button type="button" className="sla-btn" onClick={() => startAdd(up3)}>
-                            + Tambah Kantor Jaga
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                  {addingFor === up3.id && renderAddRow()}
-                  {expanded.has(up3.id) &&
-                    visibleLocations
-                      .filter((location) => location.unitId === up3.id)
-                      .map(renderLocationRow)}
-                  {expanded.has(up3.id) &&
-                    visibleUlps.map((ulp) => {
-                      const kjCount = visibleLocations.filter(
-                        (location) => location.unitId === ulp.id && location.type === 'KANTOR_JAGA',
-                      ).length
-                      return (
-                        <Fragment key={ulp.id}>
-                          <tr className="sla-loc-row-ulp">
-                            {renderNameCell(ulp, {
-                              indentClass: 'sla-loc-indent-1',
-                              summary: `${kjCount} Kantor Jaga`,
-                            })}
-                            <td>
-                              <span className="sla-loc-badge sla-loc-badge-ulp">ULP</span>
-                            </td>
-                            <td>{currentNameOf(up3)}</td>
-                            <td>{renderUnitStatus(ulp)}</td>
-                            <td>{'\u2014'}</td>
-                            <td>
-                              {canMutate && (
-                                <div className="sla-loc-actions">
-                                  <button type="button" className="sla-btn" onClick={() => startAdd(ulp)}>
-                                    + Tambah Kantor Jaga
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                          {addingFor === ulp.id && renderAddRow()}
-                          {expanded.has(ulp.id) &&
-                            visibleLocations
-                              .filter((location) => location.unitId === ulp.id)
-                              .map(renderLocationRow)}
-                        </Fragment>
-                      )
-                    })}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
+      <div className="sla-loc-hierarchy">
+        {up3Units.map(renderUp3Card)}
       </div>
     </section>
   )

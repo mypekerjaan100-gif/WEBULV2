@@ -3188,3 +3188,369 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Master Lokasi Hierarchical Cards ---------- */
+
+.sla-loc-hierarchy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sla-loc-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.sla-loc-card-up3 {
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.12);
+}
+
+.sla-loc-card-ulp {
+  border-color: #e0e7ef;
+  margin-left: 16px;
+  border-left: 3px solid var(--color-primary);
+}
+
+.sla-loc-card-loc {
+  margin-left: 32px;
+  border-left: 2px solid #e8edf3;
+  background: #fafbfd;
+}
+
+.sla-loc-card-add {
+  margin-left: 16px;
+  background: #f0f4fa;
+  border-left: 3px solid #1d4ed8;
+}
+
+.sla-loc-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 18px;
+  cursor: default;
+}
+
+.sla-loc-card-header.up3 {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8faff 0%, #f0f5fa 100%);
+  border-bottom: 2px solid var(--color-primary);
+}
+
+.sla-loc-card-header.ulp {
+  padding: 12px 18px;
+  background: #f8faff;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sla-loc-card-header:not(.up3):not(.ulp) {
+  padding: 12px 16px;
+}
+
+.sla-loc-card-header:hover {
+  background: #f5f8fc;
+}
+
+.sla-loc-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sla-tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.sla-loc-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sla-loc-badge-up3 {
+  background: #e8f0fe;
+  color: #1d4ed8;
+}
+
+.sla-loc-badge-ulp {
+  background: #e6f6ea;
+  color: #177c3d;
+}
+
+.sla-loc-badge-office {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.sla-loc-badge-kj {
+  background: #e8f0fe;
+  color: #1d4ed8;
+}
+
+.sla-loc-badge-add {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.sla-loc-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.sla-loc-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.sla-loc-summary {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: #f0f3f7;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.sla-loc-card-emp {
+  font-weight: 600;
+  color: var(--color-primary);
+  font-size: 13px;
+}
+
+.sla-loc-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sla-loc-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sla-tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.sla-loc-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sla-loc-badge-up3 {
+  background: #e8f0fe;
+  color: #1d4ed8;
+}
+
+.sla-loc-badge-ulp {
+  background: #e6f6ea;
+  color: #177c3d;
+}
+
+.sla-loc-badge-office {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.sla-loc-badge-kj {
+  background: #e8f0fe;
+  color: #1d4ed8;
+}
+
+.sla-loc-badge-add {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.sla-loc-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.sla-loc-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.sla-loc-summary {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: #f0f3f7;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.sla-loc-card-emp {
+  font-weight: 600;
+  color: var(--color-primary);
+  font-size: 13px.
+}
+
+.sla-loc-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sla-loc-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic.
+}
+
+.sla-loc-menu-wrap {
+  position: relative.
+}
+
+.sla-loc-menu {
+  position: absolute.
+  top: 100%.
+  right: 0.
+  background: var(--color-surface).
+  border: 1px solid var(--color-border).
+  border-radius: var(--radius).
+  box-shadow: 0 4px 12px rgba(10, 17, 29, 0.12).
+  z-index: 20.
+  min-width: 120px.
+}
+
+.sla-loc-menu-item {
+  display: block.
+  width: 100%.
+  padding: 8px 14px.
+  border: none.
+  background: none.
+  text-align: left.
+  font-size: 13px.
+  color: var(--color-text).
+  cursor: pointer.
+}
+
+.sla-loc-menu-item:hover {
+  background: #f0f3f7.
+}
+
+.sla-loc-edit-form {
+  padding: 14px 18px 0.
+  border-top: 1px solid var(--color-border).
+  background: #f8fafc.
+}
+
+.sla-loc-history {
+  padding: 14px 18px.
+  border-top: 1px solid var(--color-border).
+  background: #f8fafc.
+}
+
+.sla-loc-add-form {
+  padding: 14px 18px.
+  border-top: 1px solid var(--color-border).
+  background: #f8fafc.
+}
+
+.sla-loc-children {
+  padding: 8px 0 0.
+}
+
+.sla-up3-locations {
+  display: flex.
+  flex-direction: column.
+  gap: 8px.
+}
+
+.sla-up3-children {
+  padding-top: 8px.
+}
+
+.sla-ulp-children {
+  padding: 8px 0 0 16px.
+  border-left: 2px solid #e8edf3.
+}
+
+.sla-loc-card-loc {
+  margin-bottom: 8px.
+}
+
+.sla-blocked-row {
+  padding: 14px 18px.
+  background: #fff7ed.
+  border-top: 1px solid #ffedd5.
+}
+
+.sla-blocked-row .sla-blocked-note {
+  margin: 0 0 10px.
+  font-size: 13px.
+  color: #b45309.
+}
+
+.sla-loc-row-up3,
+.sla-loc-row-ulp,
+.sla-loc-row-loc {
+  display: none.
+}
+
+@media (max-width: 768px) {
+  .sla-loc-card-ulp {
+    margin-left: 8px.
+  }
+  .sla-loc-card-loc {
+    margin-left: 16px.
+  }
+  .sla-ulp-children {
+    padding-left: 8px.
+  }
+}
