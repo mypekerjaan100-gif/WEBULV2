@@ -265,6 +265,11 @@ export default function SLAPelayananTeknikPage({
           access.operational_up3_id === orgMap?.up3Uuid,
       ),
   )
+  const isAdminULP = role === 'ulp' && !isSuperAdmin && !!orgMap
+  const adminULPUp3Id = isAdminULP ? orgMap.up3Uuid : null
+  const adminULPUnitId = isAdminULP ? orgMap.contractUuid : null
+  const canMutateULP = !isAdminULP && canMutate
+  const canReorderULP = !isAdminULP && canReorder
   const slaUnitIds = [
     ...new Set([
       ...Object.keys(slaUlpEntries),

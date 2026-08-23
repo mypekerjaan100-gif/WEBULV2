@@ -51,7 +51,7 @@ export default function Sidebar({ open, activeContractId, currentPage, onNavigat
             {contract.title}
           </button>
         ))}
-        {isSuperAdmin && (
+{isSuperAdmin && (
           <>
             <div className="nav-section-title">Manajemen</div>
             <button
@@ -62,7 +62,22 @@ export default function Sidebar({ open, activeContractId, currentPage, onNavigat
               <span className="nav-icon" aria-hidden="true">
                 &#128100;
               </span>
-              Pengguna &amp; Akses
+              Pengguna & Akses
+            </button>
+          </>
+        )}
+        {authority?.actor?.contract_access?.[0]?.role === 'ADMIN_ULP' && (
+          <>
+            <div className="nav-section-title">Master Lokasi</div>
+            <button
+              type="button"
+              className={`nav-item ${currentPage === 'master-lokasi' ? 'nav-item-active' : ''}`}
+              onClick={() => onNavigatePage('master-lokasi')}
+            >
+              <span className="nav-icon" aria-hidden="true">
+                &#9776;
+              </span>
+              Master Lokasi
             </button>
           </>
         )}
