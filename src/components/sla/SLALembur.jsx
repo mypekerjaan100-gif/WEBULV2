@@ -9,38 +9,46 @@ const formatRp = (value) =>
 
 export default function SLALembur({
   contractScope,
-  role,
   up3Id,
   unitId,
-  validUnitIds,
+  periodMonth,
   records,
   employees,
   pensionPolicies,
+  loading,
+  loadError,
+  onRetry,
   onCreate,
   onUpdate,
   onDelete,
 }) {
   const [draft, setDraft] = useState({
     employeeId: '',
-    date: '2026-06-15',
+    date: periodMonth ?? '',
     hours: 2,
     keterangan: '',
   })
   const [editingId, setEditingId] = useState(null)
   const [message, setMessage] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const isUlp = role === 'ulp'
-  const scopeUnitId = isUlp ? unitId : null
   const employeeOptions = availableEmployeesForLembur(employees, {
     contractId: contractScope.contractId,
     up3Id,
-    unitId: scopeUnitId,
-    validUnitIds,
+    unitId,
     date: draft.date,
     pensionPolicies,
   })
+  const editingRecord = records.find((record) => record.id === editingId) ?? null
   const selectedEmployee = employeeOptions.find((entry) => entry.id === draft.employeeId) ?? null
-  const tariff = selectedEmployee ? lemburTarifFor(selectedEmployee, draft.date) : 0
+  const keepsExistingSnapshot = editingRecord &&
+    editingRecord.employeeId === draft.employeeId &&
+    editingRecord.date === draft.date
+  const tariff = keepsExistingSnapshot
+    ? editingRecord.rate
+    : selectedEmployee
+      ? lemburTarifFor(selectedEmployee, draft.date)
+      : 0
 
   const startEdit = (record) => {
     setEditingId(record.id)
@@ -55,30 +63,45 @@ export default function SLALembur({
 
   const cancelEdit = () => {
     setEditingId(null)
-    setDraft({ employeeId: '', date: '2026-06-15', hours: 2, keterangan: '' })
+    setDraft({ employeeId: '', date: periodMonth ?? '', hours: 2, keterangan: '' })
     setMessage(null)
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!tariff) {
+      setMessage('Tarif lembur efektif tidak tersedia pada tanggal yang dipilih.')
+      return
+    }
     const payload = {
       employeeId: draft.employeeId,
       date: draft.date,
       hours: Number(draft.hours) || 0,
       keterangan: draft.keterangan ?? '',
     }
-    const result = editingId
-      ? onUpdate(editingId, payload)
-      : onCreate(payload)
-    setMessage(result?.ok ? result.message ?? (editingId ? 'Lembur diperbarui.' : 'Lembur ditambahkan.') : result?.message ?? 'Gagal menyimpan.')
-    if (result?.ok) {
-      cancelEdit()
+    setSubmitting(true)
+    try {
+      const result = editingId
+        ? await onUpdate(editingId, payload)
+        : await onCreate(payload)
+      setMessage(result?.ok ? result.message ?? (editingId ? 'Lembur diperbarui.' : 'Lembur ditambahkan.') : result?.message ?? 'Gagal menyimpan.')
+      if (result?.ok) {
+        setEditingId(null)
+        setDraft({ employeeId: '', date: periodMonth ?? '', hours: 2, keterangan: '' })
+      }
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const handleDelete = (record) => {
+  const handleDelete = async (record) => {
     if (!window.confirm(`Hapus lembur "${record.employeeName}" tanggal ${record.date}?`)) return
-    const result = onDelete(record.id)
-    setMessage(result?.ok ? result.message ?? 'Lembur dihapus.' : result?.message ?? 'Gagal menghapus.')
+    setSubmitting(true)
+    try {
+      const result = await onDelete(record)
+      setMessage(result?.ok ? result.message ?? 'Lembur dihapus.' : result?.message ?? 'Gagal menghapus.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const sorted = [...records].sort((a, b) => String(b.date).localeCompare(String(a.date)))
@@ -93,7 +116,19 @@ export default function SLALembur({
         </span>
       </div>
 
-      {!employeeOptions.length && !records.length ? (
+      {loadError ? (
+        <div className="placeholder">
+          <h2 className="placeholder-title">Data lembur gagal dimuat</h2>
+          <p className="placeholder-text">{loadError}</p>
+          <button type="button" className="sla-btn" onClick={onRetry}>
+            Coba Lagi
+          </button>
+        </div>
+      ) : loading ? (
+        <div className="placeholder">
+          <h2 className="placeholder-title">Memuat data lembur...</h2>
+        </div>
+      ) : !employeeOptions.length && !records.length ? (
         <div className="placeholder">
           <h2 className="placeholder-title">Tidak ada data lembur</h2>
           <p className="placeholder-text">
@@ -112,6 +147,9 @@ export default function SLALembur({
                 onChange={(event) => setDraft({ ...draft, employeeId: event.target.value })}
               >
                 <option value="">Pilih pegawai aktif</option>
+                {editingRecord && !selectedEmployee && (
+                  <option value={editingRecord.employeeId}>{editingRecord.employeeName}</option>
+                )}
                 {employeeOptions.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.name} ({entry.unitId})
@@ -148,18 +186,19 @@ export default function SLALembur({
               />
             </label>
             <span className="sla-export-scope">
-              Tarif: Rp {formatRp(tariff)}/jam {'\u2014'} total Rp{' '}
-              {formatRp(tariff * (Number(draft.hours) || 0))}
+              {selectedEmployee && !tariff
+                ? 'Tarif lembur efektif tidak tersedia pada tanggal ini.'
+                : `Tarif: Rp ${formatRp(tariff)}/jam \u2014 total Rp ${formatRp(tariff * (Number(draft.hours) || 0))}`}
             </span>
           </div>
           <div className="sla-export-bar">
             <button
               type="button"
               className="sla-btn sla-btn-primary"
-              disabled={!draft.employeeId || !draft.date || !(Number(draft.hours) > 0)}
+              disabled={submitting || !draft.employeeId || !draft.date || !(Number(draft.hours) > 0) || !tariff}
               onClick={handleSubmit}
             >
-              {editingId ? 'Simpan Perubahan' : 'Tambah Lembur'}
+              {submitting ? 'Menyimpan...' : editingId ? 'Simpan Perubahan' : 'Tambah Lembur'}
             </button>
             {editingId && (
               <button type="button" className="sla-btn" onClick={cancelEdit}>
@@ -193,6 +232,9 @@ export default function SLALembur({
                         value={draft.employeeId}
                         onChange={(event) => setDraft({ ...draft, employeeId: event.target.value })}
                       >
+                        {editingRecord && !selectedEmployee && (
+                          <option value={editingRecord.employeeId}>{editingRecord.employeeName}</option>
+                        )}
                         {employeeOptions.map((entry) => (
                           <option key={entry.id} value={entry.id}>
                             {entry.name}
@@ -230,7 +272,7 @@ export default function SLALembur({
                   <td>
                     {editingId === record.id ? (
                       <>
-                        <button type="button" className="sla-btn" onClick={handleSubmit}>
+                        <button type="button" className="sla-btn" disabled={submitting || !tariff} onClick={handleSubmit}>
                           Simpan
                         </button>
                         <button type="button" className="sla-btn" onClick={cancelEdit}>
@@ -239,10 +281,10 @@ export default function SLALembur({
                       </>
                     ) : (
                       <>
-                        <button type="button" className="sla-btn" onClick={() => startEdit(record)}>
+                        <button type="button" className="sla-btn" disabled={submitting} onClick={() => startEdit(record)}>
                           Edit
                         </button>
-                        <button type="button" className="sla-btn" onClick={() => handleDelete(record)}>
+                        <button type="button" className="sla-btn" disabled={submitting} onClick={() => handleDelete(record)}>
                           Hapus
                         </button>
                       </>

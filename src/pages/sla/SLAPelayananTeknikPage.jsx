@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from '../../lib/AppAuth.jsx'
 import {
   fetchEmployeesFromSupabase,
@@ -44,13 +44,12 @@ import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
 import { getOrganizationScope, invalidateOrganizationMap } from '../../data/orgIdMap.js'
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
+import { employeeAssignmentForLembur } from '../../data/lemburPelayananTeknik.js'
 import {
-  createLemburRecord,
-  deleteLemburRecord,
-  initialLemburRecords,
-  scopedLemburRecords,
-  updateLemburRecord,
-} from '../../data/lemburPelayananTeknik.js'
+  deleteOvertimeEntry,
+  listOvertimeEntries,
+  saveOvertimeEntry,
+} from '../../data/overtimeRepository.js'
 import {
   activateScopedVersion,
   deleteScopedDraft,
@@ -87,6 +86,8 @@ export default function SLAPelayananTeknikPage({
   const auth = useAuth()
   const [employees, setEmployees] = useState([])
   const [employeesLoaded, setEmployeesLoaded] = useState(false)
+  const [employeeLoadError, setEmployeeLoadError] = useState('')
+  const [employeeReloadToken, setEmployeeReloadToken] = useState(0)
   const [employeeLocations, setEmployeeLocations] = useState([])
   const [locationLoadStatus, setLocationLoadStatus] = useState('loading')
   const [locationLoadError, setLocationLoadError] = useState('')
@@ -141,6 +142,7 @@ export default function SLAPelayananTeknikPage({
     ])
       .then(([empResult, posRows]) => {
         if (cancelled) return
+        setEmployeeLoadError('')
         setEmployees(empResult.employees)
         if (posRows.length) {
           setJabatan((prev) => {
@@ -156,11 +158,14 @@ export default function SLAPelayananTeknikPage({
         }
         setEmployeesLoaded(true)
       })
-      .catch(() => {
-        if (!cancelled) setEmployeesLoaded(true)
+      .catch((error) => {
+        if (!cancelled) {
+          setEmployeeLoadError(error.message || 'Gagal memuat pegawai Supabase.')
+          setEmployeesLoaded(true)
+        }
       })
     return () => { cancelled = true }
-  }, [auth?.session])
+  }, [auth?.session, employeeReloadToken])
 
   useEffect(() => {
     if (!auth?.session) return
@@ -221,13 +226,11 @@ export default function SLAPelayananTeknikPage({
   const [entriesByUnit, setEntriesByUnit] = useState(() =>
     initialVariableCostForUp3(slaContractScope.contractId, up3Id, units),
   )
-  const [lemburRecords, setLemburRecords] = useState(() =>
-    initialLemburRecords.filter(
-      (record) =>
-        record.contractId === slaContractScope.contractId &&
-        record.up3Id === up3Id,
-    ),
-  )
+  const [lemburRecords, setLemburRecords] = useState([])
+  const [lemburLoadStatus, setLemburLoadStatus] = useState('idle')
+  const [lemburLoadError, setLemburLoadError] = useState('')
+  const lemburRequestId = useRef(0)
+  const lemburScopeKeyRef = useRef('')
 
   const activeModule = pelayananTeknikModules.find((module) => module.id === moduleId)
   const up3Unit = units.find((unit) => unit.type === 'UP3' && unit.id === up3Id) ?? null
@@ -254,6 +257,23 @@ export default function SLAPelayananTeknikPage({
     : role === 'ulp'
       ? null
       : (ulpUnits[0]?.id ?? up3Id)
+  const adminUlpAccess = contractAccess.find(
+    (access) =>
+      access.role === 'ADMIN_ULP' &&
+      access.contract_id === orgMap?.contractUuid &&
+      access.operational_up3_id === orgMap?.up3Uuid,
+  )
+  const selectedUnitUuid = orgMap?.units.find(
+    (entry) => entry.uuid === effectiveUnitId || entry.legacyKey === effectiveUnitId,
+  )?.uuid ?? null
+  const lemburUnitUuid = isAdminUlp
+    ? adminUlpAccess?.operational_unit_id ?? null
+    : role === 'ulp'
+      ? selectedUnitUuid
+      : null
+  const lemburPeriodMonth = periodKeyFromLabel(period)
+  const lemburScopeKey = `${orgMap?.contractUuid ?? ''}:${orgMap?.up3Uuid ?? ''}:${lemburUnitUuid ?? 'up3'}:${lemburPeriodMonth}`
+  lemburScopeKeyRef.current = lemburScopeKey
   const selectedUnit = units.find((unit) => unit.id === effectiveUnitId)
   const isUp3View = effectiveUnitId === up3Id
   const masterLocationUnits = (orgMap?.units ?? []).map((unit) => ({
@@ -313,6 +333,101 @@ export default function SLAPelayananTeknikPage({
   const activeVcCount = flatIndicators.filter(
     (indicator) => indicator.inputMode === 'variable-cost',
   ).length
+
+  const refreshLembur = useCallback(async () => {
+    if (!orgMap?.contractUuid || !orgMap?.up3Uuid || (role === 'ulp' && !lemburUnitUuid)) {
+      setLemburRecords([])
+      setLemburLoadStatus('idle')
+      return
+    }
+    const requestId = ++lemburRequestId.current
+    setLemburLoadStatus('loading')
+    setLemburLoadError('')
+    setLemburRecords([])
+    try {
+      const rows = await listOvertimeEntries({
+        contractId: orgMap.contractUuid,
+        up3Id: orgMap.up3Uuid,
+        unitId: lemburUnitUuid,
+        periodMonth: lemburPeriodMonth,
+      })
+      if (requestId !== lemburRequestId.current) return
+      setLemburRecords(rows)
+      setLemburLoadStatus('ready')
+    } catch (error) {
+      if (requestId !== lemburRequestId.current) return
+      setLemburLoadError(error.message || 'Gagal memuat data lembur Supabase.')
+      setLemburLoadStatus('error')
+    }
+  }, [orgMap?.contractUuid, orgMap?.up3Uuid, role, lemburUnitUuid, lemburPeriodMonth])
+
+  useEffect(() => {
+    if (moduleId !== 'lembur' || !auth?.session) return
+    refreshLembur()
+    return () => { lemburRequestId.current += 1 }
+  }, [moduleId, auth?.session, refreshLembur])
+
+  const saveLembur = async (id, draft) => {
+    if (!draft.date.startsWith(lemburPeriodMonth.slice(0, 7))) {
+      return { ok: false, message: 'Tanggal lembur harus berada dalam periode yang dipilih.' }
+    }
+    const existingRecord = id
+      ? lemburRecords.find((record) => record.id === id)
+      : null
+    const employee = scopedEmployees.find((entry) => entry.id === draft.employeeId)
+    const assignment = employeeAssignmentForLembur(employee, draft.date)
+    const keepsExistingAssignment = existingRecord &&
+      existingRecord.employeeId === draft.employeeId &&
+      existingRecord.date === draft.date
+    if (!keepsExistingAssignment && (!assignment || assignment.contractId !== orgMap?.contractUuid ||
+      assignment.up3Id !== orgMap?.up3Uuid ||
+      (lemburUnitUuid && assignment.unitId !== lemburUnitUuid))) {
+      return { ok: false, message: 'Pegawai di luar scope kontrak/UP3/unit pada tanggal lembur.' }
+    }
+    if (existingRecord && assignment && assignment.unitId !== existingRecord.unitId) {
+      return { ok: false, message: 'Perubahan pegawai/tanggal tidak boleh memindahkan unit record lembur.' }
+    }
+    const writeUnitId = existingRecord?.unitId ?? assignment.unitId
+    const writeScopeKey = lemburScopeKey
+    try {
+      const saved = await saveOvertimeEntry({
+        id,
+        contractId: orgMap.contractUuid,
+        up3Id: orgMap.up3Uuid,
+        unitId: writeUnitId,
+        employeeId: draft.employeeId,
+        date: draft.date,
+        hours: Number(draft.hours),
+        keterangan: draft.keterangan,
+      })
+      if (writeScopeKey === lemburScopeKeyRef.current) {
+        setLemburRecords((current) => id
+          ? current.map((record) => record.id === id ? saved : record)
+          : [saved, ...current])
+      }
+      return { ok: true, message: id ? 'Lembur diperbarui di Supabase.' : 'Lembur disimpan ke Supabase.' }
+    } catch (error) {
+      return { ok: false, message: error.message || 'Gagal menyimpan lembur ke Supabase.' }
+    }
+  }
+
+  const removeLembur = async (record) => {
+    const writeScopeKey = lemburScopeKey
+    try {
+      await deleteOvertimeEntry({
+        id: record.id,
+        contractId: record.contractId,
+        up3Id: record.up3Id,
+        unitId: record.unitId,
+      })
+      if (writeScopeKey === lemburScopeKeyRef.current) {
+        setLemburRecords((current) => current.filter((entry) => entry.id !== record.id))
+      }
+      return { ok: true, message: 'Lembur dihapus dari Supabase.' }
+    } catch (error) {
+      return { ok: false, message: error.message || 'Gagal menghapus lembur dari Supabase.' }
+    }
+  }
 
   useEffect(() => {
     setJabatan((prev) =>
@@ -753,6 +868,16 @@ export default function SLAPelayananTeknikPage({
             </p>
           </section>
         )
+      ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Memuat organisasi</h2>
+          <p className="placeholder-text">Menyiapkan scope Lembur dari Supabase.</p>
+        </section>
+      ) : moduleId === 'lembur' && (orgMapStatus === 'error' || !orgMap) ? (
+        <section className="placeholder">
+          <h2 className="placeholder-title">Scope Lembur tidak tersedia</h2>
+          <p className="sla-blocked-note">{orgMapError || 'Organisasi Supabase tidak tersedia.'}</p>
+        </section>
       ) : moduleId === 'lembur' ? (
         role === 'ulp' && !effectiveUnitId ? (
           <section className="placeholder">
@@ -764,54 +889,26 @@ export default function SLAPelayananTeknikPage({
           </section>
         ) : (
           <SLALembur
-            contractScope={slaContractScope}
-            role={role}
-            up3Id={up3Id}
-            unitId={effectiveUnitId}
-            validUnitIds={scopedUnitIds}
-            records={scopedLemburRecords(
-              lemburRecords,
-              slaContractScope.contractId,
-              up3Id,
-              role === 'ulp' ? effectiveUnitId : null,
-            )}
+            key={`${orgMap?.contractUuid}-${orgMap?.up3Uuid}-${lemburUnitUuid ?? 'up3'}-${lemburPeriodMonth}`}
+            contractScope={{ ...slaContractScope, contractId: orgMap.contractUuid }}
+            up3Id={orgMap.up3Uuid}
+            unitId={lemburUnitUuid}
+            periodMonth={lemburPeriodMonth}
+            records={lemburRecords}
             employees={scopedEmployees}
             pensionPolicies={pensionPolicies}
-            onCreate={(draft) => {
-              const result = createLemburRecord(lemburRecords, draft, {
-                employees: scopedEmployees,
-                contractId: slaContractScope.contractId,
-                up3Id,
-                unitId: role === 'ulp' ? effectiveUnitId : null,
-                validUnitIds: scopedUnitIds,
-                date: draft.date,
-                pensionPolicies,
-              })
-              if (result.ok) setLemburRecords(result.records)
-              return result
+            loading={lemburLoadStatus === 'loading' || !employeesLoaded}
+            loadError={lemburLoadError || employeeLoadError}
+            onRetry={() => {
+              if (employeeLoadError) {
+                setEmployeesLoaded(false)
+                setEmployeeReloadToken((current) => current + 1)
+              }
+              refreshLembur()
             }}
-            onUpdate={(id, patch) => {
-              const result = updateLemburRecord(lemburRecords, id, patch, {
-                employees: scopedEmployees,
-                contractId: slaContractScope.contractId,
-                up3Id,
-                unitId: role === 'ulp' ? effectiveUnitId : null,
-                validUnitIds: scopedUnitIds,
-                date: patch.date,
-                pensionPolicies,
-              })
-              if (result.ok) setLemburRecords(result.records)
-              return result
-            }}
-            onDelete={(id) => {
-              const result = deleteLemburRecord(lemburRecords, id, {
-                contractId: slaContractScope.contractId,
-                up3Id,
-                unitId: role === 'ulp' ? effectiveUnitId : null,
-              })
-              if (result.ok) setLemburRecords(result.records)
-              return result
-            }}
+            onCreate={(draft) => saveLembur(null, draft)}
+            onUpdate={saveLembur}
+            onDelete={removeLembur}
           />
         )
       ) : (

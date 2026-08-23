@@ -93,7 +93,11 @@ export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = 
     return grouped
   }
 
-  const unitHistByEmp = histByEmployee(unitHist, { unit_id: 'unitId' })
+  const unitHistByEmp = histByEmployee(unitHist, {
+    contract_id: 'contractId',
+    up3_id: 'up3Id',
+    unit_id: 'unitId',
+  })
   const posHistByEmp = histByEmployee(posHist, { position_id: 'positionId' })
   const statusHistByEmp = histByEmployee(statusHist, {
     status: 'status',
@@ -154,8 +158,8 @@ export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = 
     mapped.unitHistory = unitHistory.map((e) => ({
       id: e.id,
       unitId: e.unitId,
-      contractId: currentUnit?.contractId ?? null,
-      up3Id: currentUnit?.up3Id ?? null,
+      contractId: e.contractId,
+      up3Id: e.up3Id,
       validFrom: e.validFrom,
       validTo: e.validTo,
     }))
