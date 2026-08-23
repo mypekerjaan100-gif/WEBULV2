@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useCallback } from 'react'
 import { currentNameOf, effectiveStatusOf } from '../../data/organisasiPelayananTeknik.js'
 import {
   collectLocationReferences,
@@ -7,6 +7,10 @@ import {
   effectiveStatusOfLocation,
   today,
 } from '../../data/lokasiPelayananTeknik.js'
+import {
+  reorderOrganizationUnits,
+  reorderLocations,
+} from '../../data/locationRepository.js'
 
 const inputClass = 'sla-input sla-input-text'
 
@@ -47,6 +51,58 @@ export default function SLAMasterLokasi({
   const [blocked, setBlocked] = useState(null)
   const [mutationError, setMutationError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const [dragState, setDragState] = useState({
+    type: null, // 'ulp' | 'location'
+    draggedId: null,
+    draggedName: null,
+    sourceList: null, // array of ids in source list
+  })
+
+  const handleDragStart = useCallback((type, id, name, sourceList) => {
+    setDragState({ type, draggedId: id, draggedName: name, sourceList })
+  }, [])
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  const handleDrop = useCallback(async (targetId) => {
+    if (!dragState.draggedId || dragState.draggedId === targetId) {
+      setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
+      return
+    }
+
+    const { type, draggedId, sourceList } = dragState
+    const sourceIndex = sourceList.indexOf(draggedId)
+    const targetIndex = sourceList.indexOf(targetId)
+
+    if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) {
+      setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
+      return
+    }
+
+    const newList = [...sourceList]
+    newList.splice(sourceIndex, 1)
+    newList.splice(targetIndex, 0, draggedId)
+
+    try {
+      if (type === 'ulp') {
+        await reorderOrganizationUnits(newList)
+      } else if (type === 'location') {
+        await reorderLocations(newList)
+      }
+    } catch (error) {
+      setMutationError(error.message || 'Gagal mengubah urutan')
+    }
+
+    setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
+  }, [])
 
   const unitById = new Map(units.map((unit) => [unit.id, unit]))
   const unitName = (id) => currentNameOf(unitById.get(id)) ?? id
@@ -287,12 +343,31 @@ export default function SLAMasterLokasi({
     const typeClass = location.type === 'UNIT_OFFICE' ? 'sla-loc-badge-office' : 'sla-loc-badge-kj'
     const empCount = currentLocationUsers(employees, location.id)
     const isUnitOffice = location.type === 'UNIT_OFFICE'
+    const locIds = visibleLocations
+      .filter((l) => l.unitId === location.unitId)
+      .map((l) => l.id)
 
     return (
       <Fragment key={location.id}>
-        <div className="sla-loc-card sla-loc-card-loc">
+        <div className="sla-loc-card sla-loc-card-loc"
+          draggable={canMutate && !isUnitOffice}
+          onDragStart={(e) => handleDragStart('location', location.id, currentLocationNameOf(location), locIds)}
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleDrop(location.id)}
+          onDragEnd={handleDragEnd}
+        >
           <div className="sla-loc-card-header">
             <div className="sla-loc-card-name-row">
+              {canMutate && !isUnitOffice && (
+                <span className="sla-drag-handle" draggable="true"
+                  onDragStart={(e) => { e.stopPropagation(); handleDragStart('location', location.id, currentLocationNameOf(location), locIds); }}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => { e.stopPropagation(); handleDrop(location.id); }}
+                  onDragEnd={handleDragEnd}
+                >
+                  {'\u22ee'}
+                </span>
+              )}
               <span className={`sla-loc-badge ${typeClass}`}>{typeLabel}</span>
               <span className="sla-loc-card-name">{currentLocationNameOf(location)}</span>
             </div>
@@ -519,15 +594,32 @@ export default function SLAMasterLokasi({
                 ).length
                 const { total: totalEmp, assigned: assignedEmp, unassigned: unassignedEmp } = getUlpEmployeeCounts(ulp.id)
                 const isUlpExpanded = expanded.has(ulp.id)
+                const ulpIds = visibleUlps.map((u) => u.id)
 
                 return (
                   <Fragment key={ulp.id}>
-                    <div className="sla-loc-card sla-loc-card-ulp">
+                    <div className="sla-loc-card sla-loc-card-ulp"
+                      draggable={canMutate}
+                      onDragStart={(e) => handleDragStart('ulp', ulp.id, currentNameOf(ulp), ulpIds)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(ulp.id)}
+                      onDragEnd={handleDragEnd}
+                    >
                       <div className="sla-loc-card-header ulp" onClick={() => toggleExpand(ulp.id)}>
                         <div className="sla-loc-card-name-row">
                           <span className="sla-tree-toggle" aria-hidden="true">
                             {isUlpExpanded ? '\u25be' : '\u25b8'}
                           </span>
+                          {canMutate && (
+                            <span className="sla-drag-handle" draggable="true"
+                              onDragStart={(e) => { e.stopPropagation(); handleDragStart('ulp', ulp.id, currentNameOf(ulp), ulpIds); }}
+                              onDragOver={handleDragOver}
+                              onDrop={(e) => { e.stopPropagation(); handleDrop(ulp.id); }}
+                              onDragEnd={handleDragEnd}
+                            >
+                              {'\u22ee'}
+                            </span>
+                          )}
                           <span className="sla-loc-badge sla-loc-badge-ulp">ULP</span>
                           <span className="sla-loc-card-name">{currentNameOf(ulp)}</span>
                         </div>

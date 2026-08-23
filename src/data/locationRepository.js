@@ -4,8 +4,8 @@ export async function fetchLocationsFromSupabase() {
   const [locationResult, historyResult] = await Promise.all([
     supabase
       .from('locations')
-      .select('id, legacy_key, contract_id, up3_id, unit_id, type, own_status')
-      .order('legacy_key'),
+      .select('id, legacy_key, contract_id, up3_id, unit_id, type, own_status, sort_order')
+      .order('sort_order'),
     supabase
       .from('location_name_history')
       .select('id, location_id, name, effective_from, effective_to')
@@ -32,6 +32,7 @@ export async function fetchLocationsFromSupabase() {
     unitId: location.unit_id,
     type: location.type,
     ownStatus: location.own_status,
+    sortOrder: location.sort_order ?? 0,
     nameHistory: historyByLocation[location.id] ?? [],
   }))
 }
@@ -69,4 +70,20 @@ export async function deleteKantorJaga(locationId) {
     p_location_id: locationId,
   })
   if (error) throw error
+}
+
+export async function reorderOrganizationUnits(unitIds) {
+  const { data, error } = await supabase.rpc('reorder_organization_units', {
+    p_unit_ids: unitIds,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function reorderLocations(locationIds) {
+  const { data, error } = await supabase.rpc('reorder_locations', {
+    p_location_ids: locationIds,
+  })
+  if (error) throw error
+  return data
 }

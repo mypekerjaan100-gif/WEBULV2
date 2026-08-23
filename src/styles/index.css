@@ -3559,3 +3559,54 @@ button {
     padding-left: 8px.
   }
 }
+
+/* ---------- Drag and Drop Styles ---------- */
+
+.sla-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  cursor: grab;
+  border-radius: 4px;
+  user-select: none;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sla-drag-handle:hover {
+  background: #e8edf3;
+  color: var(--color-primary);
+}
+
+.sla-drag-handle:active {
+  cursor: grabbing;
+}
+
+.sla-loc-card[draggable="true"] {
+  cursor: grab;
+}
+
+.sla-loc-card[draggable="true"]:hover {
+  box-shadow: 0 4px 12px rgba(10, 17, 29, 0.15);
+}
+
+.sla-loc-card.dragging {
+  opacity: 0.5;
+  box-shadow: 0 8px 24px rgba(10, 17, 29, 0.2);
+  border-color: var(--color-primary);
+  z-index: 100;
+}
+
+.sla-loc-card.drag-over {
+  border-color: var(--color-primary);
+  background: #f0f5fa;
+}
+
+.sla-drag-handle:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
