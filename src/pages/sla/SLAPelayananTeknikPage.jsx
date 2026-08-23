@@ -265,6 +265,7 @@ export default function SLAPelayananTeknikPage({
           access.operational_up3_id === orgMap?.up3Uuid,
       ),
   )
+  const canMutate = auth?.authority?.actor?.is_super_admin === true
   const isAdminULP = role === 'ulp' && !isSuperAdmin && !!orgMap
   const adminULPUp3Id = isAdminULP ? orgMap.up3Uuid : null
   const adminULPUnitId = isAdminULP ? orgMap.contractUuid : null
@@ -551,7 +552,7 @@ export default function SLAPelayananTeknikPage({
           locations={employeeLocations}
           role={role}
           unitId={masterLocationUnitId}
-          canMutate={auth?.authority?.actor?.is_super_admin === true}
+          canMutate={canMutate}
           canReorder={canReorderMasterLocations}
           onCreateLocation={async (draft) => {
             await createKantorJaga({
