@@ -102,6 +102,15 @@ export default function SLAPelayananTeknikPage({
       access.contract_id === orgMap?.contractUuid &&
       access.operational_up3_id === orgMap?.up3Uuid,
   )
+  const isAdminUlp = contractAccess.some(
+    (access) =>
+      access.role === 'ADMIN_ULP' &&
+      access.contract_id === orgMap?.contractUuid &&
+      access.operational_up3_id === orgMap?.up3Uuid &&
+      access.operational_unit_id != null,
+  )
+  const canViewAdminUp3Modules = isSuperAdmin || isAdminUp3
+  const canViewReadOnlyMasterLocations = isAdminUlp
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || isAdminUp3
 
@@ -288,9 +297,19 @@ export default function SLAPelayananTeknikPage({
   const flatIndicators = selectedVersion
     ? flattenVersionIndicators(selectedVersion)
     : []
-  const visibleModules = pelayananTeknikModules.filter(
-    (module) => role === 'up3' || !module.adminOnly,
+  const authorizedModules = pelayananTeknikModules.filter(
+    (module) =>
+      !module.adminOnly ||
+      canViewAdminUp3Modules ||
+      (module.id === 'master-lokasi' && canViewReadOnlyMasterLocations),
   )
+  const visibleModules =
+    canViewReadOnlyMasterLocations && !canViewAdminUp3Modules
+      ? [
+          ...authorizedModules.filter((module) => module.id !== 'master-lokasi'),
+          authorizedModules.find((module) => module.id === 'master-lokasi'),
+        ].filter(Boolean)
+      : authorizedModules
   const activeVcCount = flatIndicators.filter(
     (indicator) => indicator.inputMode === 'variable-cost',
   ).length
@@ -320,10 +339,14 @@ export default function SLAPelayananTeknikPage({
   }, [up3Id])
 
   useEffect(() => {
-    if (role === 'ulp' && activeModule?.adminOnly) {
+    const canViewActiveModule =
+      !activeModule?.adminOnly ||
+      canViewAdminUp3Modules ||
+      (activeModule?.id === 'master-lokasi' && canViewReadOnlyMasterLocations)
+    if (!canViewActiveModule) {
       setModuleId('sla')
     }
-  }, [role, activeModule])
+  }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations])
 
   const updateActiveTargets = (nextTargets) => {
     const selected = selectedVersion
