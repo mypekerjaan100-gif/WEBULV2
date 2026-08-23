@@ -623,6 +623,12 @@ export default function SLADatabasePegawai({
           (req.type === 'add' && req.proposed.nip === nip)),
     )
 
+  const getData = () => {
+    if (!detail) return null
+    if (detail.mode === 'add') return form
+    return detail.row?.employee ?? detail.row?.request?.proposed ?? null
+  }
+
   const renderTabContent = () => {
     if (tab === 'riwayat') return renderRiwayat()
     if (tab === 'approval') return renderApprovalTab()
@@ -632,8 +638,11 @@ export default function SLADatabasePegawai({
 
   const renderUtama = () => {
     const editing = detail.mode !== 'view'
+    const data = getData()
     if (!editing) {
-      const data = detail.row.employee ?? detail.row.request.proposed
+      if (!data) {
+        return <p className="sla-flat-note">Data belum tersedia.</p>
+      }
       const policyAge = pensionPolicy?.retirementAge ?? 56
       const age = ageAt(data.birthDate, todayStr)
       const retirementAgeDate = data.birthDate
@@ -884,7 +893,10 @@ export default function SLADatabasePegawai({
 
   const renderPembayaran = () => {
     const editing = detail.mode !== 'view'
-    const data = detail.row.employee ?? detail.row.request.proposed
+    const data = getData()
+    if (!data) {
+      return <p className="sla-flat-note">Data belum tersedia.</p>
+    }
     const currentRate = data.hourlyRateHistory
       ? hourlyRateFor(data, today())
       : data.hourlyRate
@@ -895,7 +907,7 @@ export default function SLADatabasePegawai({
           <Field label="No Rekening" value={data.accountNumber || '\u2014'} />
           <Field
             label="Tarif Lembur/Jam aktif"
-            value={`Rp ${Number(currentRate || 0).toLocaleString('id-ID')}`}
+            value={currentRate && currentRate > 0 ? `Rp ${Number(currentRate).toLocaleString('id-ID')}` : '\u2014'}
           />
         </div>
       )
@@ -937,7 +949,10 @@ export default function SLADatabasePegawai({
   }
 
   const renderRiwayat = () => {
-    const data = detail.row.employee ?? detail.row.request.proposed
+    const data = getData()
+    if (!data) {
+      return <p className="sla-flat-note">Belum ada riwayat. Simpan pegawai terlebih dahulu.</p>
+    }
     if (!data.unitHistory) {
       return <p className="sla-flat-note">Belum ada riwayat (menunggu approval).</p>
     }
@@ -980,8 +995,11 @@ export default function SLADatabasePegawai({
   }
 
   const renderApprovalTab = () => {
-    const data = detail.row.employee ?? detail.row.request.proposed
-    if (detail.row.addPending) {
+    const data = getData()
+    if (!data) {
+      return <p className="sla-flat-note">Status approval akan tersedia setelah data pegawai disimpan.</p>
+    }
+    if (detail.row?.addPending) {
       return (
         <div className="sla-approval-req">
           <RequestMeta req={detail.row.request} />
@@ -996,7 +1014,7 @@ export default function SLADatabasePegawai({
           <Field label="Jabatan" value={positionName(data.positionId) ?? 'Belum Ditentukan'} />
             <Field label="Bank" value={data.bank} />
             <Field label="No Rekening" value={data.accountNumber} />
-            <Field label="Tarif/Jam" value={`Rp ${Number(data.hourlyRate || 0).toLocaleString('id-ID')}`} />
+            <Field label="Tarif/Jam" value={data.hourlyRate && data.hourlyRate > 0 ? `Rp ${Number(data.hourlyRate).toLocaleString('id-ID')}` : '\u2014'} />
           </div>
         </div>
       )
