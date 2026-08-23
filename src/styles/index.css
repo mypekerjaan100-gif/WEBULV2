@@ -3537,6 +3537,11 @@ button {
   color: #b45309.
 }
 
+.sla-loc-unassigned {
+  color: #ea580c.
+  font-weight: 600.
+}
+
 .sla-loc-row-up3,
 .sla-loc-row-ulp,
 .sla-loc-row-loc {

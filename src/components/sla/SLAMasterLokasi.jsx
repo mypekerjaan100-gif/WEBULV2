@@ -61,6 +61,32 @@ export default function SLAMasterLokasi({
   )
   const employees = referencesContext.employees ?? []
 
+  // Employee count helpers
+  const getUlpEmployeeCounts = (ulpId) => {
+    const ulpEmployees = employees.filter((emp) => emp.unitId === ulpId)
+    const total = ulpEmployees.length
+    const assigned = ulpEmployees.filter((emp) => {
+      if (!emp.workLocationId) return false
+      const loc = visibleLocations.find((l) => l.id === emp.workLocationId)
+      return loc && loc.unitId === ulpId
+    }).length
+    const unassigned = total - assigned
+    return { total, assigned, unassigned }
+  }
+
+  const getUp3EmployeeCounts = (up3Id) => {
+    const up3Ulps = units.filter((u) => u.type === 'ULP' && u.parentUnitId === up3Id)
+    const ulpIds = up3Ulps.map((ulp) => ulp.id)
+    const up3Employees = employees.filter((emp) => ulpIds.includes(emp.unitId))
+    const total = up3Employees.length
+    const assigned = up3Employees.filter((emp) => {
+      if (!emp.workLocationId) return false
+      const loc = visibleLocations.find((l) => l.id === emp.workLocationId)
+      return loc && ulpIds.includes(loc.unitId)
+    }).length
+    return { total, assigned }
+  }
+
   const toggleExpand = (id) =>
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -455,8 +481,21 @@ export default function SLAMasterLokasi({
               <span className="sla-loc-card-name">{currentNameOf(up3)}</span>
             </div>
             <div className="sla-loc-card-meta up3">
-              <span className="sla-loc-summary">{ulpCount} ULP · {totalKjCount} Kantor Jaga</span>
-              {renderUnitStatus(up3)}
+              {(() => {
+                const { total, assigned } = getUp3EmployeeCounts(up3.id)
+                const unassigned = total - assigned
+                return (
+                  <>
+                    <span className="sla-loc-summary">
+                      {total} Pegawai
+                      {unassigned > 0 && <span className="sla-loc-unassigned"> · {unassigned} Belum ditempatkan</span>}
+                      {ulpCount > 0 && <span> · {ulpCount} ULP</span>}
+                      {totalKjCount > 0 && <span> · {totalKjCount} Kantor Jaga</span>}
+                    </span>
+                    {renderUnitStatus(up3)}
+                  </>
+                )
+              })()}
             </div>
           </div>
           <div className="sla-loc-card-actions">
@@ -478,6 +517,7 @@ export default function SLAMasterLokasi({
                 const kjCount = visibleLocations.filter(
                   (location) => location.unitId === ulp.id && location.type === 'KANTOR_JAGA',
                 ).length
+                const { total: totalEmp, assigned: assignedEmp, unassigned: unassignedEmp } = getUlpEmployeeCounts(ulp.id)
                 const isUlpExpanded = expanded.has(ulp.id)
 
                 return (
@@ -492,7 +532,11 @@ export default function SLAMasterLokasi({
                           <span className="sla-loc-card-name">{currentNameOf(ulp)}</span>
                         </div>
                         <div className="sla-loc-card-meta ulp">
-                          <span className="sla-loc-summary">{kjCount} Kantor Jaga</span>
+                          <span className="sla-loc-summary">
+                            {totalEmp} Pegawai
+                            {unassignedEmp > 0 && <span className="sla-loc-unassigned"> · {unassignedEmp} Belum ditempatkan</span>}
+                            {kjCount > 0 && <span> · {kjCount} Kantor Jaga</span>}
+                          </span>
                           {renderUnitStatus(ulp)}
                         </div>
                       </div>
