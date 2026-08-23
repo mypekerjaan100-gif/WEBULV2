@@ -93,6 +93,17 @@ export default function SLAPelayananTeknikPage({
   const [orgMap, setOrgMap] = useState(null)
   const [orgMapStatus, setOrgMapStatus] = useState('loading')
   const [orgMapError, setOrgMapError] = useState('')
+  const actor = auth?.authority?.actor
+  const isSuperAdmin = actor?.is_super_admin === true
+  const contractAccess = actor?.contract_access ?? []
+  const isAdminUp3 = contractAccess.some(
+    (access) =>
+      access.role === 'ADMIN_UP3' &&
+      access.contract_id === orgMap?.contractUuid &&
+      access.operational_up3_id === orgMap?.up3Uuid,
+  )
+  const canMutateMasterLocations = isSuperAdmin
+  const canReorderMasterLocations = isSuperAdmin || isAdminUp3
 
   const refreshLocations = useCallback(async ({ preserveOnError = false } = {}) => {
     if (!preserveOnError) setLocationLoadStatus('loading')
@@ -256,21 +267,6 @@ export default function SLAPelayananTeknikPage({
   const masterLocationContractScope = orgMap
     ? { ...slaContractScope, contractId: orgMap.contractUuid }
     : slaContractScope
-  const canReorderMasterLocations = Boolean(
-    auth?.authority?.actor?.is_super_admin ||
-      (auth?.authority?.actor?.contract_access ?? []).some(
-        (access) =>
-          access.role === 'ADMIN_UP3' &&
-          access.contract_id === orgMap?.contractUuid &&
-          access.operational_up3_id === orgMap?.up3Uuid,
-      ),
-  )
-  const canMutate = auth?.authority?.actor?.is_super_admin === true
-  const isAdminULP = role === 'ulp' && !isSuperAdmin && !!orgMap
-  const adminULPUp3Id = isAdminULP ? orgMap.up3Uuid : null
-  const adminULPUnitId = isAdminULP ? orgMap.contractUuid : null
-  const canMutateULP = !isAdminULP && canMutate
-  const canReorderULP = !isAdminULP && canReorder
   const slaUnitIds = [
     ...new Set([
       ...Object.keys(slaUlpEntries),
@@ -552,7 +548,7 @@ export default function SLAPelayananTeknikPage({
           locations={employeeLocations}
           role={role}
           unitId={masterLocationUnitId}
-          canMutate={canMutate}
+          canMutate={canMutateMasterLocations}
           canReorder={canReorderMasterLocations}
           onCreateLocation={async (draft) => {
             await createKantorJaga({
