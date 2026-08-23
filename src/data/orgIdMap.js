@@ -12,7 +12,9 @@ async function loadOrgMap() {
   _orgMapPromise = Promise.all([
     supabase
       .from('organization_units')
-      .select('id, legacy_key, type, parent_id, own_status'),
+      .select('id, legacy_key, type, parent_id, own_status, sort_order')
+      .order('sort_order')
+      .order('legacy_key'),
     supabase
       .from('organization_name_history')
       .select('organization_unit_id, name, effective_from, effective_to'),
@@ -42,6 +44,7 @@ async function loadOrgMap() {
           type: unit.type,
           parentUuid: unit.parent_id,
           status: unit.own_status,
+          sortOrder: unit.sort_order,
         }
         unitsByUuid[unit.id] = entry
         if (unit.legacy_key) unitsByKey[unit.legacy_key] = entry
@@ -86,6 +89,11 @@ export async function resolveParentUuid(childUuid) {
 export async function getOrgUnits() {
   const map = await loadOrgMap()
   return Object.values(map.unitsByUuid)
+}
+
+export function invalidateOrganizationMap() {
+  _orgMap = null
+  _orgMapPromise = null
 }
 
 export async function getLegacyKeyToUuidMap() {
@@ -168,12 +176,13 @@ export async function getOrganizationScope({
     throw new Error(`UP3 "${up3Id}" tidak aktif.`)
   }
 
-  const childUnits = Object.values(map.unitsByUuid).filter(
-    (unit) =>
-      unit.type === 'ULP' &&
-      unit.parentUuid === up3.uuid &&
-      unit.status === 'Aktif',
-  )
+  const childUnits = Object.values(map.unitsByUuid)
+    .filter(
+      (unit) =>
+        unit.type === 'ULP' &&
+        unit.parentUuid === up3.uuid,
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.legacyKey.localeCompare(b.legacyKey))
   const scopeUnits = [up3, ...childUnits].map((unit) => ({
     ...unit,
     displayName: unit.displayName ?? displayNameByLegacyKey[unit.legacyKey] ?? null,

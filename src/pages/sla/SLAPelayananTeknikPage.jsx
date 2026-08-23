@@ -9,6 +9,8 @@ import {
   deleteKantorJaga,
   fetchLocationsFromSupabase,
   renameKantorJaga,
+  reorderLocations,
+  reorderOrganizationUnits,
   setKantorJagaStatus,
 } from '../../data/locationRepository.js'
 import SLAContextBar from '../../components/sla/SLAContextBar.jsx'
@@ -39,7 +41,7 @@ import {
   ulpIdsOfUp3,
 } from '../../data/organisasiPelayananTeknik.js'
 import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
-import { getOrganizationScope } from '../../data/orgIdMap.js'
+import { getOrganizationScope, invalidateOrganizationMap } from '../../data/orgIdMap.js'
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
 import {
@@ -92,8 +94,8 @@ export default function SLAPelayananTeknikPage({
   const [orgMapStatus, setOrgMapStatus] = useState('loading')
   const [orgMapError, setOrgMapError] = useState('')
 
-  const refreshLocations = useCallback(async () => {
-    setLocationLoadStatus('loading')
+  const refreshLocations = useCallback(async ({ preserveOnError = false } = {}) => {
+    if (!preserveOnError) setLocationLoadStatus('loading')
     setLocationLoadError('')
     try {
       const locationRows = await fetchLocationsFromSupabase()
@@ -101,9 +103,11 @@ export default function SLAPelayananTeknikPage({
       setLocationLoadStatus('ready')
       return locationRows
     } catch (error) {
-      setEmployeeLocations([])
       setLocationLoadError(error.message || 'Gagal memuat lokasi Supabase.')
-      setLocationLoadStatus('error')
+      if (!preserveOnError) {
+        setEmployeeLocations([])
+        setLocationLoadStatus('error')
+      }
       throw error
     }
   }, [])
@@ -252,6 +256,15 @@ export default function SLAPelayananTeknikPage({
   const masterLocationContractScope = orgMap
     ? { ...slaContractScope, contractId: orgMap.contractUuid }
     : slaContractScope
+  const canReorderMasterLocations = Boolean(
+    auth?.authority?.actor?.is_super_admin ||
+      (auth?.authority?.actor?.contract_access ?? []).some(
+        (access) =>
+          access.role === 'ADMIN_UP3' &&
+          access.contract_id === orgMap?.contractUuid &&
+          access.operational_up3_id === orgMap?.up3Uuid,
+      ),
+  )
   const slaUnitIds = [
     ...new Set([
       ...Object.keys(slaUlpEntries),
@@ -533,7 +546,8 @@ export default function SLAPelayananTeknikPage({
           locations={employeeLocations}
           role={role}
           unitId={masterLocationUnitId}
-          canMutate={Boolean(auth?.session)}
+          canMutate={auth?.authority?.actor?.is_super_admin === true}
+          canReorder={canReorderMasterLocations}
           onCreateLocation={async (draft) => {
             await createKantorJaga({
               ...draft,
@@ -552,6 +566,26 @@ export default function SLAPelayananTeknikPage({
           onDeleteLocation={async (locationId) => {
             await deleteKantorJaga(locationId)
             await refreshLocations()
+          }}
+          onReorderUnits={async (unitIds) => {
+            await reorderOrganizationUnits(unitIds)
+          }}
+          onRefreshUnits={async () => {
+            invalidateOrganizationMap()
+            const scope = await getOrganizationScope({
+              up3Id,
+              contractCode: slaContractScope.contractId,
+              displayNameByLegacyKey: Object.fromEntries(
+                units.map((unit) => [unit.id, currentNameOf(unit)]),
+              ),
+            })
+            setOrgMap(scope)
+          }}
+          onReorderLocations={async (locationIds) => {
+            await reorderLocations(locationIds)
+          }}
+          onRefreshLocations={async () => {
+            await refreshLocations({ preserveOnError: true })
           }}
           referencesContext={{ employees, changeRequests }}
         />

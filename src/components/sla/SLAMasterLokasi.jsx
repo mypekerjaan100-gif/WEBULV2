@@ -1,4 +1,4 @@
-import { Fragment, useState, useCallback } from 'react'
+import { Fragment, useState } from 'react'
 import { currentNameOf, effectiveStatusOf } from '../../data/organisasiPelayananTeknik.js'
 import {
   collectLocationReferences,
@@ -7,10 +7,6 @@ import {
   effectiveStatusOfLocation,
   today,
 } from '../../data/lokasiPelayananTeknik.js'
-import {
-  reorderOrganizationUnits,
-  reorderLocations,
-} from '../../data/locationRepository.js'
 
 const inputClass = 'sla-input sla-input-text'
 
@@ -31,10 +27,15 @@ export default function SLAMasterLokasi({
   role,
   unitId,
   canMutate,
+  canReorder,
   onCreateLocation,
   onRenameLocation,
   onStatusLocation,
   onDeleteLocation,
+  onReorderUnits,
+  onReorderLocations,
+  onRefreshUnits,
+  onRefreshLocations,
   referencesContext = {},
 }) {
   const [expanded, setExpanded] = useState(() => new Set())
@@ -51,6 +52,7 @@ export default function SLAMasterLokasi({
   const [blocked, setBlocked] = useState(null)
   const [mutationError, setMutationError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [pendingOrder, setPendingOrder] = useState(null)
 
   const [dragState, setDragState] = useState({
     type: null, // 'ulp' | 'location'
@@ -59,16 +61,18 @@ export default function SLAMasterLokasi({
     sourceList: null, // array of ids in source list
   })
 
-  const handleDragStart = useCallback((type, id, name, sourceList) => {
+  const handleDragStart = (type, id, name, sourceList) => {
+    setMutationError('')
     setDragState({ type, draggedId: id, draggedName: name, sourceList })
-  }, [])
+  }
 
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }, [])
+  const handleDragOver = (event) => {
+    if (!canReorder || saving) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
 
-  const handleDrop = useCallback(async (targetId) => {
+  const handleDrop = async (targetId) => {
     if (!dragState.draggedId || dragState.draggedId === targetId) {
       setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
       return
@@ -87,22 +91,46 @@ export default function SLAMasterLokasi({
     newList.splice(sourceIndex, 1)
     newList.splice(targetIndex, 0, draggedId)
 
+    setPendingOrder({ type, ids: newList })
+    setSaving(true)
+    setMutationError('')
     try {
       if (type === 'ulp') {
-        await reorderOrganizationUnits(newList)
+        await onReorderUnits(newList)
+        try {
+          await onRefreshUnits()
+          setPendingOrder(null)
+        } catch {
+          setMutationError('Urutan tersimpan di Supabase, tetapi data organisasi terbaru gagal dimuat.')
+        }
       } else if (type === 'location') {
-        await reorderLocations(newList)
+        await onReorderLocations(newList)
+        try {
+          await onRefreshLocations()
+          setPendingOrder(null)
+        } catch {
+          setMutationError('Urutan tersimpan di Supabase, tetapi data lokasi terbaru gagal dimuat.')
+        }
       }
     } catch (error) {
+      setPendingOrder(null)
       setMutationError(error.message || 'Gagal mengubah urutan')
+    } finally {
+      setSaving(false)
+      setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
     }
+  }
 
+  const handleDragEnd = () => {
     setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
-  }, [])
+  }
 
-  const handleDragEnd = useCallback(() => {
-    setDragState({ type: null, draggedId: null, draggedName: null, sourceList: null })
-  }, [])
+  const orderItems = (items, type) => {
+    if (pendingOrder?.type !== type) return items
+    const itemById = new Map(items.map((item) => [item.id, item]))
+    const ordered = pendingOrder.ids.map((id) => itemById.get(id)).filter(Boolean)
+    return ordered.length === items.length ? ordered : items
+  }
 
   const unitById = new Map(units.map((unit) => [unit.id, unit]))
   const unitName = (id) => currentNameOf(unitById.get(id)) ?? id
@@ -343,26 +371,29 @@ export default function SLAMasterLokasi({
     const typeClass = location.type === 'UNIT_OFFICE' ? 'sla-loc-badge-office' : 'sla-loc-badge-kj'
     const empCount = currentLocationUsers(employees, location.id)
     const isUnitOffice = location.type === 'UNIT_OFFICE'
-    const locIds = visibleLocations
-      .filter((l) => l.unitId === location.unitId)
+    const orderedSiblingLocations = orderItems(
+      visibleLocations.filter((item) => item.unitId === location.unitId),
+      'location',
+    )
+    const locIds = orderedSiblingLocations
       .map((l) => l.id)
 
     return (
       <Fragment key={location.id}>
         <div className="sla-loc-card sla-loc-card-loc"
-          draggable={canMutate && !isUnitOffice}
-          onDragStart={(e) => handleDragStart('location', location.id, currentLocationNameOf(location), locIds)}
           onDragOver={handleDragOver}
-          onDrop={(e) => handleDrop(location.id)}
-          onDragEnd={handleDragEnd}
+          onDrop={() => handleDrop(location.id)}
         >
           <div className="sla-loc-card-header">
             <div className="sla-loc-card-name-row">
-              {canMutate && !isUnitOffice && (
+              {role !== 'ulp' && canReorder && locIds.length > 1 && (
                 <span className="sla-drag-handle" draggable="true"
-                  onDragStart={(e) => { e.stopPropagation(); handleDragStart('location', location.id, currentLocationNameOf(location), locIds); }}
+                  aria-label={`Ubah urutan ${currentLocationNameOf(location)}`}
+                  onDragStart={(event) => {
+                    event.stopPropagation()
+                    handleDragStart('location', location.id, currentLocationNameOf(location), locIds)
+                  }}
                   onDragOver={handleDragOver}
-                  onDrop={(e) => { e.stopPropagation(); handleDrop(location.id); }}
                   onDragEnd={handleDragEnd}
                 >
                   {'\u22ee'}
@@ -536,7 +567,10 @@ export default function SLAMasterLokasi({
 
   const renderUp3Card = (up3) => {
     const ulps = units.filter((unit) => unit.type === 'ULP' && unit.parentUnitId === up3.id)
-    const visibleUlps = isUp3Preview ? ulps : ulps.filter((ulp) => ulp.id === unitId)
+    const visibleUlps = orderItems(
+      isUp3Preview ? ulps : ulps.filter((ulp) => ulp.id === unitId),
+      'ulp',
+    )
     const ulpCount = ulps.length
     const totalKjCount = units.filter(
       (unit) => unit.type === 'ULP' && unit.parentUnitId === up3.id
@@ -584,8 +618,10 @@ export default function SLAMasterLokasi({
           {isExpanded && (
             <div className="sla-up3-children">
               <div className="sla-up3-locations">
-                {visibleLocations
-                  .filter((location) => location.unitId === up3.id)
+                {orderItems(
+                  visibleLocations.filter((location) => location.unitId === up3.id),
+                  'location',
+                )
                   .map(renderLocationCard)}
               </div>
               {visibleUlps.map((ulp) => {
@@ -599,22 +635,22 @@ export default function SLAMasterLokasi({
                 return (
                   <Fragment key={ulp.id}>
                     <div className="sla-loc-card sla-loc-card-ulp"
-                      draggable={canMutate}
-                      onDragStart={(e) => handleDragStart('ulp', ulp.id, currentNameOf(ulp), ulpIds)}
                       onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(ulp.id)}
-                      onDragEnd={handleDragEnd}
+                      onDrop={() => handleDrop(ulp.id)}
                     >
                       <div className="sla-loc-card-header ulp" onClick={() => toggleExpand(ulp.id)}>
                         <div className="sla-loc-card-name-row">
                           <span className="sla-tree-toggle" aria-hidden="true">
                             {isUlpExpanded ? '\u25be' : '\u25b8'}
                           </span>
-                          {canMutate && (
+                          {role !== 'ulp' && canReorder && ulpIds.length > 1 && (
                             <span className="sla-drag-handle" draggable="true"
-                              onDragStart={(e) => { e.stopPropagation(); handleDragStart('ulp', ulp.id, currentNameOf(ulp), ulpIds); }}
+                              aria-label={`Ubah urutan ${currentNameOf(ulp)}`}
+                              onDragStart={(event) => {
+                                event.stopPropagation()
+                                handleDragStart('ulp', ulp.id, currentNameOf(ulp), ulpIds)
+                              }}
                               onDragOver={handleDragOver}
-                              onDrop={(e) => { e.stopPropagation(); handleDrop(ulp.id); }}
                               onDragEnd={handleDragEnd}
                             >
                               {'\u22ee'}
@@ -642,8 +678,10 @@ export default function SLAMasterLokasi({
                       {addingFor === ulp.id && renderAddForm()}
                       {isUlpExpanded && (
                         <div className="sla-ulp-children">
-                          {visibleLocations
-                            .filter((location) => location.unitId === ulp.id)
+                          {orderItems(
+                            visibleLocations.filter((location) => location.unitId === ulp.id),
+                            'location',
+                          )
                             .map(renderLocationCard)}
                         </div>
                       )}

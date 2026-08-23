@@ -5,7 +5,8 @@ export async function fetchLocationsFromSupabase() {
     supabase
       .from('locations')
       .select('id, legacy_key, contract_id, up3_id, unit_id, type, own_status, sort_order')
-      .order('sort_order'),
+      .order('sort_order')
+      .order('legacy_key'),
     supabase
       .from('location_name_history')
       .select('id, location_id, name, effective_from, effective_to')
@@ -32,7 +33,7 @@ export async function fetchLocationsFromSupabase() {
     unitId: location.unit_id,
     type: location.type,
     ownStatus: location.own_status,
-    sortOrder: location.sort_order ?? 0,
+    sortOrder: location.sort_order,
     nameHistory: historyByLocation[location.id] ?? [],
   }))
 }
