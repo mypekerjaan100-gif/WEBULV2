@@ -65,6 +65,12 @@ export default function SLALembur({
   const [dirty, setDirty] = useState(true)
   const activeActivityIdRef = useRef(activeActivityId)
   activeActivityIdRef.current = activeActivityId
+  const [filters, setFilters] = useState({ ulp: '', jenis: 'Semua', pegawai: '', status: 'Semua', periode: '' })
+  const [rowsPerPage, setRowsPerPage] = useState(30)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [detailActivityId, setDetailActivityId] = useState(null)
+  const [detailEvidence, setDetailEvidence] = useState([])
+  const [detailLoading, setDetailLoading] = useState(false)
 
   const range = buildPontianakRange(draft.date, draft.startTime, draft.endTime)
   const replacedEmployee = employeeOptions.find((e) => e.id === draft.replacedEmployeeId)
@@ -369,6 +375,32 @@ export default function SLALembur({
 
   const sorted = [...records].sort((a,b)=> String(b.startedAt).localeCompare(String(a.startedAt)))
 
+  const jenisLabel = (record) => record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
+  const uniquePeriods = [...new Set(sorted.map(r=> r.periodMonth || String(r.date||'').slice(0,7)))].filter(Boolean).sort()
+  const uniqueStatuses = [...new Set(sorted.map(r=> r.status))].filter(Boolean)
+  const filtered = sorted.filter(r=>{
+    if (filters.jenis !== 'Semua' && jenisLabel(r) !== filters.jenis) return false
+    if (filters.status !== 'Semua' && r.status !== filters.status) return false
+    if (filters.pegawai && !String(r.participantName||'').toLowerCase().includes(filters.pegawai.toLowerCase())) return false
+    if (filters.ulp && String(r.unitId||'') !== filters.ulp) return false
+    if (filters.periode && String(r.periodMonth||'').slice(0,7) !== filters.periode && String(r.date||'').slice(0,7) !== filters.periode) return false
+    return true
+  })
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
+  const paginated = filtered.slice((currentPage-1)*rowsPerPage, currentPage*rowsPerPage)
+  useEffect(()=>{ setCurrentPage(1) }, [filters, rowsPerPage, records.length])
+  useEffect(()=>{
+    if (!detailActivityId) { setDetailEvidence([]); return }
+    let cancelled=false
+    setDetailLoading(true)
+    import('../../data/overtimeEvidenceRepository.js').then(({ listOvertimeEvidence })=> listOvertimeEvidence(detailActivityId)).then(rows=>{
+      if(!cancelled) setDetailEvidence(rows)
+    }).catch(()=>{ if(!cancelled) setDetailEvidence([]) }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
+    return ()=>{ cancelled=true }
+  }, [detailActivityId])
+  const detailRecords = detailActivityId ? sorted.filter(r=> r.id===detailActivityId) : []
+  const detailActivity = detailRecords[0] || null
+
   const changeType = (type) => {
     if (activeActivityId && evidence.length && type!==draft.lemburType) {
       setMessage('Hapus evidence Draft sebelum mengubah Jenis Lembur.')
@@ -601,38 +633,146 @@ export default function SLALembur({
 
           {!canMutate && <p className="sla-blocked-note">Akses ini menampilkan Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia pada tahap ini.</p>}
 
+          <div className="rekap-filters">
+            <label className="sla-context-field">Periode
+              <select className="sla-context-select" value={filters.periode} onChange={e=> setFilters(f=>({ ...f, periode: e.target.value }))}>
+                <option value="">Semua</option>
+                {uniquePeriods.map(p=> <option key={p} value={p.slice(0,7)}>{p}</option>)}
+              </select>
+            </label>
+            {!canMutate && (
+              <label className="sla-context-field">ULP
+                <select className="sla-context-select" value={filters.ulp} onChange={e=> setFilters(f=>({ ...f, ulp: e.target.value }))}>
+                  <option value="">Semua</option>
+                  {(orgUnits||[]).filter(u=>u.type==='ULP' || u.type==='ULP').map(u=> <option key={u.uuid} value={u.uuid}>{u.displayName}</option>)}
+                </select>
+              </label>
+            )}
+            <label className="sla-context-field">Jenis
+              <select className="sla-context-select" value={filters.jenis} onChange={e=> setFilters(f=>({ ...f, jenis: e.target.value }))}>
+                <option value="Semua">Semua</option>
+                <option value="Pengganti Cuti">Pengganti Cuti</option>
+                <option value="Pengganti Sakit">Pengganti Sakit</option>
+                <option value="Pengganti Izin">Pengganti Izin</option>
+                <option value="Administrasi">Administrasi</option>
+                <option value="Gardu">Gardu</option>
+                <option value="JTM">JTM</option>
+                <option value="JTR">JTR</option>
+              </select>
+            </label>
+            <label className="sla-context-field">Pegawai
+              <input className="sla-context-select" value={filters.pegawai} onChange={e=> setFilters(f=>({ ...f, pegawai: e.target.value }))} placeholder="Cari pegawai" />
+            </label>
+            <label className="sla-context-field">Status
+              <select className="sla-context-select" value={filters.status} onChange={e=> setFilters(f=>({ ...f, status: e.target.value }))}>
+                <option value="Semua">Semua</option>
+                {uniqueStatuses.map(s=> <option key={s} value={s}>{statusLabel(s)}</option>)}
+              </select>
+            </label>
+          </div>
+
           <div className="sla-table-wrap">
             <table className="sla-table">
               <thead>
                 <tr>
                   <th>Tanggal</th>
-                  { !canMutate && <th>ULP</th> }
-                  <th>Jenis</th><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th><th>Keterangan</th><th>Status</th>{canMutate && <th>Aksi</th>}
+                  {!canMutate && <th>ULP</th>}
+                  <th>Jenis</th><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th><th>Keterangan</th><th>Status</th><th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {!sorted.length && <tr><td colSpan={canMutate ? 8 : 8}>Belum ada record Lembur pada periode ini.</td></tr>}
-                {sorted.map(record=>{
+                {!paginated.length && <tr><td colSpan={!canMutate ? 9 : 8}>Belum ada record Lembur pada periode ini.</td></tr>}
+                {paginated.map(record=>{
                   const time = pontianakFormValues(record.startedAt, record.endedAt)
                   const jenis = record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
                   const ulpName = !canMutate ? getUlpName(record.unitId) : null
                   return (
-                    <tr key={record.entryId || record.id}>
+                    <tr key={`${record.id}-${record.entryId}`}>
                       <td>{record.date}</td>
                       {!canMutate && <td>{ulpName}</td>}
                       <td>{jenis}</td>
                       <td>{record.participantName}</td>
                       <td>{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''} · {formatDurationMinutes(record.durationHours*60)}</td>
                       <td>Rp {formatRp(record.total)}</td>
-                      <td>{record.description}</td>
-                      <td>{statusLabel(record.status)}</td>
-                      {canMutate && <td>{record.status==='DRAFT' ? <button type="button" className="sla-btn" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</button> : '–'}</td>}
+                      <td><span className="rekap-keterangan">{record.description}</span></td>
+                      <td><span className={`status-badge status-${record.status}`}>{statusLabel(record.status)}</span></td>
+                      <td>
+                        <div style={{display:'flex', gap:'6px', flexWrap:'wrap'}}>
+                          {canMutate && record.status==='DRAFT' && <button type="button" className="sla-btn" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</button>}
+                          <button type="button" className="sla-btn" onClick={()=>setDetailActivityId(record.id)}>Lihat Detail</button>
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
           </div>
+          <div className="rekap-pagination">
+            <span>{filtered.length} data · Halaman {currentPage} dari {totalPages}</span>
+            <div style={{display:'flex', gap:'8px', alignItems:'center'}}>
+              <button type="button" className="sla-btn" disabled={currentPage<=1} onClick={()=>setCurrentPage(p=>Math.max(1,p-1))}>Prev</button>
+              <button type="button" className="sla-btn" disabled={currentPage>=totalPages} onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))}>Next</button>
+              <label>Baris per halaman
+                <select className="sla-context-select" value={rowsPerPage} onChange={e=>setRowsPerPage(Number(e.target.value))} style={{marginLeft:'6px'}}>
+                  <option value={10}>10</option>
+                  <option value={30}>30</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          {detailActivityId && (
+            <div className="rekap-detail-overlay" onClick={()=>setDetailActivityId(null)}>
+              <div className="rekap-detail-modal" onClick={e=>e.stopPropagation()}>
+                <div className="rekap-detail-header">
+                  <h3>Detail Lembur — {detailActivity ? (detailActivity.type==='WORK' ? (WORK_CATEGORIES[detailActivity.workCategory]?.label || detailActivity.workCategory) : (REPLACEMENT_TYPES[detailActivity.type]?.label || detailActivity.type)) : ''}</h3>
+                  <button type="button" className="sla-btn" onClick={()=>setDetailActivityId(null)}>Tutup</button>
+                </div>
+                {detailActivity && (
+                  <>
+                    <div className="rekap-detail-grid">
+                      <div><strong>Tanggal</strong><div>{detailActivity.date}</div></div>
+                      {!canMutate && <div><strong>ULP</strong><div>{getUlpName(detailActivity.unitId)}</div></div>}
+                      <div><strong>Status</strong><div>{statusLabel(detailActivity.status)}</div></div>
+                      <div><strong>Keterangan</strong><div>{detailActivity.description}</div></div>
+                      {detailActivity.workTitle && <div><strong>Uraian</strong><div>{detailActivity.workTitle}</div></div>}
+                      {detailActivity.workLocation && <div><strong>Lokasi</strong><div>{detailActivity.workLocation}</div></div>}
+                    </div>
+                    <div style={{marginTop:'12px'}}>
+                      <strong>Peserta ({detailRecords.length})</strong>
+                      <table className="sla-table" style={{marginTop:'8px'}}>
+                        <thead><tr><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th></tr></thead>
+                        <tbody>
+                          {detailRecords.map(r=>{
+                            const t = pontianakFormValues(r.startedAt, r.endedAt)
+                            return <tr key={r.entryId}><td>{r.participantName}</td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td></tr>
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{marginTop:'12px'}}>
+                      <strong>Evidence</strong>
+                      {detailLoading ? <div>Memuat evidence...</div> : detailEvidence.length ? (
+                        <div style={{display:'grid', gap:'8px', marginTop:'8px'}}>
+                          {detailEvidence.filter(e=>e.status==='ACTIVE').map(ev=>(
+                            <div key={ev.id} style={{display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap', border:'1px solid #dfe7ec', padding:'8px', borderRadius:'6px'}}>
+                              <span style={{minWidth:'160px'}}>{ev.evidenceType} — {ev.originalFilename} · {(ev.storedSizeBytes/1024).toFixed(0)} KB</span>
+                              <button type="button" className="sla-btn" onClick={async()=>{
+                                const { createOvertimeEvidenceSignedUrl } = await import('../../data/overtimeEvidenceRepository.js')
+                                const s = await createOvertimeEvidenceSignedUrl(ev.id)
+                                const w = window.open('about:blank','_blank'); if(w){ w.opener=null; w.location.replace(s.signedUrl) }
+                              }}>Preview</button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <div>Belum ada evidence.</div>}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
     </section>

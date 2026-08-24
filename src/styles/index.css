@@ -3733,3 +3733,83 @@ button {
     flex-direction: column;
   }
 }
+
+/* ---------- Rekap L4 ---------- */
+.rekap-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #d8e1eb;
+  border-radius: 10px;
+  background: #f8fbfc;
+}
+.rekap-filters .sla-context-field { min-width: 160px; flex: 1 1 160px; }
+.rekap-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+  flex-wrap: wrap;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+.rekap-keterangan {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 280px;
+  line-height: 1.4;
+}
+.status-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.status-DRAFT { background: #fff3cd; color: #664d03; }
+.status-SUBMITTED { background: #cfe2ff; color: #084298; }
+.status-APPROVED { background: #d1e7dd; color: #0f5132; }
+.status-CORRECTION_REQUIRED { background: #f8d7da; color: #842029; }
+.status-CLOSED { background: #e2e3e5; color: #41464b; }
+.rekap-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10,17,29,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.rekap-detail-modal {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 760px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.rekap-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.rekap-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .rekap-detail-grid { grid-template-columns: 1fr; }
+  .rekap-pagination { flex-direction: column; align-items: stretch; }
+}
