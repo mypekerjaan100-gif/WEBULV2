@@ -45,7 +45,10 @@ function resolveCurrentEntry(history, today) {
   )
 }
 
-export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = {}) {
+export async function fetchEmployeesFromSupabase({
+  hasSensitiveRead = false,
+  includeHourlyRates = true,
+} = {}) {
   const today = new Date().toISOString().slice(0, 10)
 
   const { data: employees, error: empErr } = await supabase
@@ -78,7 +81,9 @@ export async function fetchEmployeesFromSupabase({ hasSensitiveRead = false } = 
     supabase.from('employee_unit_history').select('*').in('employee_id', employeeIds),
     supabase.from('employee_position_history').select('*').in('employee_id', employeeIds),
     supabase.from('employee_status_history').select('*').in('employee_id', employeeIds),
-    supabase.from('employee_hourly_rate_history').select('*').in('employee_id', employeeIds),
+    includeHourlyRates
+      ? supabase.from('employee_hourly_rate_history').select('*').in('employee_id', employeeIds)
+      : Promise.resolve({ data: [], error: null }),
     supabase.from('employee_work_location_history').select('*').in('employee_id', employeeIds),
   ])
   for (const result of [unitHist, posHist, statusHist, rateHist, locHist]) {

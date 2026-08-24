@@ -44,12 +44,11 @@ import { initialJabatanForUp3 } from '../../data/jabatanPelayananTeknik.js'
 import { getOrganizationScope, invalidateOrganizationMap } from '../../data/orgIdMap.js'
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
-import { employeeAssignmentForLembur } from '../../data/lemburPelayananTeknik.js'
 import {
-  deleteOvertimeEntry,
-  listOvertimeEntries,
-  saveOvertimeEntry,
-} from '../../data/overtimeRepository.js'
+  listOvertimeReplacements,
+  saveOvertimeReplacementDraft,
+  submitOvertimeReplacement,
+} from '../../data/overtimeReplacementRepository.js'
 import {
   activateScopedVersion,
   deleteScopedDraft,
@@ -114,6 +113,7 @@ export default function SLAPelayananTeknikPage({
   const canViewReadOnlyMasterLocations = isAdminUlp
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || isAdminUp3
+  const canReadEmployeeFinancials = isSuperAdmin || (isAdminUp3 && !isAdminUlp)
 
   const refreshLocations = useCallback(async ({ preserveOnError = false } = {}) => {
     if (!preserveOnError) setLocationLoadStatus('loading')
@@ -137,7 +137,10 @@ export default function SLAPelayananTeknikPage({
     if (!auth?.session) return
     let cancelled = false
     Promise.all([
-      fetchEmployeesFromSupabase({ hasSensitiveRead: true }),
+      fetchEmployeesFromSupabase({
+        hasSensitiveRead: canReadEmployeeFinancials,
+        includeHourlyRates: canReadEmployeeFinancials,
+      }),
       fetchPositionsFromSupabase(),
     ])
       .then(([empResult, posRows]) => {
@@ -165,7 +168,7 @@ export default function SLAPelayananTeknikPage({
         }
       })
     return () => { cancelled = true }
-  }, [auth?.session, employeeReloadToken])
+  }, [auth?.session, employeeReloadToken, canReadEmployeeFinancials])
 
   useEffect(() => {
     if (!auth?.session) return
@@ -230,7 +233,6 @@ export default function SLAPelayananTeknikPage({
   const [lemburLoadStatus, setLemburLoadStatus] = useState('idle')
   const [lemburLoadError, setLemburLoadError] = useState('')
   const lemburRequestId = useRef(0)
-  const lemburScopeKeyRef = useRef('')
 
   const activeModule = pelayananTeknikModules.find((module) => module.id === moduleId)
   const up3Unit = units.find((unit) => unit.type === 'UP3' && unit.id === up3Id) ?? null
@@ -244,14 +246,6 @@ export default function SLAPelayananTeknikPage({
       version.up3Id === up3Id,
   )
   const scopedUnitIds = [up3Id, ...ulpIdsOfUp3(units, up3Id)]
-  const scopedEmployees = orgMap
-    ? employees.filter(
-        (employee) =>
-          employee.contractId === orgMap.contractUuid &&
-          employee.up3Id === orgMap.up3Uuid &&
-          orgMap.scopedUnitUuids.includes(employee.unitId),
-      )
-    : []
   const effectiveUnitId = scopedUnitIds.includes(unitId)
     ? unitId
     : role === 'ulp'
@@ -266,14 +260,12 @@ export default function SLAPelayananTeknikPage({
   const selectedUnitUuid = orgMap?.units.find(
     (entry) => entry.uuid === effectiveUnitId || entry.legacyKey === effectiveUnitId,
   )?.uuid ?? null
-  const lemburUnitUuid = isAdminUlp
-    ? adminUlpAccess?.operational_unit_id ?? null
-    : role === 'ulp'
-      ? selectedUnitUuid
-      : null
+  const lemburUnitUuid = role === 'ulp'
+    ? isAdminUlp
+      ? adminUlpAccess?.operational_unit_id ?? null
+      : selectedUnitUuid
+    : null
   const lemburPeriodMonth = periodKeyFromLabel(period)
-  const lemburScopeKey = `${orgMap?.contractUuid ?? ''}:${orgMap?.up3Uuid ?? ''}:${lemburUnitUuid ?? 'up3'}:${lemburPeriodMonth}`
-  lemburScopeKeyRef.current = lemburScopeKey
   const selectedUnit = units.find((unit) => unit.id === effectiveUnitId)
   const isUp3View = effectiveUnitId === up3Id
   const masterLocationUnits = (orgMap?.units ?? []).map((unit) => ({
@@ -345,7 +337,7 @@ export default function SLAPelayananTeknikPage({
     setLemburLoadError('')
     setLemburRecords([])
     try {
-      const rows = await listOvertimeEntries({
+      const rows = await listOvertimeReplacements({
         contractId: orgMap.contractUuid,
         up3Id: orgMap.up3Uuid,
         unitId: lemburUnitUuid,
@@ -368,64 +360,31 @@ export default function SLAPelayananTeknikPage({
   }, [moduleId, auth?.session, refreshLembur])
 
   const saveLembur = async (id, draft) => {
-    if (!draft.date.startsWith(lemburPeriodMonth.slice(0, 7))) {
-      return { ok: false, message: 'Tanggal lembur harus berada dalam periode yang dipilih.' }
-    }
-    const existingRecord = id
-      ? lemburRecords.find((record) => record.id === id)
-      : null
-    const employee = scopedEmployees.find((entry) => entry.id === draft.employeeId)
-    const assignment = employeeAssignmentForLembur(employee, draft.date)
-    const keepsExistingAssignment = existingRecord &&
-      existingRecord.employeeId === draft.employeeId &&
-      existingRecord.date === draft.date
-    if (!keepsExistingAssignment && (!assignment || assignment.contractId !== orgMap?.contractUuid ||
-      assignment.up3Id !== orgMap?.up3Uuid ||
-      (lemburUnitUuid && assignment.unitId !== lemburUnitUuid))) {
-      return { ok: false, message: 'Pegawai di luar scope kontrak/UP3/unit pada tanggal lembur.' }
-    }
-    if (existingRecord && assignment && assignment.unitId !== existingRecord.unitId) {
-      return { ok: false, message: 'Perubahan pegawai/tanggal tidak boleh memindahkan unit record lembur.' }
-    }
-    const writeUnitId = existingRecord?.unitId ?? assignment.unitId
-    const writeScopeKey = lemburScopeKey
     try {
-      const saved = await saveOvertimeEntry({
-        id,
+      const activityId = await saveOvertimeReplacementDraft({
+        activityId: id,
         contractId: orgMap.contractUuid,
         up3Id: orgMap.up3Uuid,
-        unitId: writeUnitId,
-        employeeId: draft.employeeId,
-        date: draft.date,
-        hours: Number(draft.hours),
-        keterangan: draft.keterangan,
+        ...draft,
       })
-      if (writeScopeKey === lemburScopeKeyRef.current) {
-        setLemburRecords((current) => id
-          ? current.map((record) => record.id === id ? saved : record)
-          : [saved, ...current])
+      await refreshLembur()
+      return {
+        ok: true,
+        activityId,
+        message: id ? 'Draft diperbarui di Supabase.' : 'Draft disimpan di Supabase. Lengkapi evidence sebelum mengajukan.',
       }
-      return { ok: true, message: id ? 'Lembur diperbarui di Supabase.' : 'Lembur disimpan ke Supabase.' }
     } catch (error) {
-      return { ok: false, message: error.message || 'Gagal menyimpan lembur ke Supabase.' }
+      return { ok: false, message: error.message || 'Gagal menyimpan Draft ke Supabase.' }
     }
   }
 
-  const removeLembur = async (record) => {
-    const writeScopeKey = lemburScopeKey
+  const submitLembur = async (activityId) => {
     try {
-      await deleteOvertimeEntry({
-        id: record.id,
-        contractId: record.contractId,
-        up3Id: record.up3Id,
-        unitId: record.unitId,
-      })
-      if (writeScopeKey === lemburScopeKeyRef.current) {
-        setLemburRecords((current) => current.filter((entry) => entry.id !== record.id))
-      }
-      return { ok: true, message: 'Lembur dihapus dari Supabase.' }
+      await submitOvertimeReplacement(activityId)
+      await refreshLembur()
+      return { ok: true, message: 'Lembur diajukan dan menunggu approval.' }
     } catch (error) {
-      return { ok: false, message: error.message || 'Gagal menghapus lembur dari Supabase.' }
+      return { ok: false, message: error.message || 'Gagal mengajukan Lembur.' }
     }
   }
 
@@ -895,8 +854,7 @@ export default function SLAPelayananTeknikPage({
             unitId={lemburUnitUuid}
             periodMonth={lemburPeriodMonth}
             records={lemburRecords}
-            employees={scopedEmployees}
-            pensionPolicies={pensionPolicies}
+            canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp')}
             loading={lemburLoadStatus === 'loading' || !employeesLoaded}
             loadError={lemburLoadError || employeeLoadError}
             onRetry={() => {
@@ -906,9 +864,8 @@ export default function SLAPelayananTeknikPage({
               }
               refreshLembur()
             }}
-            onCreate={(draft) => saveLembur(null, draft)}
-            onUpdate={saveLembur}
-            onDelete={removeLembur}
+            onSaveDraft={saveLembur}
+            onSubmit={submitLembur}
           />
         )
       ) : (

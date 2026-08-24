@@ -3610,3 +3610,126 @@ button {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* ---------- Lembur L2 replacements ---------- */
+.lembur-l2 {
+  display: grid;
+  gap: 18px;
+}
+
+.lembur-form-card {
+  padding: 22px;
+  border: 1px solid #d8e1eb;
+  border-top: 4px solid #174b63;
+  border-radius: 12px;
+  background: linear-gradient(150deg, #ffffff 0%, #f5f9fa 100%);
+  box-shadow: 0 12px 30px rgba(23, 75, 99, 0.08);
+}
+
+.lembur-form-heading,
+.lembur-form-actions,
+.lembur-duration-strip,
+.lembur-evidence-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lembur-form-heading {
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.lembur-form-heading h2 {
+  margin: 3px 0 0;
+  color: #173d4f;
+  font-size: 21px;
+}
+
+.lembur-kicker {
+  color: #ad6b18;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.lembur-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.lembur-duration-strip {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-left: 4px solid #d6902f;
+  background: #fff8eb;
+  color: #5f4b2e;
+}
+
+.lembur-duration-strip strong {
+  color: #9a5b0d;
+  font-size: 18px;
+}
+
+.lembur-duration-strip small {
+  color: var(--color-text-muted);
+}
+
+.lembur-description-preview {
+  margin: 14px 0;
+  padding: 12px 14px;
+  color: #274656;
+  font-style: italic;
+  line-height: 1.55;
+  border: 1px dashed #b8c9d2;
+  border-radius: 8px;
+  background: #f8fbfc;
+}
+
+.lembur-evidence-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #d8e1eb;
+}
+
+.lembur-evidence-panel p,
+.lembur-evidence-row small {
+  display: block;
+  margin: 3px 0 0;
+  color: var(--color-text-muted);
+}
+
+.lembur-evidence-row {
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid #dfe7ec;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lembur-evidence-row > div {
+  min-width: 210px;
+  flex: 1;
+}
+
+.lembur-message {
+  margin: 14px 0 0;
+  color: #174b63;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .lembur-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lembur-form-heading,
+  .lembur-duration-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

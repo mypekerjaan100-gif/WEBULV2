@@ -1,0 +1,2 @@
+-- Remote migration history alignment. The eligibility correction is
+-- consolidated into 20260824014035 for fresh database replay.
