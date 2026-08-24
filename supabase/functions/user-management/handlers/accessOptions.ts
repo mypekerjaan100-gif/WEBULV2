@@ -12,13 +12,15 @@ export async function handleAccessOptions(): Promise<{ status: number; body: Rec
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
-  const [{ data: contracts, error: contractsError }, { data: scopes, error: scopesError }, { data: units, error: unitsError }, { data: names, error: namesError }] = await Promise.all([
+  const [{ data: contracts, error: contractsError }, { data: scopes, error: scopesError }, { data: units, error: unitsError }, { data: names, error: namesError }, { data: internalUnits, error: internalUnitsError }, { data: orgAccess, error: orgAccessError }] = await Promise.all([
     adminClient.from("contracts").select("id, title").eq("status", "active"),
     adminClient.from("contract_up3_scopes").select("contract_id, up3_id").eq("status", "Aktif"),
     adminClient.from("organization_units").select("id, type, parent_id").eq("own_status", "Aktif"),
     adminClient.from("organization_name_history").select("organization_unit_id, name, effective_from, effective_to"),
+    adminClient.from("internal_organization_units").select("id, code, name, type, parent_id, status").eq("status", "ACTIVE").order("name"),
+    adminClient.from("organization_contract_access").select("internal_org_unit_id, contract_id, operational_up3_id, status, effective_from, effective_to").eq("status", "ACTIVE").is("effective_to", null),
   ]);
-  if (contractsError || scopesError || unitsError || namesError) {
+  if (contractsError || scopesError || unitsError || namesError || internalUnitsError || orgAccessError) {
     return { status: 500, body: { error: "access_options_query_failed", message: "Gagal memuat opsi akses." } };
   }
 
@@ -44,11 +46,29 @@ export async function handleAccessOptions(): Promise<{ status: number; body: Rec
     }];
   });
 
+  // Build internal organization options for management role assignment.
+  // Organizational mapping status is derived from organization_contract_access
+  // to inform the UI without fabricating scope.
+  const activeAccessSet = new Set(
+    (orgAccess || [])
+      .filter((a) => a.effective_from <= today && (!a.effective_to || a.effective_to > today))
+      .map((a) => a.internal_org_unit_id as string),
+  );
+  const internalOrganizationUnits = (internalUnits || []).map((unit) => ({
+    id: unit.id as string,
+    code: unit.code as string,
+    name: unit.name as string,
+    type: unit.type as string,
+    parentId: unit.parent_id as string | null,
+    hasOperationalMapping: activeAccessSet.has(unit.id as string),
+  }));
+
   return {
     status: 200,
     body: {
       contracts: (contracts || []).map((contract) => ({ id: contract.id, title: contract.title })),
       scopes: allowedScopes,
+      internalOrganizationUnits,
     },
   };
 }

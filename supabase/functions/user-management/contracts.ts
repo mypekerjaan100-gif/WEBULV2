@@ -6,6 +6,7 @@ export const ACTION_TO_OPERATION = {
   // remains the sole privilege check.
   access_options: "ASSIGN_MEMBERSHIP",
   assign_contract_access: "ASSIGN_MEMBERSHIP",
+  assign_organization_access: "ASSIGN_MEMBERSHIP",
   assign_membership: "ASSIGN_MEMBERSHIP",
   revoke_membership: "REVOKE_MEMBERSHIP",
   assign_role: "ASSIGN_ROLE",

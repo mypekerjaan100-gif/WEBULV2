@@ -10,6 +10,7 @@ import { handleInviteUser } from "./handlers/inviteUser.ts";
 import { handleSessionContext } from "./handlers/sessionContext.ts";
 import { handleAccessOptions } from "./handlers/accessOptions.ts";
 import { handleAssignContractAccess } from "./handlers/assignContractAccess.ts";
+import { handleAssignOrganizationMembership } from "./handlers/assignOrganizationMembership.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -100,6 +101,16 @@ Deno.serve(async (request: Request) => {
 
     if (body.action === "assign_contract_access") {
       const result = await handleAssignContractAccess(
+        body.targetUserId,
+        body.targetRoleCode,
+        body.payload,
+        user.id,
+      );
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (body.action === "assign_organization_access") {
+      const result = await handleAssignOrganizationMembership(
         body.targetUserId,
         body.targetRoleCode,
         body.payload,

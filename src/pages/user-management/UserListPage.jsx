@@ -53,6 +53,116 @@ function SummaryBar({ users }) {
   )
 }
 
+const MANAGEMENT_ROLE_OPTIONS = [
+  { value: 'TEAM_LEADER', label: 'Team Leader Unit Layanan' },
+  { value: 'MANAGER_UNIT', label: 'Manager Unit Layanan' },
+  { value: 'MANAGER_UP', label: 'Manager Unit Pelaksana (MUP)' },
+  { value: 'ASMAN_OPERASI', label: 'Asman Operasi' },
+  { value: 'ASMAN_KEUANGAN', label: 'Asman Keuangan' },
+]
+
+const MANAGEMENT_ROLE_LEVEL = {
+  TEAM_LEADER: 'UL',
+  MANAGER_UNIT: 'UL',
+  MANAGER_UP: 'UP',
+  ASMAN_OPERASI: 'UP',
+  ASMAN_KEUANGAN: 'UP',
+}
+
+function OrganizationAccessForm({ user, onSuccess }) {
+  const [internalUnits, setInternalUnits] = useState([])
+  const [role, setRole] = useState('TEAM_LEADER')
+  const [unitId, setUnitId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    callUserManagement('access_options').then(({ data, error: fnError }) => {
+      if (cancelled) return
+      if (fnError) setError(fnError)
+      else setInternalUnits(data?.internalOrganizationUnits || [])
+      setLoading(false)
+    }).catch((err) => {
+      if (!cancelled) {
+        setError(err.message || 'Gagal memuat unit organisasi.')
+        setLoading(false)
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const expectedType = MANAGEMENT_ROLE_LEVEL[role]
+  const filteredUnits = internalUnits.filter((u) => u.type === expectedType)
+  const selectedUnit = filteredUnits.find((u) => u.id === unitId)
+
+  const handleRoleChange = (nextRole) => {
+    setRole(nextRole)
+    setUnitId('')
+    setError(null)
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError(null)
+    if (!unitId || !role) {
+      setError('Pilih role dan unit organisasi.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const { data, error: fnError } = await callUserManagement('assign_organization_access', {
+        targetUserId: user.id,
+        targetRoleCode: role,
+        payload: {
+          internalOrgUnitId: unitId,
+          organizationRole: role,
+        },
+      })
+      if (fnError) {
+        setError(fnError)
+        return
+      }
+      if (data?.error) {
+        setError(data.error)
+        return
+      }
+      await onSuccess(data)
+    } catch (err) {
+      setError(err.message || 'Gagal mengatur akses organisasi.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) return <p className="text-muted">Memuat unit organisasi...</p>
+  return (
+    <form onSubmit={handleSubmit} className="contract-access-form">
+      {error && <div className="invite-error-box"><p>{error}</p></div>}
+      <div className="form-group">
+        <label htmlFor="org-role">Role *</label>
+        <select id="org-role" className="input-select" value={role} onChange={(e) => handleRoleChange(e.target.value)} required>
+          {MANAGEMENT_ROLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label} ({opt.value})</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label htmlFor="org-unit">Unit Organisasi *</label>
+        <select id="org-unit" className="input-select" value={unitId} onChange={(e) => setUnitId(e.target.value)} required>
+          <option value="">Pilih unit</option>
+          {filteredUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name} {unit.hasOperationalMapping ? '' : '(belum mapping)'}</option>)}
+        </select>
+      </div>
+      {selectedUnit && !selectedUnit.hasOperationalMapping && (
+        <p className="invite-hint">Scope operasional Pelayanan Teknik belum dikonfigurasi.</p>
+      )}
+      <button type="submit" className="btn btn-primary" disabled={submitting}>
+        {submitting ? 'Menyimpan...' : 'Simpan Akses Organisasi'}
+      </button>
+    </form>
+  )
+}
+
 function ContractAccessForm({ user, onSuccess }) {
   const [options, setOptions] = useState({ contracts: [], scopes: [] })
   const [contractId, setContractId] = useState('')
@@ -167,6 +277,7 @@ function ContractAccessForm({ user, onSuccess }) {
 
 function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
   const [showAccessForm, setShowAccessForm] = useState(false)
+  const [accessFormType, setAccessFormType] = useState('contract')
   if (!user) return null
   const hasOrg = user.organizationMemberships.length > 0
   const hasContract = user.contractMemberships.length > 0
@@ -271,13 +382,32 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
                 </button>
               </div>
               {showAccessForm && (
-                <ContractAccessForm
-                  user={user}
-                  onSuccess={async () => {
-                    await onRefresh()
-                    onClose()
-                  }}
-                />
+                <>
+                  <div className="form-group">
+                    <label htmlFor="access-type">Jenis Akses</label>
+                    <select id="access-type" className="input-select" value={accessFormType} onChange={(e) => setAccessFormType(e.target.value)}>
+                      <option value="contract">Kontrak Operasional (ADMIN_UP3/ADMIN_ULP)</option>
+                      <option value="organization">Organisasi Manajemen (TL/MUP/Asman)</option>
+                    </select>
+                  </div>
+                  {accessFormType === 'contract' ? (
+                    <ContractAccessForm
+                      user={user}
+                      onSuccess={async () => {
+                        await onRefresh()
+                        onClose()
+                      }}
+                    />
+                  ) : (
+                    <OrganizationAccessForm
+                      user={user}
+                      onSuccess={async () => {
+                        await onRefresh()
+                        onClose()
+                      }}
+                    />
+                  )}
+                </>
               )}
             </section>
           )}

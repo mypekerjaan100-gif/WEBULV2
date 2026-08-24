@@ -67,7 +67,7 @@ export async function handleListUsers(): Promise<{
     };
   }
 
-  const [{ data: profiles }, { data: memberships, error: membershipsError }, { data: employees }, { data: orgMemberships }, { data: contractMemberships }, { data: contracts }, { data: organizationNames }] = await Promise.all([
+  const [{ data: profiles }, { data: memberships, error: membershipsError }, { data: employees }, { data: orgMemberships }, { data: contractMemberships }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] = await Promise.all([
     adminClient
       .from("profiles")
       .select("id, display_name, status")
@@ -91,6 +91,9 @@ export async function handleListUsers(): Promise<{
     adminClient
       .from("organization_name_history")
       .select("organization_unit_id, name, effective_from, effective_to"),
+    adminClient
+      .from("internal_organization_units")
+      .select("id, name"),
   ]);
 
   const profileMap = new Map(
@@ -147,6 +150,7 @@ export async function handleListUsers(): Promise<{
       nameMap.set(name.organization_unit_id as string, name.name as string);
     }
   }
+  const internalNameMap = new Map((internalUnits || []).map((u) => [u.id as string, u.name as string]));
   const contractNameMap = new Map((contracts || []).map((contract) => [contract.id as string, contract.title as string]));
 
   const orgMap = new Map<string, UserSummary["organizationMemberships"]>();
@@ -155,7 +159,7 @@ export async function handleListUsers(): Promise<{
     if (!orgMap.has(uid)) orgMap.set(uid, []);
     orgMap.get(uid)!.push({
       unitId: om.internal_org_unit_id as string,
-      unitName: nameMap.get(om.internal_org_unit_id as string) ?? "Unknown",
+      unitName: internalNameMap.get(om.internal_org_unit_id as string) ?? nameMap.get(om.internal_org_unit_id as string) ?? "Unknown",
       role: om.organization_role as string,
       status: om.status as string,
       assignedAt: om.effective_from as string,
