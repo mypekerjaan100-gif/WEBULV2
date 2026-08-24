@@ -154,6 +154,7 @@ async function compressImage(file) {
 }
 
 async function optimizePdf(file) {
+  if (file.size <= EVIDENCE_TARGET_BYTES) return file
   let document
   try {
     document = await PDFDocument.load(await file.arrayBuffer(), {
@@ -166,7 +167,6 @@ async function optimizePdf(file) {
   if (document.getPageCount() > MAX_PDF_PAGES) {
     throw new Error(`PDF melebihi batas aman ${MAX_PDF_PAGES} halaman.`)
   }
-  if (file.size <= EVIDENCE_TARGET_BYTES) return file
 
   const optimized = await document.save({
     addDefaultPage: false,

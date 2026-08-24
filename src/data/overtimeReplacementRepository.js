@@ -83,3 +83,68 @@ export async function saveOvertimeReplacementDraft({
 export async function submitOvertimeReplacement(activityId) {
   return rpc('submit_overtime_replacement_l2', { p_activity_id: activityId })
 }
+
+function mapWorkRecord(row) {
+  return {
+    id: row.activity_id,
+    entryId: row.entry_id,
+    contractId: row.contract_id,
+    up3Id: row.up3_id,
+    unitId: row.unit_id,
+    periodMonth: row.period_month,
+    date: row.overtime_date,
+    type: 'WORK',
+    workCategory: row.work_category,
+    workTitle: row.work_title,
+    workLocation: row.work_location,
+    description: row.description,
+    status: row.status,
+    participantEmployeeId: row.participant_employee_id,
+    participantName: row.participant_name,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    durationHours: Number(row.duration_hours),
+    total: Number(row.total_amount),
+    submissionDeadlineAt: row.submission_deadline_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export async function listOvertimeWork({ contractId, up3Id, unitId, periodMonth }) {
+  const rows = await rpc('list_overtime_work_l3', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId ?? null,
+    p_period_month: periodMonth ?? null,
+  })
+  return (rows ?? []).map(mapWorkRecord)
+}
+
+export async function saveOvertimeWorkDraft({
+  activityId,
+  contractId,
+  up3Id,
+  unitId,
+  workCategory,
+  description,
+  workTitle,
+  workLocation,
+  participants,
+}) {
+  return rpc('save_overtime_work_draft_l3', {
+    p_activity_id: activityId ?? null,
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId,
+    p_work_category: workCategory,
+    p_description: description,
+    p_work_title: workTitle ?? null,
+    p_work_location: workLocation ?? null,
+    p_participants: participants,
+  })
+}
+
+export async function submitOvertimeWork(activityId) {
+  return rpc('submit_overtime_work_l3', { p_activity_id: activityId })
+}

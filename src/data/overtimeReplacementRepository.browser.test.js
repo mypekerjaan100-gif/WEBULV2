@@ -284,11 +284,11 @@ try {
     await page.waitForSelector('.lembur-form-card')
   const typeSelect = page.locator('label').filter({ hasText: 'Jenis Lembur' }).locator('select')
   const typeOptions = await typeSelect.locator('option').allTextContents()
-  for (const label of ['Pengganti Cuti', 'Pengganti Sakit', 'Pengganti Izin', 'Lembur Pekerjaan (segera di L3)']) {
+  for (const label of ['Pengganti Cuti', 'Pengganti Sakit', 'Pengganti Izin']) {
     if (!typeOptions.includes(label)) throw new Error(`Missing Lembur type option: ${label}`)
   }
-  if (!(await typeSelect.locator('option[value="WORK"]').evaluate((option) => option.disabled))) {
-    throw new Error('Lembur Pekerjaan is not a disabled L3 placeholder')
+  for (const label of ['Administrasi', 'Gardu', 'JTM', 'JTR']) {
+    if (!typeOptions.some(o=> o.includes(label))) throw new Error(`Missing Pekerjaan category: ${label}`)
   }
   await typeSelect.selectOption('REPLACEMENT_LEAVE')
   const replacedSelect = page.locator('label').filter({ hasText: 'Pegawai yang Digantikan' }).locator('select')

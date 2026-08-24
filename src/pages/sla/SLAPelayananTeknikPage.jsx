@@ -46,8 +46,11 @@ import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
 import {
   listOvertimeReplacements,
+  listOvertimeWork,
   saveOvertimeReplacementDraft,
+  saveOvertimeWorkDraft,
   submitOvertimeReplacement,
+  submitOvertimeWork,
 } from '../../data/overtimeReplacementRepository.js'
 import {
   activateScopedVersion,
@@ -337,14 +340,22 @@ export default function SLAPelayananTeknikPage({
     setLemburLoadError('')
     setLemburRecords([])
     try {
-      const rows = await listOvertimeReplacements({
-        contractId: orgMap.contractUuid,
-        up3Id: orgMap.up3Uuid,
-        unitId: lemburUnitUuid,
-        periodMonth: lemburPeriodMonth,
-      })
+      const [repRows, workRows] = await Promise.all([
+        listOvertimeReplacements({
+          contractId: orgMap.contractUuid,
+          up3Id: orgMap.up3Uuid,
+          unitId: lemburUnitUuid,
+          periodMonth: lemburPeriodMonth,
+        }),
+        listOvertimeWork({
+          contractId: orgMap.contractUuid,
+          up3Id: orgMap.up3Uuid,
+          unitId: lemburUnitUuid,
+          periodMonth: lemburPeriodMonth,
+        }),
+      ])
       if (requestId !== lemburRequestId.current) return
-      setLemburRecords(rows)
+      setLemburRecords([...repRows, ...workRows])
       setLemburLoadStatus('ready')
     } catch (error) {
       if (requestId !== lemburRequestId.current) return
@@ -378,9 +389,38 @@ export default function SLAPelayananTeknikPage({
     }
   }
 
+  const saveWorkLembur = async (id, draft) => {
+    try {
+      const activityId = await saveOvertimeWorkDraft({
+        activityId: id,
+        contractId: orgMap.contractUuid,
+        up3Id: orgMap.up3Uuid,
+        ...draft,
+      })
+      await refreshLembur()
+      return {
+        ok: true,
+        activityId,
+        message: id ? 'Draft diperbarui di Supabase.' : 'Draft disimpan di Supabase. Lengkapi evidence sebelum mengajukan.',
+      }
+    } catch (error) {
+      return { ok: false, message: error.message || 'Gagal menyimpan Draft ke Supabase.' }
+    }
+  }
+
   const submitLembur = async (activityId) => {
     try {
       await submitOvertimeReplacement(activityId)
+      await refreshLembur()
+      return { ok: true, message: 'Lembur diajukan dan menunggu approval.' }
+    } catch (error) {
+      return { ok: false, message: error.message || 'Gagal mengajukan Lembur.' }
+    }
+  }
+
+  const submitWorkLembur = async (activityId) => {
+    try {
+      await submitOvertimeWork(activityId)
       await refreshLembur()
       return { ok: true, message: 'Lembur diajukan dan menunggu approval.' }
     } catch (error) {
@@ -857,6 +897,7 @@ export default function SLAPelayananTeknikPage({
             canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp')}
             loading={lemburLoadStatus === 'loading' || !employeesLoaded}
             loadError={lemburLoadError || employeeLoadError}
+            orgUnits={orgMap.units}
             onRetry={() => {
               if (employeeLoadError) {
                 setEmployeesLoaded(false)
@@ -866,6 +907,8 @@ export default function SLAPelayananTeknikPage({
             }}
             onSaveDraft={saveLembur}
             onSubmit={submitLembur}
+            onSaveWorkDraft={saveWorkLembur}
+            onSubmitWork={submitWorkLembur}
           />
         )
       ) : (

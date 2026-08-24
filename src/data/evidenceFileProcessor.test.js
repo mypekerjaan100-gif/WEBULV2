@@ -39,8 +39,10 @@ assert(oversizedRejected, 'Oversized document rejected clearly')
 
 let malformedPdfRejected = false
 try {
+  const bigMalformed = new Uint8Array(900 * 1024)
+  bigMalformed.set([1, 2, 3])
   await processEvidenceFile(
-    new File([new Uint8Array([1, 2, 3])], 'malformed.pdf', { type: 'application/pdf' }),
+    new File([bigMalformed], 'malformed.pdf', { type: 'application/pdf' }),
     'SPK',
   )
 } catch (error) {
