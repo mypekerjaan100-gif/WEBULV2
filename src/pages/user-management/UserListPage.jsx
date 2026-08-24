@@ -69,6 +69,8 @@ const MANAGEMENT_ROLE_LEVEL = {
   ASMAN_KEUANGAN: 'UP',
 }
 
+const MANAGEMENT_ROLE_LABEL = Object.fromEntries(MANAGEMENT_ROLE_OPTIONS.map((o) => [o.value, o.label]))
+
 function OrganizationAccessForm({ user, onSuccess }) {
   const [internalUnits, setInternalUnits] = useState([])
   const [role, setRole] = useState('TEAM_LEADER')
@@ -143,7 +145,7 @@ function OrganizationAccessForm({ user, onSuccess }) {
       <div className="form-group">
         <label htmlFor="org-role">Role *</label>
         <select id="org-role" className="input-select" value={role} onChange={(e) => handleRoleChange(e.target.value)} required>
-          {MANAGEMENT_ROLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label} ({opt.value})</option>)}
+          {MANAGEMENT_ROLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
         </select>
       </div>
       <div className="form-group">
@@ -336,7 +338,7 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
                   {user.organizationMemberships.map((om, i) => (
                     <tr key={i}>
                       <td>{om.unitName}</td>
-                      <td>{om.role}</td>
+                      <td>{MANAGEMENT_ROLE_LABEL[om.role] ?? om.role}</td>
                       <td><StatusBadge status={om.status} /></td>
                     </tr>
                   ))}
@@ -386,8 +388,8 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
                   <div className="form-group">
                     <label htmlFor="access-type">Jenis Akses</label>
                     <select id="access-type" className="input-select" value={accessFormType} onChange={(e) => setAccessFormType(e.target.value)}>
-                      <option value="contract">Kontrak Operasional (ADMIN_UP3/ADMIN_ULP)</option>
-                      <option value="organization">Organisasi Manajemen (TL/MUP/Asman)</option>
+                      <option value="contract">Kontrak Operasional</option>
+                      <option value="organization">Organisasi Manajemen</option>
                     </select>
                   </div>
                   {accessFormType === 'contract' ? (
