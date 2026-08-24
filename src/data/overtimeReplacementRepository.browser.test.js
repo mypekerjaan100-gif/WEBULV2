@@ -280,20 +280,20 @@ try {
   if (result.cleanupOnly) {
     console.log(`Overtime replacement L2 cleanup passed: ${JSON.stringify(result)}`)
   } else {
-    await page.waitForSelector('.lembur-form-card')
-  const typeSelect = page.locator('label').filter({ hasText: 'Jenis Lembur' }).locator('select')
-  const typeOptions = await typeSelect.locator('option').allTextContents()
-  for (const label of ['Pengganti Cuti', 'Pengganti Sakit', 'Pengganti Izin']) {
-    if (!typeOptions.includes(label)) throw new Error(`Missing Lembur type option: ${label}`)
+  await page.getByRole('button', { name: '+ Tambah Lembur', exact: true }).click()
+  for (const label of ['Pengganti Cuti', 'Pengganti Sakit', 'Pengganti Izin', 'Lembur Pekerjaan']) {
+    if (!await page.getByRole('button', { name: new RegExp(`^${label}`) }).isVisible()) throw new Error(`Missing Lembur type card: ${label}`)
   }
+  await page.getByRole('button', { name: /^Lembur Pekerjaan/ }).click()
   for (const label of ['Administrasi', 'Gardu', 'JTM', 'JTR']) {
-    if (!typeOptions.some(o=> o.includes(label))) throw new Error(`Missing Pekerjaan category: ${label}`)
+    if (!await page.getByRole('button', { name: new RegExp(`^${label}`) }).isVisible()) throw new Error(`Missing Pekerjaan category: ${label}`)
   }
-  await typeSelect.selectOption('REPLACEMENT_LEAVE')
+  await page.getByRole('button', { name: '← Kembali', exact: true }).click()
+  await page.getByRole('button', { name: /^Pengganti Cuti/ }).click()
   const replacedSelect = page.locator('label').filter({ hasText: 'Pegawai yang Digantikan' }).locator('select')
   await replacedSelect.locator('option[value="12000000-0000-4000-8000-000000000001"]').waitFor({ state: 'attached' })
   await replacedSelect.selectOption('12000000-0000-4000-8000-000000000001')
-  const participantSelect = page.locator('label').filter({ hasText: 'Pegawai yang Lembur / Pengganti' }).locator('select')
+  const participantSelect = page.locator('label').filter({ hasText: 'Pegawai Pengganti' }).locator('select')
   await participantSelect.selectOption('12000000-0000-4000-8000-000000000002')
   await page.locator('label').filter({ hasText: 'Jam Selesai' }).locator('input').fill('09:30')
   await page.waitForFunction(() => document.body.textContent.includes('1 jam 30 menit'))

@@ -3611,127 +3611,149 @@ button {
   outline-offset: 2px;
 }
 
-/* ---------- Lembur L2 replacements ---------- */
-.lembur-l2 {
-  display: grid;
-  gap: 18px;
+/* ---------- Lembur operational UI ---------- */
+.lembur-l2 { display: grid; gap: 18px; }
+.lembur-landing-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 4px 2px 8px; }
+.lembur-landing-header h1 { margin: 0; color: #173d4f; font-size: 26px; letter-spacing: -0.02em; }
+.lembur-landing-header p { margin: 5px 0 0; color: var(--color-text-muted); }
+.lembur-landing-message { margin: 0; padding: 10px 14px; border: 1px solid #c8dce5; border-radius: 8px; background: #f4f9fb; }
+.lembur-kicker { color: #8b5a18; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.lembur-rekap-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; color: var(--color-text-muted); font-size: 12px; }
+
+.lembur-form-overlay { z-index: 1050; }
+.lembur-form-card { width: min(100%, 680px); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; border: 1px solid #d8e1eb; border-radius: 14px; background: #fff; box-shadow: 0 24px 70px rgba(10, 34, 46, .22); }
+.lembur-form-modal-wide { width: min(100%, 980px); }
+.lembur-picker-modal { overflow: visible; }
+.lembur-modal-header, .lembur-form-heading, .lembur-heading-actions, .lembur-form-actions, .lembur-detail-header, .lembur-detail-header-actions, .lembur-approval-actions, .lembur-preview-header, .lembur-preview-nav { display: flex; align-items: center; gap: 12px; }
+.lembur-modal-header, .lembur-form-heading, .lembur-detail-header, .lembur-preview-header { justify-content: space-between; }
+.lembur-modal-header { margin-bottom: 20px; }
+.lembur-modal-header h2, .lembur-form-heading h2, .lembur-detail-header h2 { margin: 2px 0 0; color: #173d4f; font-size: 22px; }
+.lembur-modal-header p, .lembur-detail-header p { margin: 5px 0 0; color: var(--color-text-muted); }
+.lembur-icon-button { display: inline-grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 1px solid #d7e0e5; border-radius: 8px; background: #fff; color: #4b6470; font-size: 23px; line-height: 1; cursor: pointer; }
+.lembur-icon-button:hover { border-color: #9db6c1; background: #f6f9fa; color: #173d4f; }
+.lembur-type-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.lembur-type-card { min-height: 112px; padding: 18px; border: 1px solid #d8e1e6; border-radius: 10px; background: #fff; color: #173d4f; text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.lembur-type-card:hover, .lembur-type-card:focus-visible { border-color: #4e7d91; box-shadow: 0 8px 20px rgba(23, 75, 99, .09); transform: translateY(-1px); outline: none; }
+.lembur-type-card strong, .lembur-type-card span { display: block; }
+.lembur-type-card strong { margin-bottom: 8px; font-size: 16px; }
+.lembur-type-card span { color: var(--color-text-muted); font-size: 13px; line-height: 1.45; }
+.lembur-work-type-grid .lembur-type-card { min-height: 92px; }
+.lembur-back-button { margin-top: 18px; }
+.lembur-form-heading { margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid #e1e7eb; }
+.lembur-form-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.lembur-form-section { margin-top: 14px; padding: 18px; border: 1px solid #dfe6ea; border-radius: 10px; background: #fff; }
+.lembur-section-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.lembur-section-heading > span { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: 7px; background: #eaf2f5; color: #174b63; font-size: 12px; font-weight: 800; }
+.lembur-section-heading h3 { margin: 0; color: #173d4f; font-size: 15px; }
+.lembur-section-heading p { margin: 3px 0 0; color: var(--color-text-muted); font-size: 12px; }
+.lembur-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.lembur-grid-full, .lembur-deadline-card, .lembur-deadline-helper { grid-column: 1 / -1; }
+.lembur-readonly-value { min-height: 40px; padding: 10px 12px; border: 1px solid #d8e1e6; border-radius: 7px; background: #f6f8f9; color: #173d4f; font-weight: 700; }
+.lembur-deadline-helper { margin-top: -5px; color: #526b76; font-size: 12px; }
+.lembur-deadline-card { display: grid; gap: 3px; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.45; }
+.lembur-deadline-expired { border: 1px solid #e4b9bd; background: #fff5f5; color: #7f2730; }
+.lembur-description-preview { display: grid; gap: 4px; margin: 0; padding: 12px 14px; border: 1px solid #d8e4e9; border-radius: 8px; background: #f7fafb; color: #274656; font-size: 13px; line-height: 1.5; }
+.lembur-description-preview > span { color: var(--color-text-muted); font-size: 11px; font-style: normal; font-weight: 700; text-transform: uppercase; }
+.lembur-time-grid { display: grid; grid-template-columns: minmax(200px, 1.5fr) minmax(200px, 1.5fr) minmax(115px, .7fr) minmax(115px, .7fr) minmax(115px, .7fr); gap: 12px; align-items: end; }
+.lembur-duration-compact { display: grid; min-height: 40px; align-content: center; padding: 7px 11px; border: 1px solid #d5e1e6; border-radius: 7px; background: #f5f9fa; }
+.lembur-duration-compact span, .lembur-duration-compact small { color: var(--color-text-muted); font-size: 10px; }
+.lembur-duration-compact strong { color: #174b63; font-size: 14px; }
+.lembur-participants { display: grid; gap: 8px; }
+.lembur-participants-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; color: #173d4f; }
+.lembur-participant-labels, .lembur-participant-row { display: grid; grid-template-columns: minmax(220px, 1.5fr) 120px 120px minmax(90px, .7fr) 28px; gap: 8px; align-items: center; }
+.lembur-participant-labels { padding: 0 10px; color: var(--color-text-muted); font-size: 11px; font-weight: 700; }
+.lembur-participant-row { padding: 9px 10px; border: 1px solid #e0e7eb; border-radius: 8px; background: #fafcfc; }
+.lembur-participant-row > strong { color: #405c68; font-size: 13px; }
+.lembur-row-remove { width: 27px; height: 27px; border: 0; border-radius: 6px; background: transparent; color: #8a4148; font-size: 19px; cursor: pointer; }
+.lembur-row-remove:hover { background: #fbeaec; }
+
+.lembur-upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.lembur-upload-card { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid #dce5e9; border-radius: 9px; background: #fff; }
+.lembur-upload-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #173d4f; }
+.lembur-upload-card > small { color: var(--color-text-muted); font-size: 11px; line-height: 1.4; }
+.lembur-timemark-badge { padding: 3px 7px; border-radius: 999px; background: #fff3d9; color: #7b500f; font-size: 10px; font-weight: 800; }
+.lembur-dropzone { display: grid; min-height: 110px; place-items: center; align-content: center; gap: 3px; padding: 13px; border: 1px dashed #9db4be; border-radius: 8px; background: #f8fbfc; color: #365966; text-align: center; cursor: pointer; }
+.lembur-dropzone:hover { border-color: #174b63; background: #f1f7f9; }
+.lembur-dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.lembur-dropzone small { color: var(--color-text-muted); font-size: 11px; }
+.lembur-upload-icon { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: #e4eff3; color: #174b63; font-size: 17px; font-weight: 800; }
+.lembur-selected-files { display: grid; gap: 7px; }
+.lembur-selected-file { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 7px; border-radius: 7px; background: #f5f8f9; }
+.lembur-selected-file > img, .lembur-thumb-button img { width: 46px; height: 42px; border-radius: 5px; object-fit: cover; }
+.lembur-selected-file > div { min-width: 0; flex: 1; }
+.lembur-selected-file > div strong, .lembur-selected-file > div small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lembur-selected-file > div strong { color: #294b59; font-size: 12px; }
+.lembur-selected-file > div small { color: var(--color-text-muted); font-size: 10px; }
+.lembur-thumb-button { padding: 0; border: 0; background: none; cursor: pointer; }
+.lembur-doc-icon { display: grid; width: 44px; height: 42px; flex: 0 0 44px; place-items: center; border-radius: 5px; background: #e9eff2; color: #486470; font-size: 10px; font-weight: 800; }
+.lembur-message { margin: 14px 0 0; color: #174b63; font-weight: 700; }
+.lembur-form-actions { justify-content: flex-end; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e1e7eb; }
+
+.lembur-detail-modal { max-width: 920px; padding: 0; }
+.lembur-detail-header { position: sticky; top: 0; z-index: 2; padding: 20px 22px 16px; border-bottom: 1px solid #e1e7eb; background: #fff; }
+.lembur-detail-header-actions { align-self: flex-start; }
+.lembur-detail-alert { display: grid; gap: 3px; margin: 16px 22px 0; padding: 12px 14px; border: 1px solid #e3c3a0; border-radius: 8px; background: #fff8ef; color: #754c1a; font-size: 12px; }
+.lembur-detail-section { margin: 0 22px; padding: 18px 0; border-bottom: 1px solid #e6ebee; }
+.lembur-detail-section:last-child { border-bottom: 0; }
+.lembur-detail-section > h3 { margin: 0 0 12px; color: #526b76; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.lembur-detail-table-wrap { overflow-x: auto; }
+.lembur-detail-description { display: grid; gap: 4px; color: #294b59; }
+.lembur-detail-description span { color: var(--color-text-muted); font-size: 12px; }
+.lembur-detail-description p { margin: 4px 0 0; line-height: 1.55; }
+.lembur-detail-evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.lembur-detail-photo, .lembur-detail-document { display: flex; min-width: 0; align-items: center; gap: 10px; padding: 9px; border: 1px solid #dce5e9; border-radius: 8px; background: #fff; color: #294b59; text-align: left; cursor: pointer; }
+.lembur-detail-photo:hover, .lembur-detail-document:hover { border-color: #7f9fac; background: #f8fbfc; }
+.lembur-detail-photo > img, .lembur-detail-photo > .lembur-evidence-loading { width: 112px; height: 76px; flex: 0 0 112px; border-radius: 6px; object-fit: cover; background: #edf2f4; }
+.lembur-evidence-loading { display: grid; place-items: center; color: var(--color-text-muted); font-size: 10px; }
+.lembur-detail-photo > span:last-child, .lembur-detail-document > span:nth-child(2) { min-width: 0; flex: 1; }
+.lembur-detail-photo strong, .lembur-detail-photo small, .lembur-detail-document strong, .lembur-detail-document small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lembur-detail-photo small, .lembur-detail-document small { margin-top: 4px; color: var(--color-text-muted); font-size: 10px; }
+.lembur-detail-document b { color: #174b63; font-size: 11px; }
+.lembur-detail-empty { padding: 20px; border-radius: 8px; background: #f6f8f9; color: var(--color-text-muted); text-align: center; }
+.lembur-history-timeline { display: grid; }
+.lembur-history-item { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 10px; padding-bottom: 15px; }
+.lembur-history-item:not(:last-child)::before { content: ''; position: absolute; top: 12px; bottom: -2px; left: 5px; width: 1px; background: #cbd9df; }
+.lembur-history-dot { position: relative; z-index: 1; width: 11px; height: 11px; margin-top: 3px; border: 3px solid #dce9ee; border-radius: 50%; background: #174b63; }
+.lembur-history-item small, .lembur-history-item strong, .lembur-history-item p { display: block; }
+.lembur-history-item small { color: var(--color-text-muted); font-size: 10px; }
+.lembur-history-item strong { margin-top: 2px; color: #294b59; font-size: 12px; }
+.lembur-history-item p { margin: 2px 0 0; color: #526b76; font-size: 11px; }
+.lembur-approval-section { background: #f8fbfc; margin: 0; padding: 18px 22px 22px; }
+.lembur-approval-actions { justify-content: flex-end; }
+.lembur-reject-box { display: grid; gap: 10px; margin-bottom: 12px; padding: 12px; border: 1px solid #e5c4c7; border-radius: 8px; background: #fff; }
+.lembur-reject-box > div { display: flex; justify-content: flex-end; gap: 8px; }
+
+.lembur-preview-overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 24px; background: rgba(7, 20, 28, .78); }
+.lembur-preview-modal { display: grid; width: min(100%, 1000px); max-height: calc(100vh - 48px); overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 24px 80px rgba(0, 0, 0, .35); }
+.lembur-preview-header { padding: 12px 14px; border-bottom: 1px solid #dfe6ea; }
+.lembur-preview-header strong, .lembur-preview-header span { display: block; }
+.lembur-preview-header span { margin-top: 2px; color: var(--color-text-muted); font-size: 11px; }
+.lembur-preview-body { display: grid; min-height: 300px; overflow: auto; place-items: center; background: #182830; }
+.lembur-preview-body > img { display: block; max-width: 100%; max-height: calc(100vh - 170px); object-fit: contain; }
+.lembur-preview-body > iframe { width: 100%; height: calc(100vh - 150px); border: 0; background: #fff; }
+.lembur-document-fallback { display: grid; max-width: 440px; justify-items: center; gap: 8px; padding: 30px; color: #dce7eb; text-align: center; }
+.lembur-document-fallback .lembur-doc-icon { width: 64px; height: 58px; background: #31454f; color: #fff; }
+.lembur-document-fallback p { margin: 0; color: #adc0c8; font-size: 12px; }
+.lembur-preview-nav { justify-content: space-between; padding: 10px 14px; border-top: 1px solid #dfe6ea; }
+
+@media (max-width: 900px) {
+  .lembur-time-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lembur-duration-compact { min-height: 58px; }
+  .lembur-participant-labels { display: none; }
+  .lembur-participant-row { grid-template-columns: minmax(180px, 1fr) 110px 110px minmax(80px, .6fr) 28px; }
 }
-
-.lembur-form-card {
-  padding: 22px;
-  border: 1px solid #d8e1eb;
-  border-top: 4px solid #174b63;
-  border-radius: 12px;
-  background: linear-gradient(150deg, #ffffff 0%, #f5f9fa 100%);
-  box-shadow: 0 12px 30px rgba(23, 75, 99, 0.08);
-}
-
-.lembur-form-heading,
-.lembur-form-actions,
-.lembur-duration-strip,
-.lembur-evidence-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.lembur-form-heading {
-  justify-content: space-between;
-  margin-bottom: 18px;
-}
-
-.lembur-form-heading h2 {
-  margin: 3px 0 0;
-  color: #173d4f;
-  font-size: 21px;
-}
-
-.lembur-kicker {
-  color: #ad6b18;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-
-.lembur-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.lembur-duration-strip {
-  margin-top: 16px;
-  padding: 12px 14px;
-  border-left: 4px solid #d6902f;
-  background: #fff8eb;
-  color: #5f4b2e;
-}
-
-.lembur-duration-strip strong {
-  color: #9a5b0d;
-  font-size: 18px;
-}
-
-.lembur-duration-strip small {
-  color: var(--color-text-muted);
-}
-
-.lembur-description-preview {
-  margin: 14px 0;
-  padding: 12px 14px;
-  color: #274656;
-  font-style: italic;
-  line-height: 1.55;
-  border: 1px dashed #b8c9d2;
-  border-radius: 8px;
-  background: #f8fbfc;
-}
-
-.lembur-evidence-panel {
-  display: grid;
-  gap: 12px;
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid #d8e1eb;
-}
-
-.lembur-evidence-panel p,
-.lembur-evidence-row small {
-  display: block;
-  margin: 3px 0 0;
-  color: var(--color-text-muted);
-}
-
-.lembur-evidence-row {
-  flex-wrap: wrap;
-  padding: 12px;
-  border: 1px solid #dfe7ec;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.lembur-evidence-row > div {
-  min-width: 210px;
-  flex: 1;
-}
-
-.lembur-message {
-  margin: 14px 0 0;
-  color: #174b63;
-  font-weight: 700;
-}
-
-@media (max-width: 760px) {
-  .lembur-form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .lembur-form-heading,
-  .lembur-duration-strip {
-    align-items: flex-start;
-    flex-direction: column;
-  }
+@media (max-width: 680px) {
+  .lembur-landing-header, .lembur-form-heading { align-items: flex-start; flex-direction: column; }
+  .lembur-heading-actions { width: 100%; justify-content: flex-end; }
+  .lembur-type-grid, .lembur-form-grid, .lembur-upload-grid, .lembur-detail-evidence-grid { grid-template-columns: 1fr; }
+  .lembur-time-grid { grid-template-columns: 1fr 1fr; }
+  .lembur-participant-row { grid-template-columns: 1fr 1fr; }
+  .lembur-participant-row > select { grid-column: 1 / -1; }
+  .lembur-form-card { max-height: 100vh; border-radius: 0; }
+  .lembur-form-overlay { padding: 0; }
+  .lembur-picker-modal { overflow: auto; }
+  .lembur-preview-overlay { padding: 0; }
+  .lembur-preview-modal { max-height: 100vh; border-radius: 0; }
 }
 
 /* ---------- Rekap L4 ---------- */

@@ -82,6 +82,22 @@ function workCategoryOf(lemburType) {
   return lemburType.split(':')[1]
 }
 
+function isImageEvidence(entry) {
+  return entry?.storedMimeType?.startsWith('image/') || entry?.evidenceType?.startsWith('FOTO_')
+}
+
+function isPdfEvidence(entry) {
+  return entry?.storedMimeType === 'application/pdf'
+}
+
+function evidenceLabel(type) {
+  const requirements = [
+    ...Object.values(REPLACEMENT_TYPES).flatMap((config) => config.evidence),
+    ...Object.values(WORK_CATEGORIES).flatMap((config) => config.evidence),
+  ]
+  return requirements.find((requirement) => requirement.type === type)?.label ?? type
+}
+
 export default function SLALembur({
   contractScope,
   up3Id,
@@ -122,6 +138,11 @@ export default function SLALembur({
   const [detailLoading, setDetailLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showReject, setShowReject] = useState(null)
+  const [formOpen, setFormOpen] = useState(false)
+  const [formStep, setFormStep] = useState('main')
+  const [evidenceUrls, setEvidenceUrls] = useState({})
+  const [detailEvidenceUrls, setDetailEvidenceUrls] = useState({})
+  const [evidencePreview, setEvidencePreview] = useState(null)
 
   const range = buildPontianakRange(draft.date, draft.startTime, draft.endTime)
   const replacedEmployee = employeeOptions.find((e) => e.id === draft.replacedEmployeeId)
@@ -203,13 +224,37 @@ export default function SLALembur({
     return () => { cancelled=true }
   }, [activeActivityId])
 
+  useEffect(() => {
+    let cancelled = false
+    const images = evidence.filter((entry) => entry.status === 'ACTIVE' && isImageEvidence(entry))
+    if (!images.length) {
+      setEvidenceUrls({})
+      return undefined
+    }
+    import('../../data/overtimeEvidenceRepository.js')
+      .then(async ({ createOvertimeEvidenceSignedUrl }) => Promise.all(images.map(async (entry) => {
+        const signed = await createOvertimeEvidenceSignedUrl(entry.id)
+        return [entry.id, signed.signedUrl]
+      })))
+      .then((urls) => { if (!cancelled) setEvidenceUrls(Object.fromEntries(urls)) })
+      .catch(() => { if (!cancelled) setEvidenceUrls({}) })
+    return () => { cancelled = true }
+  }, [evidence])
+
   const updateDraft = (patch) => {
     setDraft(c=>({ ...c, ...patch }))
     setDirty(true)
     setMessage(null)
   }
 
+  const releaseStagedFiles = (stagedFiles = files) => {
+    Object.values(stagedFiles).flat().forEach((entry) => {
+      if (entry?.previewUrl) URL.revokeObjectURL(entry.previewUrl)
+    })
+  }
+
   const resetForm = () => {
+    releaseStagedFiles()
     setDraft(initialDraft(periodMonth))
     setActiveActivityId(null)
     setActiveWorkCategory(null)
@@ -217,6 +262,18 @@ export default function SLALembur({
     setFiles({})
     setDirty(true)
     setMessage(null)
+  }
+
+  const openNewForm = () => {
+    resetForm()
+    setFormStep('main')
+    setFormOpen(true)
+  }
+
+  const closeForm = () => {
+    releaseStagedFiles()
+    setFormOpen(false)
+    setFormStep('main')
   }
 
   const editDraft = (record) => {
@@ -271,6 +328,8 @@ export default function SLALembur({
     setFiles({})
     setDirty(false)
     setMessage(null)
+    setFormStep('form')
+    setFormOpen(true)
   }
 
   const validateReplacement = () => {
@@ -379,12 +438,21 @@ export default function SLALembur({
     try {
       const { prepareOvertimeEvidenceFile } = await import('../../data/overtimeEvidenceRepository.js')
       const processed = await prepareOvertimeEvidenceFile(file, requirement.type)
-      const staged = { id: `${requirement.type}-${Date.now()}-${Math.random()}`, processed }
+      const staged = {
+        id: `${requirement.type}-${Date.now()}-${Math.random()}`,
+        processed,
+        previewUrl: processed.file.type.startsWith('image/') ? URL.createObjectURL(processed.file) : null,
+      }
       setFiles((current) => ({
         ...current,
         [requirement.type]: requirement.allowMultiple
           ? [...(current[requirement.type] ?? []), staged]
-          : [staged],
+          : (() => {
+              (current[requirement.type] ?? []).forEach((entry) => {
+                if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl)
+              })
+              return [staged]
+            })(),
       }))
       setMessage(`${requirement.label} siap disimpan (${Math.ceil(processed.stored.sizeBytes / 1024)} KB).`)
     } catch (error) {
@@ -395,10 +463,14 @@ export default function SLALembur({
   }
 
   const removeStagedEvidence = (evidenceType, stagedId) => {
-    setFiles((current) => ({
-      ...current,
-      [evidenceType]: (current[evidenceType] ?? []).filter((item) => item.id !== stagedId),
-    }))
+    setFiles((current) => {
+      const removed = (current[evidenceType] ?? []).find((item) => item.id === stagedId)
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
+      return {
+        ...current,
+        [evidenceType]: (current[evidenceType] ?? []).filter((item) => item.id !== stagedId),
+      }
+    })
   }
 
   const uploadStagedEvidence = async (activityId) => {
@@ -417,6 +489,7 @@ export default function SLALembur({
             : 0,
           supersedesEvidenceId: requirement.allowMultiple ? null : (evidenceSingle[requirement.type]?.id ?? null),
         })
+        if (staged.previewUrl) URL.revokeObjectURL(staged.previewUrl)
         setFiles((current) => ({
           ...current,
           [requirement.type]: (current[requirement.type] ?? []).filter((item) => item.id !== staged.id),
@@ -442,15 +515,24 @@ export default function SLALembur({
     } finally { setSubmitting(false) }
   }
 
-  const previewEvidence = async (entry) => {
-    const preview = window.open('about:blank','_blank')
-    if (!preview) { setMessage('Browser memblokir jendela preview. Izinkan pop-up untuk aplikasi ini.'); return }
-    preview.opener=null
+  const previewEvidence = async (entry, entries = [entry]) => {
+    const previewEntries = entries.filter((candidate) => candidate.status === 'ACTIVE')
+    const index = Math.max(0, previewEntries.findIndex((candidate) => candidate.id === entry.id))
+    setEvidencePreview({ entries: previewEntries, index, entry, url: null, loading: true })
     try {
       const { createOvertimeEvidenceSignedUrl } = await import('../../data/overtimeEvidenceRepository.js')
       const signed = await createOvertimeEvidenceSignedUrl(entry.id)
-      preview.location.replace(signed.signedUrl)
-    } catch (e) { preview.close(); setMessage(e.message || 'Preview evidence gagal.') }
+      setEvidencePreview({ entries: previewEntries, index, entry, url: signed.signedUrl, loading: false })
+    } catch (e) {
+      setEvidencePreview(null)
+      setMessage(e.message || 'Preview evidence gagal.')
+    }
+  }
+
+  const moveEvidencePreview = (direction) => {
+    if (!evidencePreview?.entries?.length) return
+    const nextIndex = (evidencePreview.index + direction + evidencePreview.entries.length) % evidencePreview.entries.length
+    previewEvidence(evidencePreview.entries[nextIndex], evidencePreview.entries)
   }
 
   const removeEvidence = async (entry) => {
@@ -481,6 +563,7 @@ export default function SLALembur({
           : await onSubmitWork(activityId)
       if (!resubmitting && !result?.ok) throw new Error(result?.message || 'Lembur gagal diajukan.')
       resetForm()
+      setFormOpen(false)
       setMessage(resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : 'Lembur diajukan dan menunggu approval.')
       if(onRefresh) await onRefresh()
     } catch (error) {
@@ -527,7 +610,7 @@ export default function SLALembur({
   const paginated = filtered.slice((currentPage-1)*rowsPerPage, currentPage*rowsPerPage)
   useEffect(()=>{ setCurrentPage(1) }, [filters, rowsPerPage, records.length])
   useEffect(()=>{
-    if (!detailActivityId) { setDetailEvidence([]); setDetailHistory([]); return }
+    if (!detailActivityId) { setDetailEvidence([]); setDetailHistory([]); setDetailEvidenceUrls({}); return }
     let cancelled=false
     setDetailLoading(true)
     Promise.all([
@@ -536,6 +619,22 @@ export default function SLALembur({
     ]).then(([evs, hist])=>{ if(!cancelled){ setDetailEvidence(evs); setDetailHistory(hist||[]) } }).catch(()=>{ if(!cancelled){ setDetailEvidence([]); setDetailHistory([]) } }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
     return ()=>{ cancelled=true }
   }, [detailActivityId])
+  useEffect(() => {
+    let cancelled = false
+    const images = detailEvidence.filter((entry) => entry.status === 'ACTIVE' && isImageEvidence(entry))
+    if (!images.length) {
+      setDetailEvidenceUrls({})
+      return undefined
+    }
+    import('../../data/overtimeEvidenceRepository.js')
+      .then(async ({ createOvertimeEvidenceSignedUrl }) => Promise.all(images.map(async (entry) => {
+        const signed = await createOvertimeEvidenceSignedUrl(entry.id)
+        return [entry.id, signed.signedUrl]
+      })))
+      .then((urls) => { if (!cancelled) setDetailEvidenceUrls(Object.fromEntries(urls)) })
+      .catch(() => { if (!cancelled) setDetailEvidenceUrls({}) })
+    return () => { cancelled = true }
+  }, [detailEvidence])
   const detailRecords = detailActivityId ? sorted.filter(r=> r.id===detailActivityId) : []
   const detailActivity = detailRecords[0] || null
 
@@ -550,9 +649,24 @@ export default function SLALembur({
     } else {
       setDraft(c=>({ ...c, lemburType: type }))
     }
+    releaseStagedFiles()
     setFiles({})
     setDirty(true)
     setMessage(null)
+  }
+
+  const chooseMainType = (type) => {
+    if (type === 'WORK') {
+      setFormStep('work')
+      return
+    }
+    changeType(type)
+    setFormStep('form')
+  }
+
+  const chooseWorkType = (category) => {
+    changeType(`WORK:${category}`)
+    setFormStep('form')
   }
 
   const addParticipant = () => {
@@ -574,10 +688,20 @@ export default function SLALembur({
     return found?.displayName || unitId
   }
 
+  const currentTypeLabel = isWork
+    ? WORK_CATEGORIES[workCategory]?.label
+    : REPLACEMENT_TYPES[draft.lemburType]?.label
+  const activeDetailEvidence = detailEvidence.filter((entry) => entry.status === 'ACTIVE')
+  const photoDetailEvidence = activeDetailEvidence.filter(isImageEvidence)
+
   return (
     <section className="sla-module-panel lembur-l2">
-      <div className="sla-export-bar">
-        <span className="sla-export-scope">Lembur Pengganti dan Pekerjaan. Waktu bisnis: Asia/Pontianak.</span>
+      <div className="lembur-landing-header">
+        <div>
+          <h1>Lembur Pelayanan Teknik</h1>
+          <p>Pengajuan dan rekap lembur pegawai</p>
+        </div>
+        {canMutate && <button type="button" className="sla-btn sla-btn-primary" onClick={openNewForm}>+ Tambah Lembur</button>}
       </div>
       {loadError ? (
         <div className="placeholder"><h2 className="placeholder-title">Data lembur gagal dimuat</h2><p className="placeholder-text">{loadError}</p><button type="button" className="sla-btn" onClick={onRetry}>Coba Lagi</button></div>
@@ -585,209 +709,85 @@ export default function SLALembur({
         <div className="placeholder"><h2 className="placeholder-title">Memuat data lembur...</h2></div>
       ) : (
         <>
-          {canMutate && (
-            <div className="lembur-form-card">
-              <div className="lembur-form-heading">
-                <div><span className="lembur-kicker">Tambah Lembur</span><h2>{activeActivityId ? 'Lanjutkan Draft' : 'Transaksi Lembur'}</h2></div>
-                {activeActivityId && <button type="button" className="sla-btn" disabled={submitting} onClick={resetForm}>Draft Baru</button>}
-              </div>
-
-              <fieldset disabled={formReadOnly} style={{border:0, padding:0, margin:0, minWidth:0}}>
-              <div className="lembur-form-grid">
-                <label className="sla-context-field">
-                  <span className="sla-context-label">Jenis Lembur *</span>
-                  <select className="sla-context-select" value={draft.lemburType} onChange={e=>changeType(e.target.value)}>
-                    <option value="">Pilih jenis lembur</option>
-                    <optgroup label="Pengganti">
-                      {Object.entries(REPLACEMENT_TYPES).map(([v,c])=> <option key={v} value={v}>{c.label}</option>)}
-                    </optgroup>
-                    <optgroup label="Pekerjaan">
-                      {Object.entries(WORK_CATEGORIES).map(([k,c])=> <option key={k} value={`WORK:${k}`}>{c.label}</option>)}
-                    </optgroup>
-                  </select>
-                </label>
-                <label className="sla-context-field">
-                  <span className="sla-context-label">Tanggal Lembur *</span>
-                  <input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} />
-                </label>
-                {draft.date && !isRevision && (
-                  <div style={{gridColumn:'1 / -1', color: initialDeadlinePassed ? '#842029' : '#5f4b2e', fontSize:'13px'}}>
-                    {initialDeadlinePassed ? (
-                      <><strong>Batas pengajuan telah lewat.</strong> {initialDeadlineMessage(draft.date)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.</>
-                    ) : (
-                      <>Batas pengajuan: {formatPontianakDate(initialDeadline)}, 23:59</>
-                    )}
+          {!formOpen && message && <p className="lembur-message lembur-landing-message">{message}</p>}
+          {canMutate && formOpen && (
+            <div className="rekap-detail-overlay lembur-form-overlay" onMouseDown={(event)=>{ if(event.target===event.currentTarget) closeForm() }}>
+            <div className={`lembur-form-card ${formStep === 'form' ? 'lembur-form-modal-wide' : 'lembur-picker-modal'}`} onMouseDown={(event)=>event.stopPropagation()}>
+              {formStep === 'main' ? (
+                <>
+                  <div className="lembur-modal-header">
+                    <div><h2>Tambah Lembur</h2><p>Pilih jenis lembur yang akan diajukan</p></div>
+                    <button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={closeForm}>×</button>
                   </div>
-                )}
-
-                {isReplacement && (
-                  <>
-                    <label className="sla-context-field">
-                      <span className="sla-context-label">Pegawai yang Digantikan *</span>
-                      <select className="sla-context-select" value={draft.replacedEmployeeId} disabled={employeeLoading} onChange={e=>updateDraft({ replacedEmployeeId:e.target.value, participantEmployeeId:'' })}>
-                        <option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>
-                        {employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="sla-context-field">
-                      <span className="sla-context-label">Pegawai yang Lembur / Pengganti *</span>
-                      <select className="sla-context-select" value={draft.participantEmployeeId} disabled={!replacedEmployee} onChange={e=>updateDraft({ participantEmployeeId:e.target.value })}>
-                        <option value="">Pilih pegawai pengganti</option>
-                        {participantOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="sla-context-field">
-                      <span className="sla-context-label">Jam Mulai *</span>
-                      <input type="time" className="sla-context-select" value={draft.startTime} onChange={e=>updateDraft({ startTime:e.target.value })} />
-                    </label>
-                    <label className="sla-context-field">
-                      <span className="sla-context-label">Jam Selesai *</span>
-                      <input type="time" className="sla-context-select" value={draft.endTime} onChange={e=>updateDraft({ endTime:e.target.value })} />
-                    </label>
-                  </>
-                )}
-
-                {isWork && (
-                  <>
-                    {isMultiWork && (
-                      <>
-                        <label className="sla-context-field">
-                          <span className="sla-context-label">Uraian / Nama Pekerjaan *</span>
-                          <input className="sla-context-select" value={draft.workTitle} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder="Contoh: JTM — Tiang Tumbang" />
-                        </label>
-                        <label className="sla-context-field">
-                          <span className="sla-context-label">Lokasi *</span>
-                          <input className="sla-context-select" value={draft.workLocation} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" />
-                        </label>
-                      </>
-                    )}
-                    <label className="sla-context-field" style={{gridColumn:'1 / -1'}}>
-                      <span className="sla-context-label">Keterangan Pekerjaan *</span>
-                      <textarea className="sla-context-select" value={draft.description} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} style={{resize:'vertical'}} />
-                    </label>
-                    {isAdministrasi ? (
-                      <>
-                        <label className="sla-context-field">
-                          <span className="sla-context-label">Pegawai Lembur *</span>
-                          <select className="sla-context-select" value={draft.participants[0]?.employeeId || ''} disabled={employeeLoading} onChange={e=>updateParticipant(draft.participants[0].tempId, { employeeId:e.target.value })}>
-                            <option value="">{employeeLoading?'Memuat pegawai...':'Pilih pegawai'}</option>
-                            {employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                          </select>
-                        </label>
-                        <label className="sla-context-field">
-                          <span className="sla-context-label">Jam Mulai *</span>
-                          <input type="time" className="sla-context-select" value={draft.participants[0]?.startTime || draft.startTime} onChange={e=>updateParticipant(draft.participants[0].tempId, { startTime:e.target.value })} />
-                        </label>
-                        <label className="sla-context-field">
-                          <span className="sla-context-label">Jam Selesai *</span>
-                          <input type="time" className="sla-context-select" value={draft.participants[0]?.endTime || draft.endTime} onChange={e=>updateParticipant(draft.participants[0].tempId, { endTime:e.target.value })} />
-                        </label>
-                        <div className="lembur-duration-strip" style={{gridColumn:'1 / -1'}}>
-                          <span>Durasi otomatis</span><strong>{(() => {
-                            const p=draft.participants[0]; const r=buildPontianakRange(draft.date, p?.startTime||draft.startTime, p?.endTime||draft.endTime); return r?formatDurationMinutes(r.durationMinutes):'–'
-                          })()}</strong>
-                          {(() => {
-                            const p=draft.participants[0]; const st=p?.startTime||draft.startTime; const en=p?.endTime||draft.endTime; return st && en && en <= st ? <small>Selesai pada hari berikutnya</small> : null
-                          })()}
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{gridColumn:'1 / -1'}}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', margin:'8px 0'}}>
-                          <span className="lembur-kicker">Peserta ({draft.participants.length})</span>
-                          <button type="button" className="sla-btn" onClick={addParticipant}>+ Tambah Pegawai</button>
-                        </div>
-                        {draft.participants.map((p, idx)=> {
-                          const r = buildPontianakRange(draft.date, p.startTime, p.endTime)
-                          const otherIds = draft.participants.filter(x=>x.tempId!==p.tempId).map(x=>x.employeeId)
-                          const options = employeeOptions.filter(emp=> !otherIds.includes(emp.id))
-                          return (
-                            <div key={p.tempId} className="lembur-participant-row" style={{display:'grid', gridTemplateColumns:'1.2fr 0.7fr 0.7fr auto', gap:'8px', alignItems:'end', marginBottom:'10px', padding:'10px', border:'1px solid #dfe7ec', borderRadius:'8px', background:'#fff'}}>
-                              <label className="sla-context-field" style={{margin:0}}>
-                                <span className="sla-context-label">Pegawai *</span>
-                                <select className="sla-context-select" value={p.employeeId} disabled={employeeLoading} onChange={e=>updateParticipant(p.tempId, { employeeId:e.target.value })}>
-                                  <option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>
-                                  {options.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                                </select>
-                              </label>
-                              <label className="sla-context-field" style={{margin:0}}>
-                                <span className="sla-context-label">Jam Mulai *</span>
-                                <input type="time" className="sla-context-select" value={p.startTime} onChange={e=>updateParticipant(p.tempId, { startTime:e.target.value })} />
-                              </label>
-                              <label className="sla-context-field" style={{margin:0}}>
-                                <span className="sla-context-label">Jam Selesai *</span>
-                                <input type="time" className="sla-context-select" value={p.endTime} onChange={e=>updateParticipant(p.tempId, { endTime:e.target.value })} />
-                              </label>
-                              <div style={{display:'flex', gap:'6px', alignItems:'center'}}>
-                                <span style={{fontSize:'13px', color:'#5f4b2e', minWidth:'90px'}}>{r?formatDurationMinutes(r.durationMinutes):'–'}</span>
-                                {draft.participants.length>1 && <button type="button" className="sla-btn" onClick={()=>removeParticipant(p.tempId)}>Hapus</button>}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
+                  <div className="lembur-type-grid">
+                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_LEAVE')}><strong>Pengganti Cuti</strong><span>Pegawai menggantikan petugas yang cuti</span></button>
+                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_SICK')}><strong>Pengganti Sakit</strong><span>Pegawai menggantikan petugas yang sakit</span></button>
+                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_PERMISSION')}><strong>Pengganti Izin</strong><span>Pegawai menggantikan petugas yang izin</span></button>
+                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('WORK')}><strong>Lembur Pekerjaan</strong><span>Lembur untuk pelaksanaan pekerjaan tertentu</span></button>
+                  </div>
+                </>
+              ) : formStep === 'work' ? (
+                <>
+                  <div className="lembur-modal-header">
+                    <div><h2>Pilih Jenis Pekerjaan</h2><p>Tentukan kategori pekerjaan lembur</p></div>
+                    <button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={closeForm}>×</button>
+                  </div>
+                  <div className="lembur-type-grid lembur-work-type-grid">
+                    {Object.entries(WORK_CATEGORIES).map(([category, config])=><button type="button" className="lembur-type-card" key={category} onClick={()=>chooseWorkType(category)}><strong>{config.label}</strong><span>Lembur pekerjaan {config.label.toLowerCase()}</span></button>)}
+                  </div>
+                  <button type="button" className="sla-btn lembur-back-button" onClick={()=>setFormStep('main')}>← Kembali</button>
+                </>
+              ) : (
+              <>
+              <div className="lembur-form-heading">
+                <div><span className="lembur-kicker">{activeActivityId ? 'Lanjutkan Draft' : 'Tambah Lembur'}</span><h2>{currentTypeLabel}</h2></div>
+                <div className="lembur-heading-actions">
+                  {!activeActivityId && <button type="button" className="sla-btn" disabled={submitting} onClick={()=>setFormStep(isWork ? 'work' : 'main')}>← Ubah Jenis</button>}
+                  {activeActivityId && <button type="button" className="sla-btn" disabled={submitting} onClick={openNewForm}>Draft Baru</button>}
+                  <button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={closeForm}>×</button>
+                </div>
               </div>
 
-              {isReplacement && range && (
-                <div className="lembur-duration-strip">
-                  <span>Durasi otomatis</span><strong>{formatDurationMinutes(range.durationMinutes)}</strong>
-                  {draft.endTime <= draft.startTime && <small>Selesai pada hari berikutnya</small>}
-                </div>
-              )}
-              {replacementDescription && <p className="lembur-description-preview">{replacementDescription}</p>}
+              <fieldset disabled={formReadOnly} className="lembur-form-fieldset">
+                <section className="lembur-form-section">
+                  <div className="lembur-section-heading"><span>A</span><div><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
+                  <div className="lembur-form-grid">
+                    <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
+                    <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                    {draft.date && !isRevision && (initialDeadlinePassed ? (
+                      <div className="lembur-deadline-card lembur-deadline-expired"><strong>Batas pengajuan telah lewat.</strong><span>{initialDeadlineMessage(draft.date)}</span><span>Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.</span></div>
+                    ) : <div className="lembur-deadline-helper">Batas pengajuan: {formatPontianakDate(initialDeadline)}, 23:59</div>)}
+                    {activeRevisionExpired && <div className="lembur-deadline-card lembur-deadline-expired"><strong>Batas revisi telah lewat.</strong><span>Transaksi Lembur sudah kedaluwarsa.</span></div>}
+                    {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder="Contoh: JTM — Tiang Tumbang" /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
+                    {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea className="sla-context-select" value={draft.description} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={3} /></label>}
+                    {replacementDescription && <div className="lembur-description-preview lembur-grid-full"><span>Keterangan otomatis</span>{replacementDescription}</div>}
+                  </div>
+                </section>
 
-              {evidenceRequirements.length > 0 && (
-                <div className="lembur-evidence-panel">
-                  <div><span className="lembur-kicker">Evidence Wajib</span><p>Pilih file sekarang. File diproses di browser dan baru disimpan ke private Storage saat Simpan Draft atau Ajukan Lembur, maksimum 1 MB per evidence.</p></div>
-                  {evidenceRequirements.map(req=>{
-                    const allowMultiple = req.allowMultiple
-                    const existingList = (evidenceByType[req.type]||[]).filter(r=>r.status==='ACTIVE')
-                    const existingSingle = evidenceSingle[req.type]
-                    const stagedList = files[req.type] ?? []
-                    return (
-                      <div className="lembur-evidence-row" key={req.type}>
-                        <div style={{minWidth:'220px', flex:1}}>
-                          <strong>{req.label} *</strong>
-                          {req.helpers && <div style={{marginTop:'6px'}}>{req.helpers.map((h,i)=><small key={i} style={{display:'block', color:'#5f4b2e'}}>{h}</small>)}</div>}
-                          {!allowMultiple && <small>{stagedList[0] ? `${stagedList[0].processed.original.filename} · ${Math.ceil(stagedList[0].processed.stored.sizeBytes/1024)} KB · siap disimpan` : existingSingle ? `${existingSingle.originalFilename} · ${(existingSingle.storedSizeBytes/1024).toFixed(0)} KB · tersimpan` : 'Belum lengkap'}</small>}
-                          {allowMultiple && <small>{existingList.length + stagedList.length ? `${existingList.length} foto tersimpan · ${stagedList.length} foto siap disimpan` : 'Belum ada foto'}</small>}
-                        </div>
-                        <input key={`${req.type}-${stagedList.length}-${existingSingle?.id ?? 'empty'}-${existingList.length}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx" disabled={submitting || initialDeadlinePassed || formReadOnly} onChange={e=>stageEvidence(req, e.target.files?.[0] ?? null)} />
-                        {stagedList.map((entry) => (
-                          <div key={entry.id} style={{display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap'}}>
-                            <span style={{fontSize:'12px'}}>{entry.processed.original.filename} · {Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</span>
-                            <button type="button" className="sla-btn" disabled={submitting || formReadOnly} onClick={()=>removeStagedEvidence(req.type, entry.id)}>Batal</button>
-                          </div>
-                        ))}
-                        {!allowMultiple && existingSingle && <button type="button" className="sla-btn" onClick={()=>previewEvidence(existingSingle)}>Preview</button>}
-                        {!allowMultiple && existingSingle && <button type="button" className="sla-btn" disabled={submitting || formReadOnly} onClick={()=>removeEvidence(existingSingle)}>Hapus</button>}
-                        {allowMultiple && existingList.map(entry=> (
-                          <div key={entry.id} style={{display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap'}}>
-                            <span style={{fontSize:'12px'}}>{entry.originalFilename}</span>
-                            <button type="button" className="sla-btn" onClick={()=>previewEvidence(entry)}>Preview</button>
-                            <button type="button" className="sla-btn" disabled={submitting || formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button>
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {message && <p className="lembur-message">{message}</p>}
-              {(initialDeadlinePassed || formReadOnly) && (
-                <p className="lembur-message">
-                  <strong>{activeRevisionExpired ? 'Batas revisi telah lewat.' : 'Batas pengajuan telah lewat.'}</strong>{' '}
-                  {activeRevisionExpired ? 'Transaksi Lembur sudah kedaluwarsa.' : `${initialDeadlineMessage(draft.date)} Transaksi ini tidak dapat diubah atau diajukan.`}
-                </p>
-              )}
-              <div className="lembur-form-actions">
-                <button type="button" className="sla-btn" disabled={submitting || initialDeadlinePassed || formReadOnly} onClick={saveDraft}>{submitting ? 'Memproses...' : 'Simpan Draft'}</button>
-                <button type="button" className="sla-btn sla-btn-primary" disabled={submitting || initialDeadlinePassed || formReadOnly || !evidenceComplete} onClick={submitDraft}>Ajukan Lembur</button>
-              </div>
+                <section className="lembur-form-section">
+                  <div className="lembur-section-heading"><span>B</span><div><h3>Pegawai & Waktu</h3><p>Peserta, jam kerja, dan durasi otomatis</p></div></div>
+                  {isReplacement && <div className="lembur-time-grid">
+                    <label className="sla-context-field"><span className="sla-context-label">Pegawai yang Digantikan *</span><select className="sla-context-select" value={draft.replacedEmployeeId} disabled={employeeLoading} onChange={e=>updateDraft({ replacedEmployeeId:e.target.value, participantEmployeeId:'' })}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Pegawai Pengganti *</span><select className="sla-context-select" value={draft.participantEmployeeId} disabled={!replacedEmployee} onChange={e=>updateDraft({ participantEmployeeId:e.target.value })}><option value="">Pilih pegawai pengganti</option>{participantOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={draft.startTime} onChange={e=>updateDraft({ startTime:e.target.value })} /></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={draft.endTime} onChange={e=>updateDraft({ endTime:e.target.value })} /></label>
+                    <div className="lembur-duration-compact"><span>Durasi</span><strong>{range ? formatDurationMinutes(range.durationMinutes) : '–'}</strong>{draft.endTime <= draft.startTime && <small>+1 hari</small>}</div>
+                  </div>}
+                  {isAdministrasi && (()=>{ const participant=draft.participants[0]; const participantRange=buildPontianakRange(draft.date, participant?.startTime||draft.startTime, participant?.endTime||draft.endTime); return <div className="lembur-time-grid"><label className="sla-context-field"><span className="sla-context-label">Pegawai Lembur *</span><select className="sla-context-select" value={participant?.employeeId || ''} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat pegawai...':'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label><label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={participant?.startTime||draft.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /></label><label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={participant?.endTime||draft.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /></label><div className="lembur-duration-compact"><span>Durasi</span><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{participant?.endTime<=participant?.startTime&&<small>+1 hari</small>}</div></div>})()}
+                  {isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur</strong><button type="button" className="sla-btn" onClick={addParticipant}>+ Tambah Pegawai</button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<button type="button" className="lembur-row-remove" aria-label="Hapus peserta" onClick={()=>removeParticipant(participant.tempId)}>×</button>:<span />}</div>})}</div>}
+                </section>
+
+                <section className="lembur-form-section">
+                  <div className="lembur-section-heading"><span>C</span><div><h3>Evidence</h3><p>File diproses sebelum disimpan, maksimum 1 MB</p></div></div>
+                  <div className="lembur-upload-grid">{evidenceRequirements.map((requirement)=>{ const existingList=(evidenceByType[requirement.type]||[]).filter(entry=>entry.status==='ACTIVE'); const stagedList=files[requirement.type]??[]; const hasTimeMark=requirement.helpers?.[0]==='TimeMark Wajib'; return <div className="lembur-upload-card" key={requirement.type}><div className="lembur-upload-card-heading"><strong>{requirement.label} *</strong>{hasTimeMark&&<span className="lembur-timemark-badge">TimeMark Wajib</span>}</div>{requirement.helpers?.slice(hasTimeMark?1:0).map((helper)=><small key={helper}>{helper}</small>)}<label className="lembur-dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();stageEvidence(requirement,e.dataTransfer.files?.[0])}}><input key={`${requirement.type}-${stagedList.length}-${existingList.length}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx" disabled={submitting||initialDeadlinePassed||formReadOnly} onChange={e=>stageEvidence(requirement,e.target.files?.[0])} /><span className="lembur-upload-icon">↑</span><strong>Pilih atau tarik {isImageEvidence({evidenceType:requirement.type})?'foto':'dokumen'} ke sini</strong><small>Maksimal 1 MB</small></label><div className="lembur-selected-files">{stagedList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{entry.previewUrl?<img src={entry.previewUrl} alt="" />:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.processed.original.filename}</strong><small>{Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</small></div><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeStagedEvidence(requirement.type,entry.id)}>Hapus</button></div>)}{existingList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{isImageEvidence(entry)&&evidenceUrls[entry.id]?<button type="button" className="lembur-thumb-button" onClick={()=>previewEvidence(entry,existingList)}><img src={evidenceUrls[entry.id]} alt={entry.originalFilename} /></button>:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.originalFilename}</strong><small>{(entry.storedSizeBytes/1024).toFixed(0)} KB · tersimpan</small></div><button type="button" className="sla-btn" onClick={()=>previewEvidence(entry,existingList)}>Preview</button><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button></div>)}</div></div>})}</div>
+                </section>
+
+                {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <p className="lembur-message">{message}</p>}
+                <div className="lembur-form-actions"><button type="button" className="sla-btn" disabled={submitting||initialDeadlinePassed||formReadOnly} onClick={saveDraft}>{submitting?'Memproses...':'Simpan Draft'}</button><button type="button" className="sla-btn sla-btn-primary" disabled={submitting||initialDeadlinePassed||formReadOnly||!evidenceComplete} onClick={submitDraft}>Ajukan Lembur</button></div>
               </fieldset>
+              </>
+              )}
+            </div>
             </div>
           )}
 
@@ -830,6 +830,8 @@ export default function SLALembur({
               </select>
             </label>
           </div>
+
+          <div className="lembur-rekap-heading"><span className="lembur-kicker">Rekap Lembur</span><strong>{filtered.length} baris pegawai</strong></div>
 
           <div className="sla-table-wrap">
             <table className="sla-table">
@@ -886,81 +888,49 @@ export default function SLALembur({
             </div>
           </div>
           {detailActivityId && (
-            <div className="rekap-detail-overlay" onClick={()=>setDetailActivityId(null)}>
-              <div className="rekap-detail-modal" onClick={e=>e.stopPropagation()}>
-                <div className="rekap-detail-header">
-                  <h3>Detail Lembur — {detailActivity ? (detailActivity.type==='WORK' ? (WORK_CATEGORIES[detailActivity.workCategory]?.label || detailActivity.workCategory) : (REPLACEMENT_TYPES[detailActivity.type]?.label || detailActivity.type)) : ''}</h3>
-                  <button type="button" className="sla-btn" onClick={()=>setDetailActivityId(null)}>Tutup</button>
-                </div>
+            <div className="rekap-detail-overlay" onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}>
+              <div className="rekap-detail-modal lembur-detail-modal" onClick={e=>e.stopPropagation()}>
                 {detailActivity && (
                   <>
-                    <div className="rekap-detail-grid">
-                      <div><strong>Tanggal</strong><div>{detailActivity.date}</div></div>
-                      {!canMutate && <div><strong>ULP</strong><div>{getUlpName(detailActivity.unitId)}</div></div>}
-                      <div><strong>Status</strong><div>{displayStatus(detailActivity)}</div></div>
-                      <div><strong>Keterangan</strong><div>{detailActivity.description}</div></div>
-                      {detailActivity.workTitle && <div><strong>Uraian</strong><div>{detailActivity.workTitle}</div></div>}
-                      {detailActivity.workLocation && <div><strong>Lokasi</strong><div>{detailActivity.workLocation}</div></div>}
-                      {detailActivity.revisionDeadlineAt && detailActivity.status==='CORRECTION_REQUIRED' && <div><strong>Batas Revisi</strong><div>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}<br/><small>Sisa waktu: {Math.max(0, Math.ceil((new Date(detailActivity.revisionDeadlineAt) - new Date())/3600000))} jam</small>{detailActivity.rejectionCount===2 && <div style={{color:'#842029', fontWeight:700}}>REVISI TERAKHIR — Ini kesempatan terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</div>}</div></div>}
+                    <div className="lembur-detail-header">
+                      <div><span className="lembur-kicker">Detail Lembur</span><h2>{jenisLabel(detailActivity)}</h2><p>{!canMutate ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}</p></div>
+                      <div className="lembur-detail-header-actions"><span className={`status-badge status-${detailActivity.status}`}>{displayStatus(detailActivity)}</span><button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}>×</button></div>
                     </div>
-                    <div style={{marginTop:'12px'}}>
-                      <strong>Peserta ({detailRecords.length})</strong>
-                      <table className="sla-table" style={{marginTop:'8px'}}>
+                    {detailActivity.revisionDeadlineAt && detailActivity.status==='CORRECTION_REQUIRED' && <div className="lembur-detail-alert"><strong>Batas Revisi</strong><span>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · sisa {Math.max(0,Math.ceil((new Date(detailActivity.revisionDeadlineAt)-new Date())/3600000))} jam</span>{detailActivity.rejectionCount===2&&<small>Revisi terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</small>}</div>}
+                    <section className="lembur-detail-section">
+                      <h3>Pegawai & Waktu</h3>
+                      <div className="lembur-detail-table-wrap"><table className="sla-table">
                         <thead><tr><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th>{(isAdminUp3||isSuperAdmin) && <th>Tarif/Jam</th>}{(isAdminUp3||isSuperAdmin) && <th>Rincian</th>}</tr></thead>
                         <tbody>
                           {detailRecords.map(r=>{
                             const t = pontianakFormValues(r.startedAt, r.endedAt)
-                            // For ADMIN_ULP, hide rate; for ADMIN_UP3 show if available via separate fetch? We keep hidden for now, but show total only. To preserve server rule, we don't fetch rate for ADMIN_ULP.
                             return <tr key={r.entryId}><td>{r.participantName}</td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{(isAdminUp3||isSuperAdmin) && <td>—</td>}{(isAdminUp3||isSuperAdmin) && <td>—</td>}</tr>
                           })}
                         </tbody>
-                      </table>
-                      {(isAdminUp3||isSuperAdmin) && <small>Tarif/Jam dan rincian 1.5x/2x tersedia via Detail sesuai kewenangan.</small>}
-                    </div>
-                    <div style={{marginTop:'12px'}}>
-                      <strong>Evidence</strong>
-                      {detailLoading ? <div>Memuat evidence...</div> : detailEvidence.length ? (
-                        <div style={{display:'grid', gap:'8px', marginTop:'8px'}}>
-                          {detailEvidence.filter(e=>e.status==='ACTIVE').map(ev=>(
-                            <div key={ev.id} style={{display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap', border:'1px solid #dfe7ec', padding:'8px', borderRadius:'6px'}}>
-                              <span style={{minWidth:'160px'}}>{ev.evidenceType} — {ev.originalFilename} · {(ev.storedSizeBytes/1024).toFixed(0)} KB</span>
-                              <button type="button" className="sla-btn" onClick={async()=>{
-                                const { createOvertimeEvidenceSignedUrl } = await import('../../data/overtimeEvidenceRepository.js')
-                                const s = await createOvertimeEvidenceSignedUrl(ev.id)
-                                const w = window.open('about:blank','_blank'); if(w){ w.opener=null; w.location.replace(s.signedUrl) }
-                              }}>Preview</button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : <div>Belum ada evidence.</div>}
-                    </div>
-                    <div style={{marginTop:'12px'}}>
-                      <strong>Riwayat</strong>
+                      </table></div>
+                    </section>
+                    <section className="lembur-detail-section"><h3>Keterangan</h3><div className="lembur-detail-description">{detailActivity.workTitle&&<strong>{detailActivity.workTitle}</strong>}{detailActivity.workLocation&&<span>{detailActivity.workLocation}</span>}<p>{detailActivity.description}</p></div></section>
+                    <section className="lembur-detail-section"><h3>Evidence</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
+                    <section className="lembur-detail-section"><h3>Riwayat</h3>
                       {detailHistory.length ? (
-                        <div style={{display:'grid', gap:'8px', marginTop:'8px'}}>
+                        <div className="lembur-history-timeline">
                           {detailHistory.map(h=>(
-                            <div key={h.id} style={{borderLeft:'3px solid #174b63', padding:'8px 12px', background:'#f8fbfc'}}>
-                              <div style={{fontSize:'12px', color:'#5f4b2e'}}>{new Date(h.occurred_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })} — {h.actor_user_id?.slice(0,8)}</div>
-                              <div><strong>{h.event}</strong> {h.previous_status} → {h.new_status} {h.reason && <span>— {h.reason}</span>}</div>
-                              {h.notes && <div style={{fontSize:'12px'}}>{h.notes}</div>}
+                            <div key={h.id} className="lembur-history-item">
+                              <span className="lembur-history-dot" /><div><small>{new Date(h.occurred_at).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · {h.actor_user_id?.slice(0,8)}</small><strong>{h.event}</strong><p>{h.previous_status} → {h.new_status}{h.reason&&` · ${h.reason}`}</p>{h.notes&&<p>{h.notes}</p>}</div>
                             </div>
                           ))}
                         </div>
-                      ) : <div>Belum ada riwayat.</div>}
-                    </div>
+                      ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
+                    </section>
                     {(isAdminUp3||isSuperAdmin) && detailActivity.status==='SUBMITTED' && (
-                      <div style={{marginTop:'16px', display:'flex', gap:'8px', flexWrap:'wrap', alignItems:'center'}}>
-                        <button type="button" className="sla-btn sla-btn-primary" disabled={submitting} onClick={()=>handleApprove(detailActivity.id)}>Setujui</button>
-                        <input className="sla-context-select" placeholder="Alasan penolakan *" value={rejectReason} onChange={e=>setRejectReason(e.target.value)} style={{flex:1, minWidth:'200px'}} />
-                        <button type="button" className="sla-btn" disabled={submitting || !rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>Tolak Pengajuan</button>
-                      </div>
+                      <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><button type="button" className="sla-btn" onClick={()=>{setShowReject(null);setRejectReason('')}}>Batal</button><button type="button" className="sla-btn" disabled={submitting||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>Kirim Penolakan</button></div></div>}<div className="lembur-approval-actions"><button type="button" className="sla-btn" disabled={submitting} onClick={()=>setShowReject(detailActivity.id)}>Tolak Pengajuan</button><button type="button" className="sla-btn sla-btn-primary" disabled={submitting} onClick={()=>handleApprove(detailActivity.id)}>Setujui</button></div></section>
                     )}
-                    {showReject && <div style={{marginTop:'8px', color:'#842029'}}>{showReject}</div>}
                   </>
                 )}
               </div>
             </div>
           )}
+          {evidencePreview && <div className="lembur-preview-overlay" onClick={()=>setEvidencePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>{evidenceLabel(evidencePreview.entry.evidenceType)}</strong><span>{evidencePreview.entry.originalFilename}</span></div><button type="button" className="lembur-icon-button" aria-label="Tutup preview" onClick={()=>setEvidencePreview(null)}>×</button></div><div className="lembur-preview-body">{evidencePreview.loading?<div className="lembur-detail-empty">Menyiapkan preview aman...</div>:isImageEvidence(evidencePreview.entry)?<img src={evidencePreview.url} alt={evidencePreview.entry.originalFilename} />:isPdfEvidence(evidencePreview.entry)?<iframe src={evidencePreview.url} title={evidencePreview.entry.originalFilename} />:<div className="lembur-document-fallback"><span className="lembur-doc-icon">DOC</span><strong>Pratinjau dokumen tidak didukung browser.</strong><p>Dokumen tetap tersimpan aman. Tutup viewer untuk kembali ke Detail Lembur.</p></div>}</div>{isImageEvidence(evidencePreview.entry)&&evidencePreview.entries.length>1&&<div className="lembur-preview-nav"><button type="button" className="sla-btn" onClick={()=>moveEvidencePreview(-1)}>← Sebelumnya</button><span>{evidencePreview.index+1} / {evidencePreview.entries.length}</span><button type="button" className="sla-btn" onClick={()=>moveEvidencePreview(1)}>Berikutnya →</button></div>}</div></div>}
         </>
       )}
     </section>

@@ -44,6 +44,7 @@ try {
     context.fillText('Lembur D+7', 50, 300)
     return canvas.toDataURL('image/png').split(',')[1]
   }), 'base64')
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n')
 
   const setup = await page.evaluate(async ({ password, contractId, up3Id, unitId, expiredDraftId }) => {
     const { supabase } = await import('/src/lib/supabaseClient.js')
@@ -127,7 +128,9 @@ try {
     const { default: SLALembur } = await import('/src/components/sla/SLALembur.jsx')
     window.__lemburFormD7Ids = []
     document.body.innerHTML = '<main id="lembur-form-d7-root"></main>'
-    createRoot(document.getElementById('lembur-form-d7-root')).render(React.createElement(SLALembur, {
+    const root = createRoot(document.getElementById('lembur-form-d7-root'))
+    window.__renderLemburFormD7 = (props) => root.render(React.createElement(SLALembur, props))
+    window.__renderLemburFormD7({
       contractScope: { contractId, contractName: 'Pelayanan Teknik' },
       up3Id,
       unitId,
@@ -163,7 +166,7 @@ try {
       },
       onSaveWorkDraft: async () => ({ ok: false, message: 'Tidak digunakan' }),
       onSubmitWork: async () => ({ ok: false, message: 'Tidak digunakan' }),
-    }))
+    })
 
     return { replacedId: replaced.id, participantId: participant.id }
   }, {
@@ -174,10 +177,20 @@ try {
     expiredDraftId: EXPIRED_DRAFT_ID,
   })
 
-  await page.waitForSelector('.lembur-form-card')
-  const typeSelect = page.locator('label').filter({ hasText: 'Jenis Lembur' }).locator('select')
+  await page.getByRole('heading', { name: 'Lembur Pelayanan Teknik', exact: true }).waitFor()
+  if (await page.locator('.lembur-form-card').count()) throw new Error('Form tampil pada landing awal')
+  await page.getByRole('button', { name: '+ Tambah Lembur', exact: true }).click()
+  await page.waitForSelector('.lembur-picker-modal')
+  for (const label of ['Pengganti Cuti', 'Pengganti Sakit', 'Pengganti Izin', 'Lembur Pekerjaan']) {
+    if (!await page.getByRole('button', { name: new RegExp(`^${label}`) }).isVisible()) throw new Error(`Kartu ${label} tidak tampil`)
+  }
+  await page.getByRole('button', { name: /^Lembur Pekerjaan/ }).click()
+  for (const label of ['Administrasi', 'Gardu', 'JTM', 'JTR']) {
+    if (!await page.getByRole('button', { name: new RegExp(`^${label}`) }).isVisible()) throw new Error(`Subtipe ${label} tidak tampil`)
+  }
+  await page.getByRole('button', { name: '← Kembali', exact: true }).click()
+  await page.getByRole('button', { name: /^Pengganti Cuti/ }).click()
   const dateInput = page.locator('label').filter({ hasText: 'Tanggal Lembur' }).locator('input')
-  await typeSelect.selectOption('REPLACEMENT_LEAVE')
   if (!await page.getByText('Form Cuti *', { exact: true }).isVisible()) {
     throw new Error('Evidence tidak terlihat sebelum Draft disimpan')
   }
@@ -186,7 +199,7 @@ try {
     throw new Error('Action form terduplikasi')
   }
   const actionsFollowEvidence = await page.evaluate(() => {
-    const evidence = document.querySelector('.lembur-evidence-panel')
+    const evidence = [...document.querySelectorAll('.lembur-form-section')].find((section) => section.querySelector('h3')?.textContent === 'Evidence')
     const actions = document.querySelector('.lembur-form-actions')
     return Boolean(evidence && actions && (evidence.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING))
   })
@@ -194,22 +207,23 @@ try {
 
   await dateInput.fill('2026-08-16')
   await page.getByText('Batas pengajuan telah lewat.', { exact: true }).first().waitFor()
+  if (await page.getByText('Batas pengajuan telah lewat.', { exact: true }).count() !== 1) throw new Error('Peringatan deadline tampil duplikat')
   if (!await page.getByRole('button', { name: 'Simpan Draft', exact: true }).isDisabled()) throw new Error('Simpan Draft tanggal kedaluwarsa aktif')
   if (!await page.getByRole('button', { name: 'Ajukan Lembur', exact: true }).isDisabled()) throw new Error('Submit tanggal kedaluwarsa aktif')
-  if (!await page.locator('.lembur-evidence-panel input[type=file]').isDisabled()) throw new Error('Input evidence tanggal kedaluwarsa aktif')
+  if (!await page.locator('.lembur-upload-card input[type=file]').isDisabled()) throw new Error('Input evidence tanggal kedaluwarsa aktif')
 
-  async function completeValidForm(startTime, endTime, filename) {
+  async function completeValidForm(startTime, endTime, filename, mimeType = 'image/png', buffer = png) {
     await dateInput.fill('2026-08-24')
     const replacedSelect = page.locator('label').filter({ hasText: 'Pegawai yang Digantikan' }).locator('select')
     await replacedSelect.locator(`option[value="${setup.replacedId}"]`).waitFor({ state: 'attached' })
     await replacedSelect.selectOption(setup.replacedId)
-    await page.locator('label').filter({ hasText: 'Pegawai yang Lembur / Pengganti' }).locator('select').selectOption(setup.participantId)
+    await page.locator('label').filter({ hasText: 'Pegawai Pengganti' }).locator('select').selectOption(setup.participantId)
     await page.locator('label').filter({ hasText: 'Jam Mulai' }).locator('input').fill(startTime)
     await page.locator('label').filter({ hasText: 'Jam Selesai' }).locator('input').fill(endTime)
-    await page.locator('.lembur-evidence-panel input[type=file]').setInputFiles({
+    await page.locator('.lembur-upload-card input[type=file]').setInputFiles({
       name: filename,
-      mimeType: 'image/png',
-      buffer: png,
+      mimeType,
+      buffer,
     })
     await page.waitForTimeout(1000)
     if (!(await page.locator('body').innerText()).includes('siap disimpan')) {
@@ -217,15 +231,34 @@ try {
     }
   }
 
-  await completeValidForm('08:00', '10:00', 'form-cuti-draft.png')
+  await completeValidForm('08:00', '10:00', 'form-cuti-draft.pdf', 'application/pdf', pdf)
   await page.getByRole('button', { name: 'Simpan Draft', exact: true }).click()
   await page.getByText('Draft dan evidence berhasil disimpan di Supabase.', { exact: true }).waitFor()
+  const pageCountBeforePreview = page.context().pages().length
+  await page.locator('.lembur-selected-file').getByRole('button', { name: 'Preview', exact: true }).click()
+  await page.locator('.lembur-preview-body iframe').waitFor()
+  if (page.context().pages().length !== pageCountBeforePreview) throw new Error('Preview dokumen membuka tab baru')
+  await page.getByRole('button', { name: 'Tutup preview', exact: true }).click()
+  if (!await page.locator('.lembur-form-modal-wide').isVisible()) throw new Error('Form context hilang setelah preview')
 
   await page.getByRole('button', { name: 'Draft Baru', exact: true }).click()
-  await typeSelect.selectOption('REPLACEMENT_LEAVE')
+  await page.getByRole('button', { name: /^Pengganti Cuti/ }).click()
   await completeValidForm('10:00', '12:00', 'form-cuti-submit.png')
   await page.getByRole('button', { name: 'Ajukan Lembur', exact: true }).click()
   await page.getByText('Lembur diajukan dan menunggu approval.', { exact: true }).waitFor()
+
+  const firstDetailButton = page.getByRole('button', { name: 'Lihat Detail', exact: true }).first()
+  await firstDetailButton.click()
+  await page.locator('.lembur-detail-modal').waitFor()
+  const firstPhoto = page.locator('.lembur-detail-photo').first()
+  if (await firstPhoto.count()) {
+    await firstPhoto.click()
+    await page.locator('.lembur-preview-body img').waitFor()
+    if (page.context().pages().length !== pageCountBeforePreview) throw new Error('Preview foto membuka tab baru')
+    await page.getByRole('button', { name: 'Tutup preview', exact: true }).click()
+    if (!await page.locator('.lembur-detail-modal').isVisible()) throw new Error('Detail context hilang setelah lightbox')
+  }
+  await page.locator('.lembur-detail-modal').getByRole('button', { name: 'Tutup', exact: true }).click()
 
   const result = await page.evaluate(async ({ password, contractId, up3Id, unitId }) => {
     const { supabase } = await import('/src/lib/supabaseClient.js')
@@ -323,8 +356,41 @@ try {
       throw new Error('Regresi L5 approval gagal')
     }
 
+    const up3WorkRows = await repository.listOvertimeWork({ contractId, up3Id, unitId: null, periodMonth: '2026-08-01' })
+    window.__renderLemburFormD7({
+      contractScope: { contractId, contractName: 'Pelayanan Teknik' },
+      up3Id,
+      unitId: null,
+      periodMonth: '2026-08-01',
+      records: [...revisionRows, ...up3WorkRows],
+      canMutate: false,
+      isAdminUp3: true,
+      isSuperAdmin: false,
+      loading: false,
+      loadError: '',
+      orgUnits: [],
+      onRetry: () => {},
+      onRefresh: async () => {},
+    })
+
     return { draftId, submittedId, workId, signedUrlSeconds: signed.expiresIn }
   }, { password: TEST_PASSWORD, contractId: CONTRACT_ID, up3Id: UP3_ID, unitId: UNIT_ID })
+
+  await page.waitForTimeout(300)
+  if (await page.getByRole('button', { name: '+ Tambah Lembur', exact: true }).count()) throw new Error('ADMIN_UP3 melihat tombol Tambah Lembur')
+  const reviewRow = page.locator('tbody tr').filter({ hasText: 'Regresi L3 alur form D+7' }).first()
+  await reviewRow.getByRole('button', { name: 'Lihat Detail', exact: true }).click()
+  await page.locator('.lembur-detail-modal').waitFor()
+  if (!await page.locator('.lembur-detail-modal th').filter({ hasText: 'Tarif/Jam' }).count()) throw new Error(`Kolom finansial ADMIN_UP3 hilang: ${await page.locator('.lembur-detail-modal').innerText()}`)
+  if (!await page.getByRole('button', { name: 'Tolak Pengajuan', exact: true }).isVisible()
+      || !await page.getByRole('button', { name: 'Setujui', exact: true }).isVisible()) throw new Error('Approval ADMIN_UP3 hilang')
+  if (await page.getByPlaceholder('Jelaskan bagian yang perlu diperbaiki').count()) throw new Error('Alasan reject tampil sebelum dipilih')
+  await page.getByRole('button', { name: 'Tolak Pengajuan', exact: true }).click()
+  await page.getByPlaceholder('Jelaskan bagian yang perlu diperbaiki').waitFor()
+  await page.locator('.lembur-detail-photo').first().click()
+  await page.locator('.lembur-preview-body img').waitFor()
+  await page.getByRole('button', { name: 'Tutup preview', exact: true }).click()
+  if (!await page.locator('.lembur-detail-modal').isVisible()) throw new Error('Detail ADMIN_UP3 hilang setelah lightbox')
 
   console.log(`Lembur form D+7 integration passed: ${JSON.stringify(result)}`)
 } finally {
