@@ -1,0 +1,2 @@
+-- Remote migration history alignment. The consolidated foundation is replayed
+-- by 20260824000149 on fresh databases.

@@ -1,0 +1,2 @@
+-- Remote migration history alignment. The hardening changes are consolidated
+-- into 20260824000149 for fresh database replay.
