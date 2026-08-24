@@ -187,3 +187,17 @@ export async function listOvertimeHistory(activityId) {
 export async function getOvertimeDetail(activityId) {
   return rpc('get_overtime_detail_l5', { p_activity_id: activityId })
 }
+export async function listOvertimeEntryFinancial(activityId) {
+  const rows = await rpc('list_overtime_entry_financial_l5', { p_activity_id: activityId })
+  return (rows ?? []).map((row) => ({
+    entryId: row.entry_id,
+    employeeId: row.employee_id,
+    employeeName: row.employee_name_snapshot,
+    hourlyRate: Number(row.hourly_rate_snapshot ?? 0),
+    durationHours: Number(row.duration_hours_snapshot ?? 0),
+    multiplierHours: Number(row.multiplier_hours_snapshot ?? 0),
+    total: Number(row.calculated_amount_snapshot ?? 0),
+    startedAt: row.participant_started_at,
+    endedAt: row.participant_ended_at,
+  }))
+}

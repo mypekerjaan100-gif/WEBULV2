@@ -116,6 +116,10 @@ export default function SLALembur({
   onSubmitWork,
   orgUnits,
   onRefresh,
+  isManagement = false,
+  isUlManagement = false,
+  isUpManagement = false,
+  managementScopeLabel = null,
 }) {
   const [draft, setDraft] = useState(() => initialDraft(periodMonth))
   const [activeActivityId, setActiveActivityId] = useState(null)
@@ -129,7 +133,9 @@ export default function SLALembur({
   const [dirty, setDirty] = useState(true)
   const activeActivityIdRef = useRef(activeActivityId)
   activeActivityIdRef.current = activeActivityId
-  const [filters, setFilters] = useState({ ulp: '', jenis: 'Semua', pegawai: '', status: 'Semua', periode: '' })
+  const [filters, setFilters] = useState({ ulp: '', unitLayanan: '', jenis: 'Semua', pegawai: '', status: 'Semua', periode: '' })
+  const canViewFinancial = isAdminUp3 || isSuperAdmin || isManagement
+  const isReadOnlyManagement = isManagement
   const [rowsPerPage, setRowsPerPage] = useState(30)
   const [currentPage, setCurrentPage] = useState(1)
   const [detailActivityId, setDetailActivityId] = useState(null)
@@ -142,6 +148,7 @@ export default function SLALembur({
   const [formStep, setFormStep] = useState('main')
   const [evidenceUrls, setEvidenceUrls] = useState({})
   const [detailEvidenceUrls, setDetailEvidenceUrls] = useState({})
+  const [detailFinancial, setDetailFinancial] = useState([])
   const [evidencePreview, setEvidencePreview] = useState(null)
 
   const range = buildPontianakRange(draft.date, draft.startTime, draft.endTime)
@@ -598,11 +605,17 @@ export default function SLALembur({
   const jenisLabel = (record) => record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
   const uniquePeriods = [...new Set(sorted.map(r=> r.periodMonth || String(r.date||'').slice(0,7)))].filter(Boolean).sort()
   const uniqueStatuses = [...new Set(sorted.map(r=> displayStatus(r)))].filter(Boolean)
+  // For UP management, unitLayanan filter currently maps 1:1 to UP3 Singkawang (only mapped). We derive options from orgUnits parent but keep simple for M4.
+  const unitLayananOptions = isUpManagement ? [{ id: 'ul-singkawang', name: 'Unit Layanan Singkawang' }] : []
   const filtered = sorted.filter(r=>{
     if (filters.jenis !== 'Semua' && jenisLabel(r) !== filters.jenis) return false
     if (filters.status !== 'Semua' && displayStatus(r) !== filters.status) return false
     if (filters.pegawai && !String(r.participantName||'').toLowerCase().includes(filters.pegawai.toLowerCase())) return false
     if (filters.ulp && String(r.unitId||'') !== filters.ulp) return false
+    if (filters.unitLayanan && isUpManagement) {
+      // Currently only Singkawang mapped; any other selection yields no data (future multi-mapping will filter by UP3)
+      if (filters.unitLayanan !== 'ul-singkawang') return false
+    }
     if (filters.periode && String(r.periodMonth||'').slice(0,7) !== filters.periode && String(r.date||'').slice(0,7) !== filters.periode) return false
     return true
   })
@@ -610,15 +623,16 @@ export default function SLALembur({
   const paginated = filtered.slice((currentPage-1)*rowsPerPage, currentPage*rowsPerPage)
   useEffect(()=>{ setCurrentPage(1) }, [filters, rowsPerPage, records.length])
   useEffect(()=>{
-    if (!detailActivityId) { setDetailEvidence([]); setDetailHistory([]); setDetailEvidenceUrls({}); return }
+    if (!detailActivityId) { setDetailEvidence([]); setDetailHistory([]); setDetailEvidenceUrls({}); setDetailFinancial([]); return }
     let cancelled=false
     setDetailLoading(true)
     Promise.all([
       import('../../data/overtimeEvidenceRepository.js').then(m=>m.listOvertimeEvidence(detailActivityId)),
-      listOvertimeHistory(detailActivityId).catch(()=>[])
-    ]).then(([evs, hist])=>{ if(!cancelled){ setDetailEvidence(evs); setDetailHistory(hist||[]) } }).catch(()=>{ if(!cancelled){ setDetailEvidence([]); setDetailHistory([]) } }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
+      listOvertimeHistory(detailActivityId).catch(()=>[]),
+      canViewFinancial ? import('../../data/overtimeReplacementRepository.js').then(m=>m.listOvertimeEntryFinancial(detailActivityId)).catch(()=>[]) : Promise.resolve([])
+    ]).then(([evs, hist, fin])=>{ if(!cancelled){ setDetailEvidence(evs); setDetailHistory(hist||[]); setDetailFinancial(fin||[]) } }).catch(()=>{ if(!cancelled){ setDetailEvidence([]); setDetailHistory([]); setDetailFinancial([]) } }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
     return ()=>{ cancelled=true }
-  }, [detailActivityId])
+  }, [detailActivityId, canViewFinancial])
   useEffect(() => {
     let cancelled = false
     const images = detailEvidence.filter((entry) => entry.status === 'ACTIVE' && isImageEvidence(entry))
@@ -791,7 +805,12 @@ export default function SLALembur({
             </div>
           )}
 
-          {!canMutate && <p className="sla-blocked-note">Akses ini menampilkan Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia pada tahap ini.</p>}
+          {!canMutate && !isManagement && <p className="sla-blocked-note">Akses ini menampilkan Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia pada tahap ini.</p>}
+          {isUlManagement && <p className="sla-blocked-note">Unit Layanan Singkawang · 6 ULP — monitoring read-only (Total Rp, Tarif/Jam, dan rincian 1.5x/2x tersedia di Detail)</p>}
+          {isUpManagement && <p className="sla-blocked-note">Unit Pelaksana Kalimantan 1 · 1 Unit Layanan terhubung (Singkawang) · monitoring read-only</p>}
+          {isManagement && !records.length && !loading && !loadError && (
+            <p className="sla-blocked-note">Belum ada Unit Layanan yang terhubung dengan scope Pelayanan Teknik untuk akun ini.</p>
+          )}
 
           <div className="rekap-filters">
             <label className="sla-context-field">Periode
@@ -800,7 +819,15 @@ export default function SLALembur({
                 {uniquePeriods.map(p=> <option key={p} value={p.slice(0,7)}>{p}</option>)}
               </select>
             </label>
-            {!canMutate && (
+            {isUpManagement && (
+              <label className="sla-context-field">Unit Layanan
+                <select className="sla-context-select" value={filters.unitLayanan} onChange={e=> setFilters(f=>({ ...f, unitLayanan: e.target.value }))}>
+                  <option value="">Semua</option>
+                  {unitLayananOptions.map(u=> <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </label>
+            )}
+            {(isManagement || !canMutate) && (
               <label className="sla-context-field">ULP
                 <select className="sla-context-select" value={filters.ulp} onChange={e=> setFilters(f=>({ ...f, ulp: e.target.value }))}>
                   <option value="">Semua</option>
@@ -900,11 +927,12 @@ export default function SLALembur({
                     <section className="lembur-detail-section">
                       <h3>Pegawai & Waktu</h3>
                       <div className="lembur-detail-table-wrap"><table className="sla-table">
-                        <thead><tr><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th>{(isAdminUp3||isSuperAdmin) && <th>Tarif/Jam</th>}{(isAdminUp3||isSuperAdmin) && <th>Rincian</th>}</tr></thead>
+                        <thead><tr><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th>{canViewFinancial && <th>Tarif/Jam</th>}{canViewFinancial && <th>Rincian</th>}</tr></thead>
                         <tbody>
                           {detailRecords.map(r=>{
                             const t = pontianakFormValues(r.startedAt, r.endedAt)
-                            return <tr key={r.entryId}><td>{r.participantName}</td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{(isAdminUp3||isSuperAdmin) && <td>—</td>}{(isAdminUp3||isSuperAdmin) && <td>—</td>}</tr>
+                            const fin = detailFinancial.find(f=>f.entryId===r.entryId)
+                            return <tr key={r.entryId}><td>{r.participantName}</td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{canViewFinancial && <td>{fin ? `Rp ${formatRp(fin.hourlyRate)}/jam` : '—'}</td>}{canViewFinancial && <td>{fin ? `${fin.durationHours.toFixed(2)} jam · ${fin.multiplierHours.toFixed(2)} jam × Rp ${formatRp(fin.hourlyRate)} = Rp ${formatRp(fin.total)}` : '—'}</td>}</tr>
                           })}
                         </tbody>
                       </table></div>

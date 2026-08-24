@@ -38,6 +38,9 @@ export default function App() {
   const [realScope, setRealScope] = useState(null)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access ?? []
+  const organizationAccess = authority?.actor?.organization_access ?? []
+  const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
+  const isManagementUserRaw = !isSuperAdmin && organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
 
   useEffect(() => {
     let cancelled = false
@@ -81,6 +84,7 @@ export default function App() {
   }, [isSuperAdmin, contractAccess])
 
   const isRealScopedUser = !isSuperAdmin && realScope !== null
+  const isManagementUser = !isSuperAdmin && !realScope && isManagementUserRaw
   const actualRole = isRealScopedUser ? realScope.role : role
   const actualUp3Id = isRealScopedUser ? realScope.up3Id : up3Id
   const actualUnitId = isRealScopedUser ? realScope.unitId : unitId
@@ -88,7 +92,9 @@ export default function App() {
     ? null
     : realScope
       ? [realScope.contractId]
-      : []
+      : isManagementUser
+        ? ['pelayanan-teknik']
+        : []
 
   const navigate = (contractId) => {
     if (contractId && !isSuperAdmin && !authorizedContractIds.includes(contractId)) return
@@ -160,7 +166,7 @@ export default function App() {
         ) : activeContract ? (
           activeContract.id === 'pelayanan-teknik' ? (
             <SLAPelayananTeknikPage
-              key={`${activeContractId}:${actualRole}:${actualUp3Id}:${actualUnitId}`}
+              key={`${activeContractId}:${actualRole}:${actualUp3Id}:${actualUnitId}:${isManagementUser ? 'mgmt' : ''}`}
               contractId={activeContractId}
               onBack={() => navigate(null)}
               role={actualRole}
@@ -171,6 +177,8 @@ export default function App() {
               units={units}
               onUnitsChange={setUnits}
               isRealScopedUser={isRealScopedUser}
+              isManagementUser={isManagementUser}
+              organizationAccess={organizationAccess}
             />
           ) : (
             <ContractPage contract={activeContract} onBack={() => navigate(null)} />

@@ -80,6 +80,8 @@ export default function SLAPelayananTeknikPage({
   units,
   onUnitsChange,
   isRealScopedUser = false,
+  isManagementUser = false,
+  organizationAccess = [],
 }) {
   const [moduleId, setModuleId] = useState('sla')
   const [period, setPeriod] = useState('Agustus 2026')
@@ -113,11 +115,18 @@ export default function SLAPelayananTeknikPage({
       access.operational_up3_id === orgMap?.up3Uuid &&
       access.operational_unit_id != null,
   )
+  const managementRoles = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
+  const isManagement = isManagementUser || (actor?.organization_access ?? []).some((a) => managementRoles.includes(a.organization_role))
+  const managementAccess = (actor?.organization_access ?? organizationAccess ?? []).filter((a) => managementRoles.includes(a.organization_role))
+  const isUlManagement = managementAccess.some((a) => ['TEAM_LEADER','MANAGER_UNIT'].includes(a.organization_role))
+  const isUpManagement = managementAccess.some((a) => ['MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN'].includes(a.organization_role))
+  // For management, Lembur is monitoring read-only but financial detail is allowed
+  const isLemburManagementRead = isManagement
   const canViewAdminUp3Modules = isSuperAdmin || isAdminUp3
   const canViewReadOnlyMasterLocations = isAdminUlp
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || isAdminUp3
-  const canReadEmployeeFinancials = isSuperAdmin || (isAdminUp3 && !isAdminUlp)
+  const canReadEmployeeFinancials = isSuperAdmin || (isAdminUp3 && !isAdminUlp) || isLemburManagementRead
 
   const refreshLocations = useCallback(async ({ preserveOnError = false } = {}) => {
     if (!preserveOnError) setLocationLoadStatus('loading')
@@ -313,12 +322,14 @@ export default function SLAPelayananTeknikPage({
   const flatIndicators = selectedVersion
     ? flattenVersionIndicators(selectedVersion)
     : []
-  const authorizedModules = pelayananTeknikModules.filter(
-    (module) =>
-      !module.adminOnly ||
-      canViewAdminUp3Modules ||
-      (module.id === 'master-lokasi' && canViewReadOnlyMasterLocations),
-  )
+  const authorizedModules = isLemburManagementRead && !canViewAdminUp3Modules && !canViewReadOnlyMasterLocations
+    ? pelayananTeknikModules.filter((module) => module.id === 'lembur')
+    : pelayananTeknikModules.filter(
+        (module) =>
+          !module.adminOnly ||
+          canViewAdminUp3Modules ||
+          (module.id === 'master-lokasi' && canViewReadOnlyMasterLocations),
+      )
   const visibleModules =
     canViewReadOnlyMasterLocations && !canViewAdminUp3Modules
       ? [
@@ -467,6 +478,12 @@ export default function SLAPelayananTeknikPage({
       setModuleId('sla')
     }
   }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations])
+
+  useEffect(() => {
+    if (isLemburManagementRead && moduleId !== 'lembur') {
+      setModuleId('lembur')
+    }
+  }, [isLemburManagementRead, moduleId])
 
   const updateActiveTargets = (nextTargets) => {
     const selected = selectedVersion
@@ -894,7 +911,7 @@ export default function SLAPelayananTeknikPage({
           </section>
         ) : (
           <SLALembur
-            key={`${orgMap?.contractUuid}-${orgMap?.up3Uuid}-${lemburUnitUuid ?? 'up3'}-${lemburPeriodMonth}`}
+            key={`${orgMap?.contractUuid}-${orgMap?.up3Uuid}-${lemburUnitUuid ?? 'up3'}-${lemburPeriodMonth}-${isLemburManagementRead ? 'mgmt' : ''}`}
             contractScope={{ ...slaContractScope, contractId: orgMap.contractUuid }}
             up3Id={orgMap.up3Uuid}
             unitId={lemburUnitUuid}
@@ -903,6 +920,9 @@ export default function SLAPelayananTeknikPage({
             canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp')}
             isAdminUp3={isAdminUp3}
             isSuperAdmin={isSuperAdmin}
+            isManagement={isLemburManagementRead}
+            isUlManagement={isUlManagement}
+            isUpManagement={isUpManagement}
             loading={lemburLoadStatus === 'loading' || !employeesLoaded}
             loadError={lemburLoadError || employeeLoadError}
             orgUnits={orgMap.units}

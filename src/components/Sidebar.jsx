@@ -6,6 +6,10 @@ export default function Sidebar({ open, activeContractId, currentPage, onNavigat
   const allowedContractCodes = new Set(
     (authority?.actor?.contract_access ?? []).map((access) => access.contract_code),
   )
+  const organizationAccess = authority?.actor?.organization_access ?? []
+  const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
+  const isManagementUser = organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
+  if (isManagementUser) allowedContractCodes.add('pelayanan-teknik')
 
   return (
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>

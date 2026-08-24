@@ -18,14 +18,15 @@ export async function handleSessionContext(
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
-  const [{ data: profile }, { data: roleRows }, { data: organizationMemberships }, { data: contractMemberships }, { data: contracts }, { data: organizationNames }] =
+  const [{ data: profile }, { data: roleRows }, { data: organizationMemberships }, { data: contractMemberships }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] =
     await Promise.all([
       adminClient.from("profiles").select("status").eq("id", user.id).maybeSingle(),
       adminClient.from("system_role_memberships").select("authorization_roles!inner(code)").eq("user_id", user.id).eq("status", "ACTIVE"),
-      adminClient.from("organization_memberships").select("id").eq("user_id", user.id).eq("status", "ACTIVE"),
+      adminClient.from("organization_memberships").select("id, internal_org_unit_id, organization_role, status").eq("user_id", user.id).eq("status", "ACTIVE"),
       adminClient.from("contract_memberships").select("contract_id, contract_role, operational_up3_id, operational_unit_id").eq("user_id", user.id).eq("status", "ACTIVE"),
       adminClient.from("contracts").select("id, code, title"),
       adminClient.from("organization_name_history").select("organization_unit_id, name, effective_from, effective_to"),
+      adminClient.from("internal_organization_units").select("id, code, name, type, parent_id"),
     ]);
 
   const roles = (roleRows || [])
@@ -59,6 +60,20 @@ export async function handleSessionContext(
     };
   });
 
+  const internalUnitsById = new Map((internalUnits || []).map((u) => [u.id as string, u]));
+  const organizationAccess = (organizationMemberships || []).map((m) => {
+    const unit = internalUnitsById.get(m.internal_org_unit_id as string) as { code: string; name: string; type: string; parent_id: string | null } | undefined;
+    return {
+      internal_org_unit_id: m.internal_org_unit_id,
+      internal_org_unit_code: unit?.code ?? null,
+      internal_org_unit_name: unit?.name ?? "Unknown",
+      internal_org_unit_type: unit?.type ?? null,
+      parent_id: unit?.parent_id ?? null,
+      organization_role: m.organization_role,
+      status: m.status,
+    };
+  });
+
   return {
     status: 200,
     body: {
@@ -68,6 +83,7 @@ export async function handleSessionContext(
         is_super_admin: roles.includes("SUPER_ADMIN"),
         roles,
         organization_memberships: (organizationMemberships || []).length,
+        organization_access: organizationAccess,
         contract_memberships: (contractMemberships || []).length,
         contract_access: contractAccess,
         permissions: [],
