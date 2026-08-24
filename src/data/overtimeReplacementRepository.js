@@ -24,13 +24,33 @@ function mapRecord(row) {
     submittedAt: row.submitted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    rejectionCount: Number(row.rejection_count ?? 0),
+    revisionDeadlineAt: row.revision_deadline_at,
+    closureReason: row.closure_reason,
   }
 }
 
 async function rpc(name, parameters) {
   const { data, error } = await supabase.rpc(name, parameters)
-  if (error) throw new Error(error.message || `${name} gagal.`)
+  if (error) {
+    const message = error.message || `${name} gagal.`
+    if (/submission deadline has passed|batas pengajuan telah lewat/i.test(message)) {
+      throw new Error('Batas pengajuan telah lewat. Pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.')
+    }
+    if (/revision deadline has expired|batas revisi telah/i.test(message)) {
+      throw new Error('Batas revisi telah lewat. Transaksi Lembur sudah kedaluwarsa.')
+    }
+    throw new Error(message)
+  }
   return data
+}
+
+export async function expireInitialOvertimeDrafts({ contractId, up3Id, unitId }) {
+  return rpc('expire_overtime_initial_drafts_l6', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId ?? null,
+  })
 }
 
 export async function listReplacementEmployees({ contractId, up3Id, startedAt }) {
@@ -108,6 +128,9 @@ function mapWorkRecord(row) {
     submissionDeadlineAt: row.submission_deadline_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    rejectionCount: Number(row.rejection_count ?? 0),
+    revisionDeadlineAt: row.revision_deadline_at,
+    closureReason: row.closure_reason,
   }
 }
 
@@ -147,4 +170,20 @@ export async function saveOvertimeWorkDraft({
 
 export async function submitOvertimeWork(activityId) {
   return rpc('submit_overtime_work_l3', { p_activity_id: activityId })
+}
+
+export async function approveOvertime(activityId) {
+  return rpc('approve_overtime_l5', { p_activity_id: activityId })
+}
+export async function rejectOvertime(activityId, reason) {
+  return rpc('reject_overtime_l5', { p_activity_id: activityId, p_reason: reason })
+}
+export async function resubmitOvertime(activityId) {
+  return rpc('resubmit_overtime_l5', { p_activity_id: activityId })
+}
+export async function listOvertimeHistory(activityId) {
+  return rpc('list_overtime_history_l5', { p_activity_id: activityId })
+}
+export async function getOvertimeDetail(activityId) {
+  return rpc('get_overtime_detail_l5', { p_activity_id: activityId })
 }

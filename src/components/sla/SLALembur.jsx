@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { listReplacementEmployees } from '../../data/overtimeReplacementRepository.js'
+import { listReplacementEmployees, approveOvertime, rejectOvertime, resubmitOvertime, listOvertimeHistory } from '../../data/overtimeReplacementRepository.js'
 import {
   automaticReplacementDescription,
   buildPontianakRange,
@@ -7,9 +7,40 @@ import {
   pontianakFormValues,
   REPLACEMENT_TYPES,
 } from '../../data/overtimeReplacementL2.js'
-import { WORK_CATEGORIES, workEvidenceComplete } from '../../data/overtimeWorkL3.js'
+import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 
 const formatRp = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function initialDeadlineFor(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) return null
+  return new Date(new Date(`${date}T00:00:00+07:00`).getTime() + (8 * DAY_MS) - 1)
+}
+
+function formatPontianakDate(value) {
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Asia/Pontianak',
+  }).format(value)
+}
+
+function initialDeadlineMessage(date) {
+  const deadline = initialDeadlineFor(date)
+  if (!deadline) return ''
+  return `Lembur tanggal ${formatPontianakDate(new Date(`${date}T12:00:00+07:00`))} hanya dapat diajukan sampai ${formatPontianakDate(deadline)} pukul 23:59.`
+}
+
+function recordIsExpired(record) {
+  if (record.status === 'CLOSED' && record.closureReason === 'EXPIRED') return true
+  if (record.status === 'DRAFT' && record.submissionDeadlineAt) {
+    return new Date(record.submissionDeadlineAt) < new Date()
+  }
+  return record.status === 'CORRECTION_REQUIRED'
+    && record.revisionDeadlineAt
+    && new Date(record.revisionDeadlineAt) < new Date()
+}
 
 const initialDraft = (periodMonth) => ({
   lemburType: '',
@@ -24,9 +55,23 @@ const initialDraft = (periodMonth) => ({
   participants: [{ tempId: 'p1', employeeId: '', startTime: '18:00', endTime: '22:00' }],
 })
 
-function statusLabel(status) {
-  if (status === 'SUBMITTED') return 'MENUNGGU APPROVAL'
-  return status
+function displayStatus(record){
+  if (recordIsExpired(record)) return 'Kedaluwarsa'
+  if (record.status==='DRAFT') return 'Draft'
+  if (record.status==='SUBMITTED'){
+    if (record.rejectionCount===1) return 'Menunggu Approval — Revisi 1'
+    if (record.rejectionCount===2) return 'Menunggu Approval — Revisi Terakhir'
+    return 'Menunggu Approval'
+  }
+  if (record.status==='CORRECTION_REQUIRED'){
+    if (record.rejectionCount===2) return 'Revisi Terakhir'
+    return 'Perlu Revisi'
+  }
+  if (record.status==='APPROVED') return 'Disetujui'
+  if (record.status==='CLOSED' && record.closureReason==='FINAL_REJECTED') return 'Ditolak Final'
+  if (record.status==='CLOSED' && record.closureReason==='EXPIRED') return 'Kedaluwarsa'
+  if (record.status==='CLOSED') return 'Ditutup'
+  return record.status
 }
 
 function isWorkType(lemburType) {
@@ -44,6 +89,8 @@ export default function SLALembur({
   periodMonth,
   records,
   canMutate,
+  isAdminUp3,
+  isSuperAdmin,
   loading,
   loadError,
   onRetry,
@@ -52,6 +99,7 @@ export default function SLALembur({
   onSaveWorkDraft,
   onSubmitWork,
   orgUnits,
+  onRefresh,
 }) {
   const [draft, setDraft] = useState(() => initialDraft(periodMonth))
   const [activeActivityId, setActiveActivityId] = useState(null)
@@ -70,7 +118,10 @@ export default function SLALembur({
   const [currentPage, setCurrentPage] = useState(1)
   const [detailActivityId, setDetailActivityId] = useState(null)
   const [detailEvidence, setDetailEvidence] = useState([])
+  const [detailHistory, setDetailHistory] = useState([])
   const [detailLoading, setDetailLoading] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [showReject, setShowReject] = useState(null)
 
   const range = buildPontianakRange(draft.date, draft.startTime, draft.endTime)
   const replacedEmployee = employeeOptions.find((e) => e.id === draft.replacedEmployeeId)
@@ -97,6 +148,13 @@ export default function SLALembur({
   const workEvidenceReq = isWork ? (WORK_CATEGORIES[workCategory]?.evidence ?? []) : []
   const replacementEvidenceReq = isReplacement ? (REPLACEMENT_TYPES[draft.lemburType]?.evidence ?? []) : []
   const evidenceRequirements = isWork ? workEvidenceReq : replacementEvidenceReq
+  const activeRecord = activeActivityId ? records.find((record) => record.id === activeActivityId) : null
+  const isRevision = activeRecord?.status === 'CORRECTION_REQUIRED'
+  const initialDeadline = initialDeadlineFor(draft.date)
+  const initialDeadlinePassed = !isRevision && initialDeadline && initialDeadline < new Date()
+  const activeInitialExpired = activeRecord?.status === 'DRAFT' && recordIsExpired(activeRecord)
+  const activeRevisionExpired = isRevision && recordIsExpired(activeRecord)
+  const formReadOnly = activeInitialExpired || activeRevisionExpired
 
   const evidenceByType = evidence.reduce((acc, r) => {
     acc[r.evidenceType] = acc[r.evidenceType] || []
@@ -105,11 +163,12 @@ export default function SLALembur({
   }, {})
   const evidenceSingle = Object.fromEntries(Object.entries(evidenceByType).map(([k,v])=>[k, v.find(x=>x.status==='ACTIVE')||null]))
 
-  const evidenceComplete = isReplacement
-    ? evidenceRequirements.length>0 && evidenceRequirements.every(req => evidenceSingle[req.type]?.status==='ACTIVE')
-    : isWork ? workEvidenceComplete(workCategory, evidence) : false
+  const evidenceComplete = evidenceRequirements.length > 0 && evidenceRequirements.every((requirement) => {
+    const activeCount = (evidenceByType[requirement.type] ?? []).filter((row) => row.status === 'ACTIVE').length
+    const stagedCount = (files[requirement.type] ?? []).length
+    return requirement.allowMultiple ? activeCount + stagedCount > 0 : stagedCount > 0 || activeCount === 1
+  })
 
-  // employee loading: for work multi, use draft.date as base
   const employeeQueryDate = draft.date ? `${draft.date}T12:00:00+07:00` : null
   useEffect(() => {
     if (!canMutate || !employeeQueryDate || !contractScope.contractId || !up3Id) {
@@ -161,14 +220,20 @@ export default function SLALembur({
   }
 
   const editDraft = (record) => {
-    // record may be replacement or work per participant
-    // For work multi, need to gather all participants for same activity
     const activityRecords = records.filter(r=>r.id===record.id)
     const first = activityRecords[0]
+    if (!first) return
+    const canEdit = first.status==='DRAFT' || first.status==='CORRECTION_REQUIRED'
+    if (!canEdit) return
+    if (recordIsExpired(first)){
+      setMessage(first.status === 'DRAFT'
+        ? 'Batas pengajuan telah lewat. Draft ini sudah kedaluwarsa dan hanya dapat dilihat.'
+        : 'Batas revisi telah lewat. Transaksi Lembur sudah kedaluwarsa.')
+      return
+    }
     if (first.type === 'WORK') {
       const cat = first.workCategory
       const time = pontianakFormValues(first.startedAt, first.endedAt)
-      // For work, date is from first participant
       const participants = activityRecords.map((r,i)=> {
         const t = pontianakFormValues(r.startedAt, r.endedAt)
         return { tempId: `p${i+1}`, employeeId: r.participantEmployeeId, startTime: t.startTime, endTime: t.endTime }
@@ -239,13 +304,10 @@ export default function SLALembur({
         const r = buildPontianakRange(draft.date, p.startTime, p.endTime)
         if (!r || r.durationMinutes<1) return 'Jam peserta tidak valid.'
       }
-      // all participants same unit? Allow different ULP? Spec says participant picker only own active ULP for ADMIN_ULP, but for GARDU multi, could they be from same ULP? Likely yes same ULP as activity unit. We'll enforce all participants unitId must equal activity unitId (which is derived from first participant or selected?). Simplify: require all participants same unit as activity unit.
-      // For now check they share same unit
       const units = draft.participants.map(p=> employeeOptions.find(e=>e.id===p.employeeId)?.unitId).filter(Boolean)
       if (new Set(units).size>1) return 'Semua peserta harus dari ULP yang sama.'
       if (unitId && units[0]!==unitId) return 'Peserta berada di luar ULP akun.'
     } else if (isAdministrasi) {
-      // single participant via participants[0] or participantEmployeeId
       const p = draft.participants[0] || { employeeId: draft.participantEmployeeId, startTime: draft.startTime, endTime: draft.endTime }
       const empId = p.employeeId || draft.participantEmployeeId
       if (!empId) return 'Pilih pegawai lembur.'
@@ -258,82 +320,125 @@ export default function SLALembur({
     return null
   }
 
+  const validateDraft = () => {
+    if (initialDeadlinePassed) return `Batas pengajuan telah lewat. ${initialDeadlineMessage(draft.date)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.`
+    if (isReplacement) return validateReplacement()
+    if (isWork) return validateWork()
+    return 'Pilih jenis lembur.'
+  }
+
+  const persistDraft = async () => {
+    let result
+    if (isReplacement) {
+      result = await onSaveDraft(activeActivityId, {
+        unitId: replacedEmployee.unitId,
+        type: draft.lemburType,
+        replacedEmployeeId: replacedEmployee.id,
+        participantEmployeeId: participantEmployee.id,
+        startedAt: range.startedAt,
+        endedAt: range.endedAt,
+      })
+    } else {
+      let participants=[]
+      let unitForActivity=null
+      if (isAdministrasi) {
+        const p = draft.participants[0]
+        const empId = p?.employeeId || draft.participantEmployeeId
+        const st = p?.startTime || draft.startTime
+        const en = p?.endTime || draft.endTime
+        const participantRange = buildPontianakRange(draft.date, st, en)
+        const employee = employeeOptions.find((option) => option.id === empId)
+        unitForActivity = employee.unitId
+        participants=[{ employee_id: empId, started_at: participantRange.startedAt, ended_at: participantRange.endedAt }]
+      } else {
+        participants = draft.participants.map((participant) => {
+          const participantRange = buildPontianakRange(draft.date, participant.startTime, participant.endTime)
+          return { employee_id: participant.employeeId, started_at: participantRange.startedAt, ended_at: participantRange.endedAt }
+        })
+        unitForActivity = employeeOptions.find((option) => option.id === participants[0].employee_id)?.unitId
+      }
+      result = await onSaveWorkDraft(activeActivityId, {
+        unitId: unitForActivity,
+        workCategory,
+        description: draft.description,
+        workTitle: draft.workTitle,
+        workLocation: draft.workLocation,
+        participants,
+      })
+    }
+    if (!result?.ok || !result.activityId) throw new Error(result?.message || 'Draft Lembur gagal disimpan.')
+    setActiveActivityId(result.activityId)
+    activeActivityIdRef.current = result.activityId
+    if (isWork) setActiveWorkCategory(workCategory)
+    return result.activityId
+  }
+
+  const stageEvidence = async (requirement, file) => {
+    if (!file || initialDeadlinePassed || formReadOnly) return
+    setSubmitting(true)
+    try {
+      const { prepareOvertimeEvidenceFile } = await import('../../data/overtimeEvidenceRepository.js')
+      const processed = await prepareOvertimeEvidenceFile(file, requirement.type)
+      const staged = { id: `${requirement.type}-${Date.now()}-${Math.random()}`, processed }
+      setFiles((current) => ({
+        ...current,
+        [requirement.type]: requirement.allowMultiple
+          ? [...(current[requirement.type] ?? []), staged]
+          : [staged],
+      }))
+      setMessage(`${requirement.label} siap disimpan (${Math.ceil(processed.stored.sizeBytes / 1024)} KB).`)
+    } catch (error) {
+      setMessage(error.message || `Gagal memproses ${requirement.label}.`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const removeStagedEvidence = (evidenceType, stagedId) => {
+    setFiles((current) => ({
+      ...current,
+      [evidenceType]: (current[evidenceType] ?? []).filter((item) => item.id !== stagedId),
+    }))
+  }
+
+  const uploadStagedEvidence = async (activityId) => {
+    const { listOvertimeEvidence, uploadOvertimeEvidence } = await import('../../data/overtimeEvidenceRepository.js')
+    for (const requirement of evidenceRequirements) {
+      const stagedItems = files[requirement.type] ?? []
+      for (let index = 0; index < stagedItems.length; index += 1) {
+        const staged = stagedItems[index]
+        await uploadOvertimeEvidence({
+          activityId,
+          evidenceType: requirement.type,
+          file: staged.processed.file,
+          processedFile: staged.processed,
+          sortOrder: requirement.allowMultiple
+            ? (evidenceByType[requirement.type] ?? []).filter((row) => row.status === 'ACTIVE').length + index
+            : 0,
+          supersedesEvidenceId: requirement.allowMultiple ? null : (evidenceSingle[requirement.type]?.id ?? null),
+        })
+        setFiles((current) => ({
+          ...current,
+          [requirement.type]: (current[requirement.type] ?? []).filter((item) => item.id !== staged.id),
+        }))
+      }
+    }
+    setEvidence(await listOvertimeEvidence(activityId))
+  }
+
   const saveDraft = async () => {
-    let validation=null
-    if (isReplacement) validation=validateReplacement()
-    else if (isWork) validation=validateWork()
-    else validation='Pilih jenis lembur.'
+    const validation = validateDraft()
     if (validation) { setMessage(validation); return }
     setSubmitting(true)
     try {
-      if (isReplacement) {
-        const result = await onSaveDraft(activeActivityId, {
-          unitId: replacedEmployee.unitId,
-          type: draft.lemburType,
-          replacedEmployeeId: replacedEmployee.id,
-          participantEmployeeId: participantEmployee.id,
-          startedAt: range.startedAt,
-          endedAt: range.endedAt,
-        })
-        setMessage(result.message)
-        if (result.ok) { setActiveActivityId(result.activityId); setDirty(false) }
-      } else if (isWork) {
-        // build participants array for RPC
-        let participants=[]
-        let unitForActivity=null
-        if (isAdministrasi) {
-          const p = draft.participants[0]
-          const empId = p?.employeeId || draft.participantEmployeeId
-          const st = p?.startTime || draft.startTime
-          const en = p?.endTime || draft.endTime
-          const r = buildPontianakRange(draft.date, st, en)
-          const emp = employeeOptions.find(e=>e.id===empId)
-          unitForActivity = emp.unitId
-          participants=[{ employee_id: empId, started_at: r.startedAt, ended_at: r.endedAt }]
-        } else {
-          // multi
-          participants = draft.participants.map(p=>{
-            const r = buildPontianakRange(draft.date, p.startTime, p.endTime)
-            return { employee_id: p.employeeId, started_at: r.startedAt, ended_at: r.endedAt }
-          })
-          const firstEmp = employeeOptions.find(e=>e.id===participants[0].employee_id)
-          unitForActivity = firstEmp?.unitId
-        }
-        const result = await onSaveWorkDraft(activeActivityId, {
-          unitId: unitForActivity,
-          workCategory,
-          description: draft.description,
-          workTitle: draft.workTitle,
-          workLocation: draft.workLocation,
-          participants,
-        })
-        setMessage(result.message)
-        if (result.ok) { setActiveActivityId(result.activityId); setActiveWorkCategory(workCategory); setDirty(false) }
-      }
-    } finally { setSubmitting(false) }
-  }
-
-  const uploadEvidence = async (requirement) => {
-    const file = files[requirement.type]
-    if (!file || !activeActivityId) return
-    // for briefing multiple, allow multiple without supersede. For others, supersede if exists
-    const allowMultiple = requirement.allowMultiple
-    const existingList = evidenceByType[requirement.type] || []
-    const existingSingle = evidenceSingle[requirement.type]
-    setSubmitting(true)
-    try {
-      const { uploadOvertimeEvidence } = await import('../../data/overtimeEvidenceRepository.js')
-      await uploadOvertimeEvidence({
-        activityId: activeActivityId,
-        evidenceType: requirement.type,
-        file,
-        supersedesEvidenceId: allowMultiple ? null : (existingSingle?.id ?? null),
-      })
-      setFiles(c=>({ ...c, [requirement.type]: null }))
-      await refreshEvidence(activeActivityId)
-      setMessage(`${requirement.label} tersimpan di private Storage.`)
-    } catch (e) {
-      setMessage(e.message || `Gagal mengunggah ${requirement.label}.`)
+      const activityId = await persistDraft()
+      await uploadStagedEvidence(activityId)
+      setDirty(false)
+      setMessage('Draft dan evidence berhasil disimpan di Supabase.')
+      if(onRefresh) await onRefresh()
+    } catch (error) {
+      if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
+      setMessage(error.message || 'Draft atau evidence gagal disimpan.')
     } finally { setSubmitting(false) }
   }
 
@@ -360,27 +465,59 @@ export default function SLALembur({
   }
 
   const submitDraft = async () => {
-    if (dirty) { setMessage('Simpan perubahan Draft sebelum mengajukan Lembur.'); return }
+    const validation = validateDraft()
+    if (validation) { setMessage(validation); return }
     if (!evidenceComplete) { setMessage('Lengkapi seluruh evidence wajib sebelum mengajukan Lembur.'); return }
     setSubmitting(true)
     try {
-      let result
-      if (isReplacement) result = await onSubmit(activeActivityId)
-      else if (isWork) result = await onSubmitWork(activeActivityId)
-      else throw new Error('Jenis lembur tidak valid')
-      if (result.ok) resetForm()
-      setMessage(result.message)
+      const resubmitting = isRevision
+      let activityId = activeActivityId
+      if (!activityId || dirty) activityId = await persistDraft()
+      await uploadStagedEvidence(activityId)
+      const result = resubmitting
+        ? await resubmitOvertime(activityId)
+        : isReplacement
+          ? await onSubmit(activityId)
+          : await onSubmitWork(activityId)
+      if (!resubmitting && !result?.ok) throw new Error(result?.message || 'Lembur gagal diajukan.')
+      resetForm()
+      setMessage(resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : 'Lembur diajukan dan menunggu approval.')
+      if(onRefresh) await onRefresh()
+    } catch (error) {
+      if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
+      setMessage(error.message || 'Draft, evidence, atau pengajuan Lembur gagal disimpan.')
     } finally { setSubmitting(false) }
   }
 
-  const sorted = [...records].sort((a,b)=> String(b.startedAt).localeCompare(String(a.startedAt)))
+  const handleApprove = async (activityId)=>{
+    if(!window.confirm('Setujui pengajuan lembur ini?')) return
+    setSubmitting(true)
+    try{
+      const res = await approveOvertime(activityId)
+      setMessage(res.message || 'Disetujui')
+      if(onRefresh) onRefresh()
+      setDetailActivityId(null)
+    }catch(e){ setMessage(e.message || 'Gagal menyetujui') } finally{ setSubmitting(false) }
+  }
+  const handleReject = async (activityId)=>{
+    if(!rejectReason.trim()){ setMessage('Alasan penolakan wajib diisi'); return }
+    setSubmitting(true)
+    try{
+      const res = await rejectOvertime(activityId, rejectReason)
+      setMessage(res.message || 'Ditolak')
+      if(onRefresh) onRefresh()
+      setShowReject(null); setRejectReason('')
+      setDetailActivityId(null)
+    }catch(e){ setMessage(e.message || 'Gagal menolak') } finally{ setSubmitting(false) }
+  }
 
+  const sorted = [...records].sort((a,b)=> String(b.startedAt).localeCompare(String(a.startedAt)))
   const jenisLabel = (record) => record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
   const uniquePeriods = [...new Set(sorted.map(r=> r.periodMonth || String(r.date||'').slice(0,7)))].filter(Boolean).sort()
-  const uniqueStatuses = [...new Set(sorted.map(r=> r.status))].filter(Boolean)
+  const uniqueStatuses = [...new Set(sorted.map(r=> displayStatus(r)))].filter(Boolean)
   const filtered = sorted.filter(r=>{
     if (filters.jenis !== 'Semua' && jenisLabel(r) !== filters.jenis) return false
-    if (filters.status !== 'Semua' && r.status !== filters.status) return false
+    if (filters.status !== 'Semua' && displayStatus(r) !== filters.status) return false
     if (filters.pegawai && !String(r.participantName||'').toLowerCase().includes(filters.pegawai.toLowerCase())) return false
     if (filters.ulp && String(r.unitId||'') !== filters.ulp) return false
     if (filters.periode && String(r.periodMonth||'').slice(0,7) !== filters.periode && String(r.date||'').slice(0,7) !== filters.periode) return false
@@ -390,12 +527,13 @@ export default function SLALembur({
   const paginated = filtered.slice((currentPage-1)*rowsPerPage, currentPage*rowsPerPage)
   useEffect(()=>{ setCurrentPage(1) }, [filters, rowsPerPage, records.length])
   useEffect(()=>{
-    if (!detailActivityId) { setDetailEvidence([]); return }
+    if (!detailActivityId) { setDetailEvidence([]); setDetailHistory([]); return }
     let cancelled=false
     setDetailLoading(true)
-    import('../../data/overtimeEvidenceRepository.js').then(({ listOvertimeEvidence })=> listOvertimeEvidence(detailActivityId)).then(rows=>{
-      if(!cancelled) setDetailEvidence(rows)
-    }).catch(()=>{ if(!cancelled) setDetailEvidence([]) }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
+    Promise.all([
+      import('../../data/overtimeEvidenceRepository.js').then(m=>m.listOvertimeEvidence(detailActivityId)),
+      listOvertimeHistory(detailActivityId).catch(()=>[])
+    ]).then(([evs, hist])=>{ if(!cancelled){ setDetailEvidence(evs); setDetailHistory(hist||[]) } }).catch(()=>{ if(!cancelled){ setDetailEvidence([]); setDetailHistory([]) } }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
     return ()=>{ cancelled=true }
   }, [detailActivityId])
   const detailRecords = detailActivityId ? sorted.filter(r=> r.id===detailActivityId) : []
@@ -406,13 +544,13 @@ export default function SLALembur({
       setMessage('Hapus evidence Draft sebelum mengubah Jenis Lembur.')
       return
     }
-    // reset relevant fields when switching
     if (type.startsWith('WORK:')) {
       const cat = type.split(':')[1]
       setDraft(c=>({ ...c, lemburType: type, description: c.description, workTitle: c.workTitle, workLocation: c.workLocation, participants: cat==='ADMINISTRASI' ? [{ tempId:'p1', employeeId:'', startTime:'08:00', endTime:'16:00'}] : [{ tempId:'p1', employeeId:'', startTime:'18:00', endTime:'22:00'}] }))
     } else {
       setDraft(c=>({ ...c, lemburType: type }))
     }
+    setFiles({})
     setDirty(true)
     setMessage(null)
   }
@@ -454,6 +592,7 @@ export default function SLALembur({
                 {activeActivityId && <button type="button" className="sla-btn" disabled={submitting} onClick={resetForm}>Draft Baru</button>}
               </div>
 
+              <fieldset disabled={formReadOnly} style={{border:0, padding:0, margin:0, minWidth:0}}>
               <div className="lembur-form-grid">
                 <label className="sla-context-field">
                   <span className="sla-context-label">Jenis Lembur *</span>
@@ -471,6 +610,15 @@ export default function SLALembur({
                   <span className="sla-context-label">Tanggal Lembur *</span>
                   <input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} />
                 </label>
+                {draft.date && !isRevision && (
+                  <div style={{gridColumn:'1 / -1', color: initialDeadlinePassed ? '#842029' : '#5f4b2e', fontSize:'13px'}}>
+                    {initialDeadlinePassed ? (
+                      <><strong>Batas pengajuan telah lewat.</strong> {initialDeadlineMessage(draft.date)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.</>
+                    ) : (
+                      <>Batas pengajuan: {formatPontianakDate(initialDeadline)}, 23:59</>
+                    )}
+                  </div>
+                )}
 
                 {isReplacement && (
                   <>
@@ -591,43 +739,55 @@ export default function SLALembur({
               )}
               {replacementDescription && <p className="lembur-description-preview">{replacementDescription}</p>}
 
-              <div className="lembur-form-actions">
-                <button type="button" className="sla-btn sla-btn-primary" disabled={submitting} onClick={saveDraft}>{submitting ? 'Memproses...' : 'Simpan Draft'}</button>
-              </div>
-
-              {activeActivityId && (
+              {evidenceRequirements.length > 0 && (
                 <div className="lembur-evidence-panel">
-                  <div><span className="lembur-kicker">Evidence Wajib</span><p>File diproses dan disimpan privat, maksimum 1 MB per evidence.</p></div>
+                  <div><span className="lembur-kicker">Evidence Wajib</span><p>Pilih file sekarang. File diproses di browser dan baru disimpan ke private Storage saat Simpan Draft atau Ajukan Lembur, maksimum 1 MB per evidence.</p></div>
                   {evidenceRequirements.map(req=>{
                     const allowMultiple = req.allowMultiple
                     const existingList = (evidenceByType[req.type]||[]).filter(r=>r.status==='ACTIVE')
                     const existingSingle = evidenceSingle[req.type]
+                    const stagedList = files[req.type] ?? []
                     return (
                       <div className="lembur-evidence-row" key={req.type}>
                         <div style={{minWidth:'220px', flex:1}}>
                           <strong>{req.label} *</strong>
                           {req.helpers && <div style={{marginTop:'6px'}}>{req.helpers.map((h,i)=><small key={i} style={{display:'block', color:'#5f4b2e'}}>{h}</small>)}</div>}
-                          {!allowMultiple && <small>{existingSingle ? `${existingSingle.originalFilename} · ${(existingSingle.storedSizeBytes/1024).toFixed(0)} KB` : 'Belum lengkap'}</small>}
-                          {allowMultiple && <small>{existingList.length ? `${existingList.length} foto tersimpan` : 'Belum ada foto'} {existingList.length ? `· ${existingList.map(e=>e.originalFilename).join(', ')}` : ''}</small>}
+                          {!allowMultiple && <small>{stagedList[0] ? `${stagedList[0].processed.original.filename} · ${Math.ceil(stagedList[0].processed.stored.sizeBytes/1024)} KB · siap disimpan` : existingSingle ? `${existingSingle.originalFilename} · ${(existingSingle.storedSizeBytes/1024).toFixed(0)} KB · tersimpan` : 'Belum lengkap'}</small>}
+                          {allowMultiple && <small>{existingList.length + stagedList.length ? `${existingList.length} foto tersimpan · ${stagedList.length} foto siap disimpan` : 'Belum ada foto'}</small>}
                         </div>
-                        <input key={`${req.type}-${existingSingle?.id ?? 'empty'}-${existingList.length}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx" onChange={e=>setFiles(c=>({ ...c, [req.type]: e.target.files?.[0] ?? null }))} />
-                        <button type="button" className="sla-btn" disabled={submitting || !files[req.type]} onClick={()=>uploadEvidence(req)}>{allowMultiple ? 'Upload Foto' : (existingSingle ? 'Ganti File' : 'Upload')}</button>
+                        <input key={`${req.type}-${stagedList.length}-${existingSingle?.id ?? 'empty'}-${existingList.length}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx" disabled={submitting || initialDeadlinePassed || formReadOnly} onChange={e=>stageEvidence(req, e.target.files?.[0] ?? null)} />
+                        {stagedList.map((entry) => (
+                          <div key={entry.id} style={{display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap'}}>
+                            <span style={{fontSize:'12px'}}>{entry.processed.original.filename} · {Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</span>
+                            <button type="button" className="sla-btn" disabled={submitting || formReadOnly} onClick={()=>removeStagedEvidence(req.type, entry.id)}>Batal</button>
+                          </div>
+                        ))}
                         {!allowMultiple && existingSingle && <button type="button" className="sla-btn" onClick={()=>previewEvidence(existingSingle)}>Preview</button>}
-                        {!allowMultiple && existingSingle && <button type="button" className="sla-btn" disabled={submitting} onClick={()=>removeEvidence(existingSingle)}>Hapus</button>}
+                        {!allowMultiple && existingSingle && <button type="button" className="sla-btn" disabled={submitting || formReadOnly} onClick={()=>removeEvidence(existingSingle)}>Hapus</button>}
                         {allowMultiple && existingList.map(entry=> (
                           <div key={entry.id} style={{display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap'}}>
                             <span style={{fontSize:'12px'}}>{entry.originalFilename}</span>
                             <button type="button" className="sla-btn" onClick={()=>previewEvidence(entry)}>Preview</button>
-                            <button type="button" className="sla-btn" disabled={submitting} onClick={()=>removeEvidence(entry)}>Hapus</button>
+                            <button type="button" className="sla-btn" disabled={submitting || formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button>
                           </div>
                         ))}
                       </div>
                     )
                   })}
-                  <button type="button" className="sla-btn sla-btn-primary" disabled={submitting || dirty || !evidenceComplete} onClick={submitDraft}>Ajukan Lembur</button>
                 </div>
               )}
               {message && <p className="lembur-message">{message}</p>}
+              {(initialDeadlinePassed || formReadOnly) && (
+                <p className="lembur-message">
+                  <strong>{activeRevisionExpired ? 'Batas revisi telah lewat.' : 'Batas pengajuan telah lewat.'}</strong>{' '}
+                  {activeRevisionExpired ? 'Transaksi Lembur sudah kedaluwarsa.' : `${initialDeadlineMessage(draft.date)} Transaksi ini tidak dapat diubah atau diajukan.`}
+                </p>
+              )}
+              <div className="lembur-form-actions">
+                <button type="button" className="sla-btn" disabled={submitting || initialDeadlinePassed || formReadOnly} onClick={saveDraft}>{submitting ? 'Memproses...' : 'Simpan Draft'}</button>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={submitting || initialDeadlinePassed || formReadOnly || !evidenceComplete} onClick={submitDraft}>Ajukan Lembur</button>
+              </div>
+              </fieldset>
             </div>
           )}
 
@@ -666,7 +826,7 @@ export default function SLALembur({
             <label className="sla-context-field">Status
               <select className="sla-context-select" value={filters.status} onChange={e=> setFilters(f=>({ ...f, status: e.target.value }))}>
                 <option value="Semua">Semua</option>
-                {uniqueStatuses.map(s=> <option key={s} value={s}>{statusLabel(s)}</option>)}
+                {uniqueStatuses.map(s=> <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
           </div>
@@ -686,6 +846,9 @@ export default function SLALembur({
                   const time = pontianakFormValues(record.startedAt, record.endedAt)
                   const jenis = record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
                   const ulpName = !canMutate ? getUlpName(record.unitId) : null
+                  const canEdit = record.status==='DRAFT' || record.status==='CORRECTION_REQUIRED'
+                  const isExpired = recordIsExpired(record)
+                  const display = displayStatus(record)
                   return (
                     <tr key={`${record.id}-${record.entryId}`}>
                       <td>{record.date}</td>
@@ -695,10 +858,10 @@ export default function SLALembur({
                       <td>{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''} · {formatDurationMinutes(record.durationHours*60)}</td>
                       <td>Rp {formatRp(record.total)}</td>
                       <td><span className="rekap-keterangan">{record.description}</span></td>
-                      <td><span className={`status-badge status-${record.status}`}>{statusLabel(record.status)}</span></td>
+                      <td><span className={`status-badge status-${record.status}`}>{display}</span>{record.status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <><br/><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <small style={{display:'block', color:'#842029', fontWeight:700}}>REVISI TERAKHIR</small>}</>}</td>
                       <td>
                         <div style={{display:'flex', gap:'6px', flexWrap:'wrap'}}>
-                          {canMutate && record.status==='DRAFT' && <button type="button" className="sla-btn" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</button>}
+                          {canMutate && canEdit && !isExpired && <button type="button" className="sla-btn" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</button>}
                           <button type="button" className="sla-btn" onClick={()=>setDetailActivityId(record.id)}>Lihat Detail</button>
                         </div>
                       </td>
@@ -734,22 +897,25 @@ export default function SLALembur({
                     <div className="rekap-detail-grid">
                       <div><strong>Tanggal</strong><div>{detailActivity.date}</div></div>
                       {!canMutate && <div><strong>ULP</strong><div>{getUlpName(detailActivity.unitId)}</div></div>}
-                      <div><strong>Status</strong><div>{statusLabel(detailActivity.status)}</div></div>
+                      <div><strong>Status</strong><div>{displayStatus(detailActivity)}</div></div>
                       <div><strong>Keterangan</strong><div>{detailActivity.description}</div></div>
                       {detailActivity.workTitle && <div><strong>Uraian</strong><div>{detailActivity.workTitle}</div></div>}
                       {detailActivity.workLocation && <div><strong>Lokasi</strong><div>{detailActivity.workLocation}</div></div>}
+                      {detailActivity.revisionDeadlineAt && detailActivity.status==='CORRECTION_REQUIRED' && <div><strong>Batas Revisi</strong><div>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}<br/><small>Sisa waktu: {Math.max(0, Math.ceil((new Date(detailActivity.revisionDeadlineAt) - new Date())/3600000))} jam</small>{detailActivity.rejectionCount===2 && <div style={{color:'#842029', fontWeight:700}}>REVISI TERAKHIR — Ini kesempatan terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</div>}</div></div>}
                     </div>
                     <div style={{marginTop:'12px'}}>
                       <strong>Peserta ({detailRecords.length})</strong>
                       <table className="sla-table" style={{marginTop:'8px'}}>
-                        <thead><tr><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th></tr></thead>
+                        <thead><tr><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th>{(isAdminUp3||isSuperAdmin) && <th>Tarif/Jam</th>}{(isAdminUp3||isSuperAdmin) && <th>Rincian</th>}</tr></thead>
                         <tbody>
                           {detailRecords.map(r=>{
                             const t = pontianakFormValues(r.startedAt, r.endedAt)
-                            return <tr key={r.entryId}><td>{r.participantName}</td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td></tr>
+                            // For ADMIN_ULP, hide rate; for ADMIN_UP3 show if available via separate fetch? We keep hidden for now, but show total only. To preserve server rule, we don't fetch rate for ADMIN_ULP.
+                            return <tr key={r.entryId}><td>{r.participantName}</td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{(isAdminUp3||isSuperAdmin) && <td>—</td>}{(isAdminUp3||isSuperAdmin) && <td>—</td>}</tr>
                           })}
                         </tbody>
                       </table>
+                      {(isAdminUp3||isSuperAdmin) && <small>Tarif/Jam dan rincian 1.5x/2x tersedia via Detail sesuai kewenangan.</small>}
                     </div>
                     <div style={{marginTop:'12px'}}>
                       <strong>Evidence</strong>
@@ -768,6 +934,28 @@ export default function SLALembur({
                         </div>
                       ) : <div>Belum ada evidence.</div>}
                     </div>
+                    <div style={{marginTop:'12px'}}>
+                      <strong>Riwayat</strong>
+                      {detailHistory.length ? (
+                        <div style={{display:'grid', gap:'8px', marginTop:'8px'}}>
+                          {detailHistory.map(h=>(
+                            <div key={h.id} style={{borderLeft:'3px solid #174b63', padding:'8px 12px', background:'#f8fbfc'}}>
+                              <div style={{fontSize:'12px', color:'#5f4b2e'}}>{new Date(h.occurred_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })} — {h.actor_user_id?.slice(0,8)}</div>
+                              <div><strong>{h.event}</strong> {h.previous_status} → {h.new_status} {h.reason && <span>— {h.reason}</span>}</div>
+                              {h.notes && <div style={{fontSize:'12px'}}>{h.notes}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : <div>Belum ada riwayat.</div>}
+                    </div>
+                    {(isAdminUp3||isSuperAdmin) && detailActivity.status==='SUBMITTED' && (
+                      <div style={{marginTop:'16px', display:'flex', gap:'8px', flexWrap:'wrap', alignItems:'center'}}>
+                        <button type="button" className="sla-btn sla-btn-primary" disabled={submitting} onClick={()=>handleApprove(detailActivity.id)}>Setujui</button>
+                        <input className="sla-context-select" placeholder="Alasan penolakan *" value={rejectReason} onChange={e=>setRejectReason(e.target.value)} style={{flex:1, minWidth:'200px'}} />
+                        <button type="button" className="sla-btn" disabled={submitting || !rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>Tolak Pengajuan</button>
+                      </div>
+                    )}
+                    {showReject && <div style={{marginTop:'8px', color:'#842029'}}>{showReject}</div>}
                   </>
                 )}
               </div>

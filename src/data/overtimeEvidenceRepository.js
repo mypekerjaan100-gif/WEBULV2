@@ -27,7 +27,13 @@ function mapEvidence(row) {
 
 async function rpc(name, parameters) {
   const { data, error } = await supabase.rpc(name, parameters)
-  if (error) throw new Error(error.message || `RPC ${name} gagal.`)
+  if (error) {
+    const message = error.message || `RPC ${name} gagal.`
+    if (/evidence scope\/status is not manageable|evidence is not finalizable|evidence is not deletable/i.test(message)) {
+      throw new Error('Batas pengajuan atau revisi telah lewat, atau evidence berada di luar akses Anda.')
+    }
+    throw new Error(message)
+  }
   return data
 }
 
@@ -39,14 +45,19 @@ export async function listOvertimeEvidence(activityId, { includeHistory = false 
   return (rows ?? []).map(mapEvidence)
 }
 
+export function prepareOvertimeEvidenceFile(file, evidenceType) {
+  return processEvidenceFile(file, evidenceType)
+}
+
 export async function uploadOvertimeEvidence({
   activityId,
   evidenceType,
   file,
+  processedFile = null,
   sortOrder = 0,
   supersedesEvidenceId = null,
 }) {
-  const processed = await processEvidenceFile(file, evidenceType)
+  const processed = processedFile ?? await processEvidenceFile(file, evidenceType)
   const preparedRow = await rpc('prepare_overtime_evidence_upload', {
     p_activity_id: activityId,
     p_evidence_type: evidenceType,

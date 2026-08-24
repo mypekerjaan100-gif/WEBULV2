@@ -184,14 +184,13 @@ try {
     await upload(permissionId, 'SURAT_IZIN')
     await replacements.submitOvertimeReplacement(permissionId)
 
-    const expiredId = await createDraft('REPLACEMENT_LEAVE', '2026-08-01', '08:00', { time: '10:00' })
     let deadlineDenied = false
     try {
-      await replacements.submitOvertimeReplacement(expiredId)
+      await createDraft('REPLACEMENT_LEAVE', '2026-08-01', '08:00', { time: '10:00' })
     } catch (error) {
-      deadlineDenied = /deadline has passed/.test(error.message)
+      deadlineDenied = /Batas pengajuan telah lewat/.test(error.message)
     }
-    if (!deadlineDenied) throw new Error('D+7 deadline was not enforced')
+    if (!deadlineDenied) throw new Error('D+7 deadline was not enforced when creating Draft')
 
     const fractionalMinuteId = await createDraft('REPLACEMENT_LEAVE', '2026-08-23', '10:00', { time: '11:17' })
 
@@ -259,7 +258,7 @@ try {
     }))
 
     return {
-      activityIds: [leaveId, sickId, permissionId, expiredId, fractionalMinuteId, crossMonthId],
+      activityIds: [leaveId, sickId, permissionId, fractionalMinuteId, crossMonthId],
       participantEmployeeId: participantEmployee.id,
       evidenceSize: leaveEvidence.storedSizeBytes,
       signedUrlSeconds: signed.expiresIn,

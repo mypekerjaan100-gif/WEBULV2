@@ -45,6 +45,7 @@ import { getOrganizationScope, invalidateOrganizationMap } from '../../data/orgI
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import { initialVariableCostForUp3, writeVariableCostEntries } from '../../data/variableCostPelayananTeknik.js'
 import {
+  expireInitialOvertimeDrafts,
   listOvertimeReplacements,
   listOvertimeWork,
   saveOvertimeReplacementDraft,
@@ -340,6 +341,11 @@ export default function SLAPelayananTeknikPage({
     setLemburLoadError('')
     setLemburRecords([])
     try {
+      await expireInitialOvertimeDrafts({
+        contractId: orgMap.contractUuid,
+        up3Id: orgMap.up3Uuid,
+        unitId: lemburUnitUuid,
+      })
       const [repRows, workRows] = await Promise.all([
         listOvertimeReplacements({
           contractId: orgMap.contractUuid,
@@ -895,6 +901,8 @@ export default function SLAPelayananTeknikPage({
             periodMonth={lemburPeriodMonth}
             records={lemburRecords}
             canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp')}
+            isAdminUp3={isAdminUp3}
+            isSuperAdmin={isSuperAdmin}
             loading={lemburLoadStatus === 'loading' || !employeesLoaded}
             loadError={lemburLoadError || employeeLoadError}
             orgUnits={orgMap.units}
@@ -909,6 +917,7 @@ export default function SLAPelayananTeknikPage({
             onSubmit={submitLembur}
             onSaveWorkDraft={saveWorkLembur}
             onSubmitWork={submitWorkLembur}
+            onRefresh={refreshLembur}
           />
         )
       ) : (
