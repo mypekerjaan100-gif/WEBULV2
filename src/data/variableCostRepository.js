@@ -72,10 +72,17 @@ export async function deleteFeeder(feederId) {
 
 // Monthly aggregation + targets - real Supabase reads
 export async function fetchMonthlyTargets({ contractId, up3Id, unitIds, periodMonth, versionId }) {
-  // periodMonth is 'YYYY-MM-01'
   let query = supabase.from('sla_targets').select('unit_id,indicator_id,target_value').eq('contract_id', contractId).eq('up3_id', up3Id).eq('period_month', periodMonth)
   if (versionId) query = query.eq('sla_version_id', versionId)
   if (unitIds?.length) query = query.in('unit_id', unitIds)
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function fetchUp3Targets({ contractId, up3Id, periodMonth, versionId }) {
+  let query = supabase.from('sla_targets').select('indicator_id,target_value').eq('contract_id', contractId).eq('up3_id', up3Id).eq('period_month', periodMonth).is('unit_id', null)
+  if (versionId) query = query.eq('sla_version_id', versionId)
   const { data, error } = await query
   if (error) throw new Error(error.message)
   return data ?? []
@@ -86,6 +93,15 @@ export async function fetchMonthlyEntries({ contractId, up3Id, unitIds, periodMo
   if (versionId) query = query.eq('sla_version_id', versionId)
   if (unitIds?.length) query = query.in('unit_id', unitIds)
   const { data, error } = await query
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function fetchIndicators({ contractId, up3Id }) {
+  const { data: versions } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id)
+  if (!versions?.length) return []
+  const versionIds = versions.map((v) => v.id)
+  const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile').in('sla_version_id', versionIds)
   if (error) throw new Error(error.message)
   return data ?? []
 }

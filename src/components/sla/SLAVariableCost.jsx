@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { slaIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchMonthlyEntries, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus } from '../../data/variableCostRepository.js'
 
 const CANONICAL_9 = slaIndicators.filter((i) => i.inputMode === 'variable-cost' || i.id === 'A-3.1c')
+const ALL_KEY = 'ALL'
 
 function formatRp(value) {
   if (value == null || value === '') return '—'
@@ -29,52 +30,61 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   const up3Uuid = orgMap?.up3Uuid
   const units = orgMap?.units ?? []
   const childUlps = units.filter((u) => u.type === 'ULP' && u.parentUuid === up3Uuid)
-  // Resolve own ULP for ADMIN_ULP
   const adminUlpUnit = units.find((u) => u.uuid === unitId || u.legacyKey === unitId)
   const isAdminUlpView = role === 'ulp'
-  const [selectedUlpLegacy, setSelectedUlpLegacy] = useState(() => childUlps[0]?.legacyKey ?? childUlps[0]?.uuid ?? '')
-  useEffect(() => { if (childUlps.length && !selectedUlpLegacy) setSelectedUlpLegacy(childUlps[0]?.legacyKey ?? childUlps[0]?.uuid) }, [childUlps.length]) // eslint-disable-line
+  const [selectedUlpLegacy, setSelectedUlpLegacy] = useState(() => isUp3Role ? ALL_KEY : (childUlps[0]?.legacyKey ?? childUlps[0]?.uuid ?? ''))
+  useEffect(() => {
+    if (isUp3Role && !selectedUlpLegacy) setSelectedUlpLegacy(ALL_KEY)
+    else if (childUlps.length && !selectedUlpLegacy) setSelectedUlpLegacy(childUlps[0]?.legacyKey ?? childUlps[0]?.uuid)
+  }, [childUlps.length]) // eslint-disable-line
 
-  const effectiveLegacy = isAdminUlpView ? (adminUlpUnit?.legacyKey ?? unitId) : (isUp3Role ? selectedUlpLegacy : unitId)
-  const effectiveUnit = units.find((u) => u.legacyKey === effectiveLegacy || u.uuid === effectiveLegacy)
+  const isConsolidated = isUp3Role && selectedUlpLegacy === ALL_KEY && !isAdminUlpView
+  const effectiveLegacy = isAdminUlpView ? (adminUlpUnit?.legacyKey ?? unitId) : (isConsolidated ? null : (isUp3Role ? selectedUlpLegacy : unitId))
+  const effectiveUnit = effectiveLegacy ? units.find((u) => u.legacyKey === effectiveLegacy || u.uuid === effectiveLegacy) : null
   const effectiveUnitUuid = effectiveUnit?.uuid ?? null
   const periodMonth = periodLabelToMonth(period)
 
   const [targets, setTargets] = useState([])
+  const [up3Targets, setUp3Targets] = useState([])
   const [entries, setEntries] = useState([])
+  const [indicators, setIndicators] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeFeeders, setActiveFeeders] = useState([])
+  const [drillIndicator, setDrillIndicator] = useState(null)
 
   const loadMonthly = useCallback(async () => {
     if (!contractId || !up3Uuid || !periodMonth) { setLoading(false); return }
-    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setActiveFeeders([]); setLoading(false); return }
+    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
     setLoading(true); setError('')
     try {
-      const unitUuids = isAdminUlpView ? [effectiveUnitUuid] : (effectiveUnitUuid ? [effectiveUnitUuid] : childUlps.map((u) => u.uuid))
-      const [t, e] = await Promise.all([
-        fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids.length ? unitUuids : undefined, periodMonth }),
-        fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids.length ? unitUuids : undefined, periodMonth }),
+      const unitUuids = isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
+      const [t, e, ind, up3t] = await Promise.all([
+        unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
+        unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
+        fetchIndicators({ contractId, up3Id: up3Uuid }).catch(() => []),
+        isConsolidated ? fetchUp3Targets({ contractId, up3Id: up3Uuid, periodMonth }).catch(() => []) : Promise.resolve([]),
       ])
-      setTargets(t ?? []); setEntries(e ?? [])
-      if (effectiveUnitUuid) {
-        const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid })
+      setTargets(t ?? []); setEntries(e ?? []); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
+      if (effectiveUnitUuid && !isConsolidated) {
+        const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid }).catch(() => [])
         setActiveFeeders(af ?? [])
+      } else if (isConsolidated) {
+        setActiveFeeders([])
       } else setActiveFeeders([])
-    } catch (err) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]) }
+    } catch (err) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setUp3Targets([]) }
     finally { setLoading(false) }
-  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, childUlps.map((u) => u.uuid).join(',')])
+  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, childUlps.map((u) => u.uuid).join(',')])
 
   useEffect(() => { loadMonthly() }, [loadMonthly])
 
-  // Master Penyulang state
   const [feeders, setFeeders] = useState([])
   const [feederLoading, setFeederLoading] = useState(false)
   const [feederError, setFeederError] = useState('')
   const [feederStatusFilter, setFeederStatusFilter] = useState('')
   const [proposeName, setProposeName] = useState('')
   const [proposeBusy, setProposeBusy] = useState(false)
-  const [directUlp, setDirectUlp] = useState(() => effectiveLegacy)
+  const [directUlp, setDirectUlp] = useState(() => effectiveLegacy ?? ALL_KEY)
   const [activeTab, setActiveTab] = useState('rekap')
 
   const loadFeeders = useCallback(async () => {
@@ -82,20 +92,18 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
     setFeederLoading(true); setFeederError('')
     try {
       const list = await listFeeders({ contractId, up3Id: up3Uuid, unitId: isAdminUlpView ? effectiveUnitUuid : (feederStatusFilter ? undefined : effectiveUnitUuid) })
-      // client filter for status and for ADMIN_UP3 ULP filter
       let filtered = list
       if (feederStatusFilter) filtered = filtered.filter((f) => f.status === feederStatusFilter)
-      if (!isAdminUlpView && effectiveUnitUuid) {
-        // if ULP filter selected, show only that ULP; otherwise show all child
+      if (!isAdminUlpView && effectiveUnitUuid && !isConsolidated) {
         if (effectiveUnitUuid) filtered = filtered.filter((f) => f.unit_id === effectiveUnitUuid)
       }
       setFeeders(filtered)
     } catch (err) { setFeederError(err.message) }
     finally { setFeederLoading(false) }
-  }, [contractId, up3Uuid, effectiveUnitUuid, isAdminUlpView, feederStatusFilter])
+  }, [contractId, up3Uuid, effectiveUnitUuid, isAdminUlpView, feederStatusFilter, isConsolidated])
 
   useEffect(() => { if (activeTab === 'penyulang') loadFeeders() }, [loadFeeders, activeTab])
-  useEffect(() => { setDirectUlp(effectiveLegacy) }, [effectiveLegacy])
+  useEffect(() => { setDirectUlp(effectiveLegacy ?? ALL_KEY) }, [effectiveLegacy])
 
   const handlePropose = async () => {
     if (!proposeName.trim() || !effectiveUnitUuid) return
@@ -105,6 +113,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
         await proposeFeeder({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, name: proposeName.trim() })
       } else {
         const targetUnit = units.find((u) => u.legacyKey === directUlp || u.uuid === directUlp)?.uuid ?? effectiveUnitUuid
+        if (!targetUnit) throw new Error('Pilih ULP tujuan')
         await createFeederDirect({ contractId, up3Id: up3Uuid, unitId: targetUnit, name: proposeName.trim() })
       }
       setProposeName(''); await loadFeeders(); await loadMonthly()
@@ -131,18 +140,45 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
     catch (e) { setFeederError(e.message.includes('deactivate') ? 'Penyulang sudah memiliki riwayat transaksi — tidak dapat dihapus permanen. Gunakan Nonaktifkan.' : e.message) }
   }
 
-  // Build lookup for monthly values: since Supabase has no seeded indicators (empty), we show empty state
-  // For now, map by legacy point is not possible because indicator_id is UUID; we just show empty values
-  const targetByPoint = new Map() // placeholder
-  const entryByPoint = new Map()
+  // Build point -> UUID map for grouping
+  const pointToUuids = new Map()
+  indicators.forEach((ind) => { if (ind.point_code) pointToUuids.set(ind.point_code, ind.id) })
 
-  // If we had real indicator UUIDs, we would map here; for V2, Supabase returns empty, so table shows empty states correctly
-  // Keep formatting logic that handles null -> "Belum diatur" / 0
+  function getConsolidatedValues(point) {
+    // For V2 with empty indicators table, fallback to sum across all entries for display correctness
+    // When indicators exist, filter by UUID matching point
+    const uuid = pointToUuids.get(point)
+    const relevant = uuid ? entries.filter((e) => e.indicator_id === uuid) : []
+    // If no mapping, treat as no data -> sum 0; do not invent
+    if (uuid && relevant.length === 0) return { wo: 0, realisasi: 0, achievement: null }
+    if (!uuid && entries.length === 0) return { wo: 0, realisasi: 0, achievement: null }
+    if (!uuid) {
+      // No indicator mapping: show consolidated sums as 0 to avoid fake per-point sums
+      return { wo: 0, realisasi: 0, achievement: null }
+    }
+    const wo = relevant.reduce((s, r) => s + Number(r.work_order ?? 0), 0)
+    const realisasi = relevant.reduce((s, r) => s + Number(r.realization ?? 0), 0)
+    // For Konstruksi, realization is revenue (already)
+    return { wo, realisasi }
+  }
+
+  function getPerUlpValues(point) {
+    const uuid = pointToUuids.get(point)
+    return childUlps.map((ulp) => {
+      const row = entries.find((e) => e.unit_id === ulp.uuid && (uuid ? e.indicator_id === uuid : false))
+      // If no UUID mapping, no row
+      return { ulp, row }
+    })
+  }
+
+  // For non-consolidated per-ULP view, we keep placeholder empty map (V2.1 behavior)
+  const targetByPoint = new Map()
+  const entryByPoint = new Map()
 
   return (
     <section className="sla-module-panel">
       <div className="sla-export-bar" style={{ justifyContent: 'space-between' }}>
-        <span className="sla-export-scope">VARIABLE COST — Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—')}</span>
+        <span className="sla-export-scope">VARIABLE COST — Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
           <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang</button>
@@ -153,6 +189,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
         <div style={{ margin: '12px 0', display: 'flex', gap: 8, alignItems: 'center' }}>
           <label>ULP</label>
           <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
+            <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
             {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
           </select>
         </div>
@@ -164,19 +201,56 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
             <table className="sla-table">
               <thead>
                 <tr>
-                  <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>
+                  <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{isConsolidated ? <th>Detail</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6}>Memuat data Variable Cost…</td></tr>
+                  <tr><td colSpan={isConsolidated ? 7 : 6}>Memuat data Variable Cost…</td></tr>
                 ) : error ? (
-                  <tr><td colSpan={6} className="sla-blocked-note">{error}</td></tr>
+                  <tr><td colSpan={isConsolidated ? 7 : 6} className="sla-blocked-note">{error} <button type="button" className="sla-btn" onClick={loadMonthly}>Coba lagi</button></td></tr>
                 ) : CANONICAL_9.length === 0 ? (
-                  <tr><td colSpan={6}>Belum ada data Variable Cost pada periode ini.</td></tr>
+                  <tr><td colSpan={isConsolidated ? 7 : 6}>Belum ada data Variable Cost pada periode ini.</td></tr>
                 ) : CANONICAL_9.map((ind) => {
                   const isKonstruksi = ind.id === 'A-3.1c'
-                  // Real data would come from entryByPoint; for V2 with no seed, show empty states
+                  if (isConsolidated) {
+                    if (isKonstruksi) {
+                      const cons = getConsolidatedValues(ind.point)
+                      const totalRevenue = cons.realisasi
+                      return (
+                        <tr key={ind.id}>
+                          <td>{ind.scope} — {ind.criteria}</td>
+                          <td>—</td>
+                          <td><span className="text-muted">Belum diatur</span></td>
+                          <td colSpan={2} style={{ textAlign: 'center' }}>{totalRevenue ? formatRp(totalRevenue) : 'Belum ada data'}</td>
+                          <td>—</td>
+                          <td><button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button></td>
+                        </tr>
+                      )
+                    }
+                    const cons = getConsolidatedValues(ind.point)
+                    const up3TargetRow = up3Targets.find((t) => {
+                      const uuid = pointToUuids.get(ind.point)
+                      return uuid ? t.indicator_id === uuid : false
+                    })
+                    const up3Target = up3TargetRow?.target_value ?? null
+                    let pencapaian = '—'
+                    if (up3Target != null && cons.wo > 0) {
+                      const denom = Math.min(Number(up3Target), cons.wo)
+                      if (denom > 0) pencapaian = formatPercent((cons.realisasi / denom) * 100)
+                    }
+                    return (
+                      <tr key={ind.id}>
+                        <td>{ind.point} — {ind.criteria}</td>
+                        <td>{ind.unit ?? '—'}</td>
+                        <td>{up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)}</td>
+                        <td>{formatNumber(cons.wo)}</td>
+                        <td>{formatNumber(cons.realisasi)}</td>
+                        <td>{up3Target == null ? '—' : pencapaian}</td>
+                        <td><button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button></td>
+                      </tr>
+                    )
+                  }
                   const target = targetByPoint.get(ind.point) ?? null
                   const entry = entryByPoint.get(ind.point) ?? null
                   if (isKonstruksi) {
@@ -205,16 +279,80 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
               </tbody>
             </table>
           </div>
-          {!loading && entries.length === 0 && (
+          {!loading && !error && isConsolidated && entries.length === 0 && (
+            <p className="text-muted" style={{ marginTop: 12 }}>Belum ada data Variable Cost pada periode ini. WO/Realisasi konsolidasi 0 (hanya APPROVED).</p>
+          )}
+          {!loading && !error && !isConsolidated && entries.length === 0 && (
             <p className="text-muted" style={{ marginTop: 12 }}>Belum ada data Variable Cost pada periode ini.</p>
           )}
-          {entries.length === 0 && targets.length === 0 && !loading && (
+          {entries.length === 0 && targets.length === 0 && up3Targets.length === 0 && !loading && !error && (
             <p className="text-muted">Target belum diatur oleh Admin UP3.</p>
           )}
           <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
             <button type="button" className="sla-btn sla-btn-primary" onClick={() => alert('Input Kegiatan akan tersedia di V3 (daily form, petugas, evidence).')}>+ Input Kegiatan</button>
-            <span className="text-muted" style={{ alignSelf: 'center' }}>{activeFeeders.length} Penyulang aktif untuk ULP ini — siap untuk V3</span>
+            <span className="text-muted" style={{ alignSelf: 'center' }}>{isConsolidated ? `${childUlps.length} ULP — konsolidasi APPROVED` : `${activeFeeders.length} Penyulang aktif untuk ULP ini — siap untuk V3`}</span>
           </div>
+          {drillIndicator && (
+            <div className="modal-backdrop" onClick={() => setDrillIndicator(null)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+                <div className="modal-header">
+                  <h3>Detail {drillIndicator.point} — {drillIndicator.criteria} · Periode {period}</h3>
+                  <button type="button" className="modal-close" onClick={() => setDrillIndicator(null)}>×</button>
+                </div>
+                <div className="modal-body">
+                  <table className="sla-table">
+                    <thead>
+                      <tr>
+                        <th>ULP</th>
+                        {drillIndicator.id === 'A-3.1c' ? (
+                          <><th>Nilai/Pendapatan</th></>
+                        ) : (
+                          <><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th></>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {childUlps.map((ulp) => {
+                        const uuid = pointToUuids.get(drillIndicator.point)
+                        const row = entries.find((e) => e.unit_id === ulp.uuid && (uuid ? e.indicator_id === uuid : false))
+                        const tRow = targets.find((t) => t.unit_id === ulp.uuid && (uuid ? t.indicator_id === uuid : false))
+                        if (drillIndicator.id === 'A-3.1c') {
+                          return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{row?.realization != null ? formatRp(row.realization) : '0'}</td></tr>
+                        }
+                        const wo = row?.work_order ?? 0
+                        const real = row?.realization ?? 0
+                        const tgt = tRow?.target_value ?? null
+                        let pencapaian = '—'
+                        if (tgt != null && wo > 0) {
+                          const denom = Math.min(Number(tgt), wo)
+                          if (denom > 0) pencapaian = formatPercent((real / denom) * 100)
+                        }
+                        return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{formatNumber(wo)}</td><td>{formatNumber(real)}</td><td>{pencapaian}</td></tr>
+                      })}
+                      {drillIndicator.id === 'A-3.1c' ? (
+                        <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{formatRp(getConsolidatedValues(drillIndicator.point).realisasi)}</td></tr>
+                      ) : (
+                        (() => {
+                          const cons = getConsolidatedValues(drillIndicator.point)
+                          const up3TargetRow = up3Targets.find((t) => {
+                            const uuid = pointToUuids.get(drillIndicator.point)
+                            return uuid ? t.indicator_id === uuid : false
+                          })
+                          const up3Target = up3TargetRow?.target_value ?? null
+                          let pencapaian = '—'
+                          if (up3Target != null && cons.wo > 0) {
+                            const denom = Math.min(Number(up3Target), cons.wo)
+                            if (denom > 0) pencapaian = formatPercent((cons.realisasi / denom) * 100)
+                          }
+                          return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{up3Target == null ? 'Belum diatur' : formatNumber(up3Target)}</td><td>{formatNumber(cons.wo)}</td><td>{formatNumber(cons.realisasi)}</td><td>{pencapaian}</td></tr>
+                        })()
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div>
@@ -223,6 +361,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
               <>
                 <label>ULP</label>
                 <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
+                  <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
                   {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
                 </select>
               </>
@@ -238,7 +377,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
             <button type="button" className="sla-btn" onClick={loadFeeders}>Muat Ulang</button>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {!isAdminUlpView && (
               <>
                 <label>ULP Tujuan</label>

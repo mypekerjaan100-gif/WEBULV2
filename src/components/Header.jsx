@@ -57,7 +57,7 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
         >
           {signingOut ? 'Keluar...' : 'Keluar'}
         </button>
-        <div className="header-placeholder">Prototype &middot; Dummy Data</div>
+        <div className="header-placeholder" style={{ display: 'none' }} aria-hidden="true"></div>
       </div>
     </header>
   )
