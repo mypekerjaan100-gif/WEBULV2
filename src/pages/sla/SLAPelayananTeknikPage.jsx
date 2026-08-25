@@ -868,27 +868,24 @@ export default function SLAPelayananTeknikPage({
               <strong>{up3Unit ? currentNameOf(up3Unit) : up3Id}</strong>.
             </p>
           </section>
-        ) : selectedVersion ? (
+        ) : orgMapStatus === 'loading' ? (
+          <section className="placeholder">
+            <h2 className="placeholder-title">Memuat organisasi</h2>
+            <p className="placeholder-text">Menyiapkan Variable Cost dari Supabase.</p>
+          </section>
+        ) : orgMapStatus === 'error' || !orgMap ? (
+          <section className="placeholder">
+            <h2 className="placeholder-title">Organisasi tidak tersedia</h2>
+            <p className="sla-blocked-note">{orgMapError || 'Gagal memuat organisasi.'}</p>
+          </section>
+        ) : (
           <SLAVariableCost
-            indicators={flatIndicators.filter(
-              (indicator) => indicator.inputMode === 'variable-cost',
-            )}
+            period={period}
+            orgMap={orgMap}
             role={role}
             unitId={effectiveUnitId}
             up3Id={up3Id}
-            entries={entriesByUnit[effectiveUnitId] ?? {}}
-            onEntriesChange={updateEntries}
-            targets={selectedVersion.targets}
-            onTargetsChange={updateActiveTargets}
           />
-        ) : (
-          <section className="placeholder">
-            <h2 className="placeholder-title">Belum ada SLA untuk UP3 ini</h2>
-            <p className="placeholder-text">
-              Variable Cost di-resolve terhadap SLA aktif; buat SLA/Addendum
-              melalui modul Pengaturan SLA terlebih dahulu.
-            </p>
-          </section>
         )
       ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (
         <section className="placeholder">
