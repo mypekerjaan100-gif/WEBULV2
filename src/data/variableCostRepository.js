@@ -11,9 +11,18 @@ export function formatFeederStatus(status) {
   return STATUS_LABEL[status] ?? status
 }
 
-async function rpc(name, params) {
+function rlsPhaseMessage(phase, err) {
+  const msg = err?.message || String(err)
+  const isRls = /row-level security|violates|permission|not allowed/i.test(msg)
+  return isRls ? `[${phase}] ${msg}` : msg
+}
+
+async function rpc(name, params, phase) {
   const { data, error } = await supabase.rpc(name, params)
-  if (error) throw new Error(error.message || `${name} gagal`)
+  if (error) {
+    const prefix = phase ? `[${phase}] ` : ''
+    throw new Error(prefix + (error.message || `${name} gagal`))
+  }
   return data
 }
 
@@ -143,42 +152,65 @@ export async function getVariableDetail(entryId) {
 }
 
 export async function saveVariableEntry(params) {
-  return rpc('save_variable_cost_entry', {
-    p_entry_id: params.entryId ?? null,
-    p_contract_id: params.contractId,
-    p_up3_id: params.up3Id,
-    p_unit_id: params.unitId,
-    p_sla_version_id: params.slaVersionId,
-    p_indicator_id: params.indicatorId,
-    p_work_date: params.workDate,
-    p_feeder_id: params.feederId ?? null,
-    p_location_address: params.locationAddress ?? null,
-    p_work_order: params.workOrder ?? null,
-    p_realization: params.realization ?? null,
-    p_revenue_amount: params.revenueAmount ?? null,
-    p_description: params.description ?? null,
-    p_employee_ids: params.employeeIds ?? null,
-  })
+  try {
+    return await rpc('save_variable_cost_entry', {
+      p_entry_id: params.entryId ?? null,
+      p_contract_id: params.contractId,
+      p_up3_id: params.up3Id,
+      p_unit_id: params.unitId,
+      p_sla_version_id: params.slaVersionId,
+      p_indicator_id: params.indicatorId,
+      p_work_date: params.workDate,
+      p_feeder_id: params.feederId ?? null,
+      p_location_address: params.locationAddress ?? null,
+      p_work_order: params.workOrder ?? null,
+      p_realization: params.realization ?? null,
+      p_revenue_amount: params.revenueAmount ?? null,
+      p_description: params.description ?? null,
+      p_employee_ids: params.employeeIds ?? null,
+    }, 'ENTRY_SAVE_RLS')
+  } catch (e) {
+    throw new Error(rlsPhaseMessage('ENTRY_SAVE_RLS', e))
+  }
 }
 
 export async function submitVariableEntry(entryId) {
-  return rpc('submit_variable_cost_entry', { p_entry_id: entryId })
+  try {
+    return await rpc('submit_variable_cost_entry', { p_entry_id: entryId }, 'SUBMIT_RLS')
+  } catch (e) {
+    throw new Error(rlsPhaseMessage('SUBMIT_RLS', e))
+  }
 }
 
 export async function uploadVariableEvidence({ entryId, file }) {
-  const { data: path, error: pathError } = await supabase.rpc('get_variable_evidence_upload_path', { p_entry_id: entryId, p_file_name: file.name })
-  if (pathError) throw new Error(pathError.message)
-  const storagePath = path
-  const { error: uploadError } = await supabase.storage.from('variable-cost-evidence').upload(storagePath, file, { contentType: file.type, upsert: false })
-  if (uploadError) throw new Error(uploadError.message)
-  const { error: insertError } = await supabase.from('variable_cost_evidence').insert({
-    variable_cost_entry_id: entryId,
-    storage_path: storagePath,
-    file_name: file.name,
-    mime_type: file.type || 'application/octet-stream',
-    size_bytes: file.size,
-  })
-  if (insertError) throw new Error(insertError.message)
+  let storagePath
+  try {
+    const { data: path, error: pathError } = await supabase.rpc('get_variable_evidence_upload_path', { p_entry_id: entryId, p_file_name: file.name })
+    if (pathError) throw new Error(`[EVIDENCE_PATH_RLS] ${pathError.message}`)
+    storagePath = path
+  } catch (e) {
+    throw new Error(rlsPhaseMessage('EVIDENCE_PATH_RLS', e))
+  }
+  try {
+    const { error: uploadError } = await supabase.storage.from('variable-cost-evidence').upload(storagePath, file, { contentType: file.type, upsert: false })
+    if (uploadError) throw new Error(uploadError.message)
+  } catch (e) {
+    throw new Error(rlsPhaseMessage('EVIDENCE_STORAGE_RLS', e))
+  }
+  try {
+    const { error: insertError } = await supabase.from('variable_cost_evidence').insert({
+      variable_cost_entry_id: entryId,
+      storage_path: storagePath,
+      file_name: file.name,
+      mime_type: file.type || 'application/octet-stream',
+      size_bytes: file.size,
+    })
+    if (insertError) throw new Error(insertError.message)
+  } catch (e) {
+    // clean up orphan storage object if metadata failed
+    try { await supabase.storage.from('variable-cost-evidence').remove([storagePath]) } catch {}
+    throw new Error(rlsPhaseMessage('EVIDENCE_METADATA_RLS', e))
+  }
   return storagePath
 }
 
