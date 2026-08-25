@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { slaIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl } from '../../data/variableCostRepository.js'
+import { supabase } from '../../lib/supabaseClient.js'
 
 const CANONICAL_9 = slaIndicators.filter((i) => i.inputMode === 'variable-cost' || i.id === 'A-3.1c')
 const ALL_KEY = 'ALL'
@@ -87,6 +88,30 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   const [directUlp, setDirectUlp] = useState(() => effectiveLegacy ?? ALL_KEY)
   const [activeTab, setActiveTab] = useState('rekap')
 
+  // V3 daily input state
+  const [showInputPicker, setShowInputPicker] = useState(false)
+  const [selectedIndicator, setSelectedIndicator] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0,10))
+  const [formFeeder, setFormFeeder] = useState('')
+  const [formLocation, setFormLocation] = useState('')
+  const [formWo, setFormWo] = useState('')
+  const [formRealisasi, setFormRealisasi] = useState('')
+  const [formPetugas, setFormPetugas] = useState([])
+  const [formKeterangan, setFormKeterangan] = useState('')
+  const [formFiles, setFormFiles] = useState([])
+  const [formError, setFormError] = useState('')
+  const [formBusy, setFormBusy] = useState(false)
+  const [editingEntryId, setEditingEntryId] = useState(null)
+  const [employees, setEmployees] = useState([])
+  const [dailyList, setDailyList] = useState([])
+  const [dailyLoading, setDailyLoading] = useState(false)
+  const [showDailyList, setShowDailyList] = useState(false)
+  const [dailyIndicator, setDailyIndicator] = useState(null)
+  const [detailEntry, setDetailEntry] = useState(null)
+  const [detailData, setDetailData] = useState(null)
+  const [activeVersionId, setActiveVersionId] = useState(null)
+
   const loadFeeders = useCallback(async () => {
     if (!contractId || !up3Uuid) return
     setFeederLoading(true); setFeederError('')
@@ -104,6 +129,37 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
 
   useEffect(() => { if (activeTab === 'penyulang') loadFeeders() }, [loadFeeders, activeTab])
   useEffect(() => { setDirectUlp(effectiveLegacy ?? ALL_KEY) }, [effectiveLegacy])
+
+  useEffect(() => {
+    if (!contractId || !up3Uuid) return
+    fetchActiveVersion({ contractId, up3Id: up3Uuid }).then((id) => setActiveVersionId(id)).catch(() => {})
+  }, [contractId, up3Uuid])
+
+  useEffect(() => {
+    if (!effectiveUnitUuid || isConsolidated) { setEmployees([]); return }
+    // fetch employees for own ULP
+    supabase.from('employees').select('id').limit(1).then(() => {
+      // use employeeRepository via direct query for now: fetch via supabase view
+      supabase.from('employee_unit_history').select('employee_id').eq('unit_id', effectiveUnitUuid).then(() => {})
+    })
+    // fallback: fetch via employees table with join
+    const loadEmps = async () => {
+      try {
+        // Try to get employees assigned to this ULP via history
+        const { data: hist } = await supabase.from('employee_unit_history').select('employee_id').eq('unit_id', effectiveUnitUuid).is('effective_to', null)
+        const ids = (hist ?? []).map((h) => h.employee_id)
+        if (!ids.length) { setEmployees([]); return }
+        const { data: emps } = await supabase.from('employees').select('id,name').in('id', ids)
+        // filter only active via status history
+        const { data: statusRows } = await supabase.from('employee_status_history').select('employee_id,status').in('employee_id', ids)
+        const activeIds = new Set((statusRows ?? []).filter((s) => s.status === 'Aktif').map((s) => s.employee_id))
+        // if no status rows, assume all active
+        const filtered = (emps ?? []).filter((e) => activeIds.size === 0 || activeIds.has(e.id))
+        setEmployees(filtered)
+      } catch { setEmployees([]) }
+    }
+    loadEmps()
+  }, [effectiveUnitUuid, isConsolidated])
 
   const handlePropose = async () => {
     if (!proposeName.trim() || !effectiveUnitUuid) return
@@ -138,6 +194,103 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
     if (!window.confirm(`Hapus Penyulang "${f.name}"?`)) return
     try { await deleteFeeder(f.id); await loadFeeders() }
     catch (e) { setFeederError(e.message.includes('deactivate') ? 'Penyulang sudah memiliki riwayat transaksi — tidak dapat dihapus permanen. Gunakan Nonaktifkan.' : e.message) }
+  }
+
+  // V3 helpers
+  const standard8 = CANONICAL_9.filter((i) => i.id !== 'A-3.1c')
+  const openInputPicker = () => { if (isConsolidated) return; setShowInputPicker(true) }
+  const chooseIndicator = (ind) => {
+    setSelectedIndicator(ind)
+    setShowInputPicker(false)
+    setFormDate(new Date().toISOString().slice(0,10))
+    setFormFeeder(''); setFormLocation(''); setFormWo(''); setFormRealisasi(''); setFormPetugas([]); setFormKeterangan(''); setFormFiles([]); setFormError(''); setEditingEntryId(null)
+    setShowForm(true)
+  }
+  const openDailyList = async (ind) => {
+    if (isConsolidated) return
+    setDailyIndicator(ind)
+    setShowDailyList(true)
+    setDailyLoading(true)
+    try {
+      const uuid = pointToUuids.get(ind.point) ?? ind.id
+      // Try to resolve indicator UUID via fetched indicators
+      const indicatorRow = indicators.find((r) => r.point_code === ind.point || r.legacy_key === ind.id)
+      const indicatorId = indicatorRow?.id ?? uuid
+      const versionId = indicatorRow?.sla_version_id ?? activeVersionId
+      const list = await listDailyEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, indicatorId, periodMonth })
+      setDailyList(list)
+    } catch (e) { setDailyList([]) }
+    finally { setDailyLoading(false) }
+  }
+  const openDetail = async (entryId) => {
+    setDetailEntry(entryId)
+    try {
+      const data = await getVariableDetail(entryId)
+      setDetailData(data)
+    } catch (e) { setDetailData(null) }
+  }
+  const handleSaveDraft = async (shouldSubmit) => {
+    setFormError('')
+    if (!selectedIndicator) { setFormError('Pilih jenis kegiatan'); return }
+    if (!formDate) { setFormError('Tanggal wajib'); return }
+    if (!formFeeder) { setFormError('Penyulang wajib'); return }
+    if (!formLocation.trim()) { setFormError('Lokasi wajib'); return }
+    if (formWo === '' || Number(formWo) < 0 || !Number.isInteger(Number(formWo))) { setFormError('WO wajib angka bulat >=0'); return }
+    if (formRealisasi === '' || Number(formRealisasi) < 0 || !Number.isInteger(Number(formRealisasi))) { setFormError('Realisasi wajib angka bulat >=0'); return }
+    if (!formPetugas.length) { setFormError('Pilih minimal 1 petugas'); return }
+    // Resolve indicator UUID
+    const indicatorRow = indicators.find((r) => r.point_code === selectedIndicator.point || r.legacy_key === selectedIndicator.id)
+    const indicatorId = indicatorRow?.id
+    const versionId = indicatorRow?.sla_version_id ?? activeVersionId
+    if (!indicatorId || !versionId) { setFormError('Indikator belum tersedia di Supabase. Hubungi Admin.'); return }
+    setFormBusy(true)
+    try {
+      const saved = await saveVariableEntry({
+        entryId: editingEntryId,
+        contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid,
+        slaVersionId: versionId, indicatorId,
+        workDate: formDate, feederId: formFeeder,
+        locationAddress: formLocation, workOrder: Number(formWo), realization: Number(formRealisasi),
+        description: formKeterangan, employeeIds: formPetugas,
+      })
+      const entryId = saved.id ?? editingEntryId ?? saved?.id
+      // upload evidences if any
+      if (formFiles.length) {
+        for (const f of formFiles) {
+          await uploadVariableEvidence({ entryId, file: f })
+        }
+      }
+      if (shouldSubmit) {
+        // validate evidence after upload
+        await submitVariableEntry(entryId)
+      }
+      setShowForm(false); setSelectedIndicator(null); setEditingEntryId(null)
+      await loadMonthly()
+      if (dailyIndicator) {
+        const list = await listDailyEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, indicatorId, periodMonth })
+        setDailyList(list)
+      }
+    } catch (e) { setFormError(e.message) }
+    finally { setFormBusy(false) }
+  }
+  const handleContinueDraft = async (row) => {
+    setDailyList([]); setShowDailyList(false)
+    const ind = standard8.find((i) => {
+      const uuid = pointToUuids.get(i.point)
+      // try to match via history: we don't have uuid for row, fallback to point via dailyIndicator
+      return true
+    })
+    // Open form with existing data
+    const data = await getVariableDetail(row.id)
+    setSelectedIndicator(standard8.find((s) => s.point === dailyIndicator?.point) ?? standard8[0])
+    setFormDate(data.entry.work_date?.slice(0,10) ?? new Date().toISOString().slice(0,10))
+    setFormFeeder(data.entry.feeder_id ?? '')
+    setFormLocation(data.entry.location_address ?? '')
+    setFormWo(String(data.entry.work_order ?? ''))
+    setFormRealisasi(String(data.entry.realization ?? ''))
+    setFormPetugas((data.personnel ?? []).map((p) => p.employee_id))
+    setFormKeterangan(data.entry.description ?? '')
+    setFormFiles([]); setEditingEntryId(row.id); setShowForm(true)
   }
 
   // Build point -> UUID map for grouping
@@ -201,7 +354,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
             <table className="sla-table">
               <thead>
                 <tr>
-                  <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{isConsolidated ? <th>Detail</th> : null}
+                  <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{(isConsolidated || (!isUp3Role && !isConsolidated)) ? <th>Aksi</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -255,24 +408,26 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                   const entry = entryByPoint.get(ind.point) ?? null
                   if (isKonstruksi) {
                     return (
-                      <tr key={ind.id}>
+                      <tr key={ind.id} style={!isConsolidated && !isUp3Role ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && !isUp3Role) openDailyList(ind) }}>
                         <td>{ind.scope} — {ind.criteria}</td>
                         <td>—</td>
                         <td><span className="text-muted">Belum diatur</span></td>
-                        <td colSpan={3} style={{ textAlign: 'center' }}>
+                        <td colSpan={isConsolidated ? 2 : 3} style={{ textAlign: 'center' }}>
                           <span className="text-muted">Nilai/Pendapatan — {entry ? formatRp(entry.realization) : 'Belum ada data'}</span>
                         </td>
+                        {!isConsolidated && !isUp3Role && <td><button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openDailyList(ind) }}>Lihat Detail</button></td>}
                       </tr>
                     )
                   }
                   return (
-                    <tr key={ind.id}>
+                    <tr key={ind.id} style={!isConsolidated && !isUp3Role ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && !isUp3Role) openDailyList(ind) }}>
                       <td>{ind.point} — {ind.criteria}</td>
                       <td>{ind.unit ?? '—'}</td>
                       <td>{target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)}</td>
                       <td>{entry?.work_order == null ? '0' : formatNumber(entry.work_order)}</td>
                       <td>{entry?.realization == null ? '0' : formatNumber(entry.realization)}</td>
                       <td>{entry?.achievement == null ? '—' : formatPercent(entry.achievement)}</td>
+                      {!isConsolidated && !isUp3Role && <td><button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openDailyList(ind) }}>Lihat Detail</button></td>}
                     </tr>
                   )
                 })}
@@ -288,9 +443,18 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
           {entries.length === 0 && targets.length === 0 && up3Targets.length === 0 && !loading && !error && (
             <p className="text-muted">Target belum diatur oleh Admin UP3.</p>
           )}
-          <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-            <button type="button" className="sla-btn sla-btn-primary" onClick={() => alert('Input Kegiatan akan tersedia di V3 (daily form, petugas, evidence).')}>+ Input Kegiatan</button>
-            <span className="text-muted" style={{ alignSelf: 'center' }}>{isConsolidated ? `${childUlps.length} ULP — konsolidasi APPROVED` : `${activeFeeders.length} Penyulang aktif untuk ULP ini — siap untuk V3`}</span>
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {!isConsolidated && !isUp3Role && (
+              <button type="button" className="sla-btn sla-btn-primary" onClick={openInputPicker}>+ Input Kegiatan</button>
+            )}
+            {isUp3Role && !isConsolidated && (
+              <span className="text-muted" style={{ alignSelf: 'center' }}>Monitoring ULP — input oleh ADMIN_ULP</span>
+            )}
+            {isConsolidated && (
+              <span className="text-muted" style={{ alignSelf: 'center' }}>{childUlps.length} ULP — konsolidasi APPROVED</span>
+            )}
+            {!isConsolidated && isUp3Role && null}
+            {!isConsolidated && !isUp3Role && <span className="text-muted" style={{ alignSelf: 'center' }}>{activeFeeders.length} Penyulang aktif</span>}
           </div>
           {drillIndicator && (
             <div className="modal-backdrop" onClick={() => setDrillIndicator(null)}>
@@ -349,6 +513,136 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                       )}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          )}
+          {showInputPicker && (
+            <div className="modal-backdrop" onClick={() => setShowInputPicker(false)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+                <div className="modal-header"><h3>Pilih Jenis Kegiatan</h3><button type="button" className="modal-close" onClick={() => setShowInputPicker(false)}>×</button></div>
+                <div className="modal-body" style={{ display: 'grid', gap: 10 }}>
+                  {standard8.map((ind) => (
+                    <button key={ind.id} type="button" className="sla-btn" style={{ textAlign: 'left', padding: 12, justifyContent: 'flex-start' }} onClick={() => chooseIndicator(ind)}>
+                      <div><strong>{ind.point} — {ind.criteria}</strong><br/><small>{ind.unit} · {ind.scope}</small></div>
+                    </button>
+                  ))}
+                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi akan tersedia pada tahap berikutnya.</div>
+                </div>
+              </div>
+            </div>
+          )}
+          {showForm && selectedIndicator && (
+            <div className="modal-backdrop" onClick={() => setShowForm(false)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: '90vh', overflowY: 'auto' }}>
+                <div className="modal-header"><h3>{editingEntryId ? 'Lanjutkan Draft' : 'Input Kegiatan'} — {selectedIndicator.point}</h3><button type="button" className="modal-close" onClick={() => setShowForm(false)}>×</button></div>
+                <div className="modal-body" style={{ display: 'grid', gap: 16 }}>
+                  {formError && <div className="sla-blocked-note">{formError}</div>}
+                  <section>
+                    <h4 style={{ margin: '0 0 8px' }}>A. Informasi Kegiatan</h4>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <label>Tanggal *<input type="date" className="input-field" value={formDate} onChange={(e) => setFormDate(e.target.value)} /></label>
+                      <label>Penyulang *{activeFeeders.length === 0 ? <span className="text-muted"> — Belum ada Penyulang aktif untuk ULP ini. <button type="button" className="sla-btn" onClick={() => { setShowForm(false); setActiveTab('penyulang') }}>Ke Master Penyulang</button></span> : <select className="input-select" value={formFeeder} onChange={(e) => setFormFeeder(e.target.value)}><option value="">Pilih Penyulang</option>{activeFeeders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>}</label>
+                      <label>Lokasi / Alamat *<input className="input-field" placeholder="Jl. ... / lokasi pekerjaan" value={formLocation} onChange={(e) => setFormLocation(e.target.value)} /></label>
+                      <label>Satuan<input className="input-field" value={selectedIndicator.unit ?? ''} disabled /></label>
+                    </div>
+                  </section>
+                  <section>
+                    <h4 style={{ margin: '0 0 8px' }}>B. Pekerjaan</h4>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <label>WO *<input type="number" min="0" step="1" className="input-field" value={formWo} onChange={(e) => setFormWo(e.target.value)} /></label>
+                      <label>Realisasi *<input type="number" min="0" step="1" className="input-field" value={formRealisasi} onChange={(e) => setFormRealisasi(e.target.value)} /></label>
+                      <label>Petugas *{employees.length === 0 ? <span className="text-muted"> — Belum ada pegawai aktif yang dapat dipilih.</span> : null}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                          {formPetugas.map((eid) => {
+                            const emp = employees.find((e) => e.id === eid)
+                            return <span key={eid} className="sla-badge" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{emp?.name ?? eid}<button type="button" onClick={() => setFormPetugas(formPetugas.filter((x) => x !== eid))}>×</button></span>
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <select className="input-select" value="" onChange={(e) => { if (e.target.value && !formPetugas.includes(e.target.value)) setFormPetugas([...formPetugas, e.target.value]); e.target.value = '' }}>
+                            <option value="">+ Tambah Petugas</option>
+                            {employees.filter((e) => !formPetugas.includes(e.id)).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                          </select>
+                        </div>
+                      </label>
+                      <label>Keterangan<textarea className="input-field" rows={3} value={formKeterangan} onChange={(e) => setFormKeterangan(e.target.value)} placeholder="Catatan pekerjaan" /></label>
+                    </div>
+                  </section>
+                  <section>
+                    <h4 style={{ margin: '0 0 8px' }}>C. Evidence</h4>
+                    <p className="text-muted" style={{ fontSize: 12 }}>Evidence Pekerjaan * — Minimal 1 foto atau dokumen sebagai bukti pekerjaan.</p>
+                    <input type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={(e) => setFormFiles(Array.from(e.target.files ?? []))} />
+                    {formFiles.length > 0 && <ul style={{ marginTop: 8 }}>{formFiles.map((f, i) => <li key={i}>{f.name} — {(f.size/1024).toFixed(0)} KB <button type="button" onClick={() => setFormFiles(formFiles.filter((_, idx) => idx !== i))}>Hapus</button></li>)}</ul>}
+                  </section>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button type="button" className="sla-btn" disabled={formBusy} onClick={() => setShowForm(false)}>Batal</button>
+                    <button type="button" className="sla-btn" disabled={formBusy} onClick={() => handleSaveDraft(false)}>{formBusy ? 'Menyimpan…' : 'Simpan Draft'}</button>
+                    <button type="button" className="sla-btn sla-btn-primary" disabled={formBusy} onClick={() => handleSaveDraft(true)}>{formBusy ? 'Mengajukan…' : 'Ajukan'}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {showDailyList && dailyIndicator && (
+            <div className="modal-backdrop" onClick={() => setShowDailyList(false)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760 }}>
+                <div className="modal-header"><h3>{dailyIndicator.point} — Harian · Periode {period} · {effectiveUnit?.displayName}</h3><button type="button" className="modal-close" onClick={() => setShowDailyList(false)}>×</button></div>
+                <div className="modal-body">
+                  {dailyLoading ? <p>Memuat…</p> : dailyList.length === 0 ? <p className="text-muted">Belum ada transaksi harian untuk indikator ini.</p> : (
+                    <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+                      {dailyList.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.work_date?.slice(0,10)}</td>
+                          <td>{row.feeder_id ? (activeFeeders.find((f) => f.id === row.feeder_id)?.name ?? row.feeder_id.slice(0,8)) : '—'}</td>
+                          <td>{row.location_address ?? '—'}</td>
+                          <td>{row.work_order ?? '—'}</td>
+                          <td>{row.realization ?? '—'}</td>
+                          <td>—</td>
+                          <td>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak' : row.status}</td>
+                          <td style={{ display: 'flex', gap: 6 }}>
+                            <button type="button" className="sla-btn" onClick={() => openDetail(row.id)}>Lihat Detail</button>
+                            {row.status === 'DRAFT' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleContinueDraft(row)}>Lanjutkan Draft</button>}
+                            {row.status === 'REJECTED' && <button type="button" className="sla-btn" onClick={() => handleContinueDraft(row)}>Perbaiki</button>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody></table></div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {detailEntry && (
+            <div className="modal-backdrop" onClick={() => { setDetailEntry(null); setDetailData(null) }}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+                <div className="modal-header"><h3>Detail Transaksi</h3><button type="button" className="modal-close" onClick={() => { setDetailEntry(null); setDetailData(null) }}>×</button></div>
+                <div className="modal-body">
+                  {!detailData ? <p>Memuat…</p> : (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div><strong>Indikator:</strong> {dailyIndicator?.point ?? detailData.entry.indicator_id?.slice(0,8)}</div>
+                      <div><strong>Tanggal:</strong> {detailData.entry.work_date?.slice(0,10)}</div>
+                      <div><strong>ULP:</strong> {effectiveUnit?.displayName}</div>
+                      <div><strong>Penyulang:</strong> {detailData.entry.feeder_id ? (activeFeeders.find((f) => f.id === detailData.entry.feeder_id)?.name ?? detailData.entry.feeder_id) : '—'}</div>
+                      <div><strong>Lokasi:</strong> {detailData.entry.location_address ?? '—'}</div>
+                      <div><strong>Satuan:</strong> {selectedIndicator?.unit ?? dailyIndicator?.unit ?? '—'}</div>
+                      <div><strong>WO:</strong> {detailData.entry.work_order ?? '—'}</div>
+                      <div><strong>Realisasi:</strong> {detailData.entry.realization ?? '—'}</div>
+                      <div><strong>Petugas:</strong> {(detailData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
+                      <div><strong>Keterangan:</strong> {detailData.entry.description ?? '—'}</div>
+                      <div><strong>Status:</strong> {detailData.entry.status === 'DRAFT' ? 'Draft' : detailData.entry.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : detailData.entry.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}</div>
+                      {detailData.entry.status === 'REJECTED' && detailData.entry.rejection_reason && <div><strong>Alasan Ditolak:</strong> {detailData.entry.rejection_reason}</div>}
+                      <div><strong>Evidence:</strong>
+                        {(detailData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (
+                          <ul>
+                            {(detailData.evidences ?? []).map((ev) => (
+                              <li key={ev.id}><button type="button" className="sla-btn" onClick={async () => { const url = await getEvidencePreviewUrl(ev.storage_path); window.open(url, '_blank') }}>{ev.file_name}</button> — {ev.mime_type}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

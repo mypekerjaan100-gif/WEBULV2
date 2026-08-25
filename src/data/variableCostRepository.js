@@ -98,12 +98,94 @@ export async function fetchMonthlyEntries({ contractId, up3Id, unitIds, periodMo
 }
 
 export async function fetchIndicators({ contractId, up3Id }) {
-  const { data: versions } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id)
-  if (!versions?.length) return []
+  const { data: versions } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'ACTIVE')
+  if (!versions?.length) {
+    const { data: anyVersions } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).limit(1)
+    if (!anyVersions?.length) return []
+    const versionIds = anyVersions.map((v) => v.id)
+    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,sla_version_id').in('sla_version_id', versionIds)
+    if (error) throw new Error(error.message)
+    return data ?? []
+  }
   const versionIds = versions.map((v) => v.id)
-  const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile').in('sla_version_id', versionIds)
+  const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,sla_version_id').in('sla_version_id', versionIds)
   if (error) throw new Error(error.message)
   return data ?? []
+}
+
+export async function fetchActiveVersion({ contractId, up3Id }) {
+  const { data, error } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'ACTIVE').limit(1).single()
+  if (error) return null
+  return data?.id ?? null
+}
+
+export async function listDailyEntries({ contractId, up3Id, unitId, indicatorId, periodMonth }) {
+  let query = supabase.from('variable_cost_entries').select('id,work_date,feeder_id,location_address,work_order,realization,description,status,created_at,updated_at').eq('contract_id', contractId).eq('up3_id', up3Id).eq('unit_id', unitId).eq('indicator_id', indicatorId).order('work_date', { ascending: false })
+  if (periodMonth) {
+    const start = periodMonth
+    const end = new Date(start)
+    end.setMonth(end.getMonth() + 1)
+    const endStr = end.toISOString().slice(0, 10)
+    query = query.gte('work_date', start).lt('work_date', endStr)
+  }
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function getVariableDetail(entryId) {
+  const { data, error } = await supabase.from('variable_cost_entries').select('*, feeders(name)').eq('id', entryId).single()
+  if (error) throw new Error(error.message)
+  const { data: personnel } = await supabase.from('variable_cost_entry_personnel').select('employee_id, employees(name)').eq('variable_cost_entry_id', entryId)
+  const { data: evidences } = await supabase.from('variable_cost_evidence').select('*').eq('variable_cost_entry_id', entryId)
+  const { data: history } = await supabase.from('variable_cost_status_history').select('*').eq('variable_cost_entry_id', entryId).order('changed_at', { ascending: true })
+  return { entry: data, personnel: personnel ?? [], evidences: evidences ?? [], history: history ?? [] }
+}
+
+export async function saveVariableEntry(params) {
+  return rpc('save_variable_cost_entry', {
+    p_entry_id: params.entryId ?? null,
+    p_contract_id: params.contractId,
+    p_up3_id: params.up3Id,
+    p_unit_id: params.unitId,
+    p_sla_version_id: params.slaVersionId,
+    p_indicator_id: params.indicatorId,
+    p_work_date: params.workDate,
+    p_feeder_id: params.feederId ?? null,
+    p_location_address: params.locationAddress ?? null,
+    p_work_order: params.workOrder ?? null,
+    p_realization: params.realization ?? null,
+    p_revenue_amount: params.revenueAmount ?? null,
+    p_description: params.description ?? null,
+    p_employee_ids: params.employeeIds ?? null,
+  })
+}
+
+export async function submitVariableEntry(entryId) {
+  return rpc('submit_variable_cost_entry', { p_entry_id: entryId })
+}
+
+export async function uploadVariableEvidence({ entryId, file }) {
+  const { data: path, error: pathError } = await supabase.rpc('get_variable_evidence_upload_path', { p_entry_id: entryId, p_file_name: file.name })
+  if (pathError) throw new Error(pathError.message)
+  const storagePath = path
+  const { error: uploadError } = await supabase.storage.from('variable-cost-evidence').upload(storagePath, file, { contentType: file.type, upsert: false })
+  if (uploadError) throw new Error(uploadError.message)
+  const { error: insertError } = await supabase.from('variable_cost_evidence').insert({
+    variable_cost_entry_id: entryId,
+    storage_path: storagePath,
+    file_name: file.name,
+    mime_type: file.type || 'application/octet-stream',
+    size_bytes: file.size,
+  })
+  if (insertError) throw new Error(insertError.message)
+  return storagePath
+}
+
+export async function getEvidencePreviewUrl(storagePath) {
+  const { data, error } = await supabase.storage.from('variable-cost-evidence').createSignedUrl(storagePath, 3600)
+  if (error) throw new Error(error.message)
+  return data.signedUrl
 }
 
 // Helper to resolve period label to YYYY-MM-01
