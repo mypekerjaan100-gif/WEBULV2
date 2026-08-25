@@ -358,9 +358,18 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
     })
   }
 
-  // For non-consolidated per-ULP view, we keep placeholder empty map (V2.1 behavior)
   const targetByPoint = new Map()
   const entryByPoint = new Map()
+  if (!isConsolidated && effectiveUnitUuid) {
+    CANONICAL_9.forEach((ind) => {
+      const uuid = pointToUuids.get(ind.point)
+      if (!uuid) return
+      const target = targets.find((row) => row.unit_id === effectiveUnitUuid && row.indicator_id === uuid)
+      const entry = entries.find((row) => row.unit_id === effectiveUnitUuid && row.indicator_id === uuid)
+      if (target) targetByPoint.set(ind.point, target.target_value)
+      if (entry) entryByPoint.set(ind.point, entry)
+    })
+  }
 
   return (
     <section className="sla-module-panel">
