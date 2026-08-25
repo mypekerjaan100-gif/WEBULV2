@@ -88,6 +88,20 @@ export const variableCostPoints = new Set([
   '3.2b',
 ])
 
+export const variableCostLabelsByCode = {
+  '2.1a': 'Inspeksi SUTM Tier 1',
+  '2.1b': 'Inspeksi SUTM Tier 2',
+  '2.1c': 'Inspeksi Gardu/Keypoint Tier 1',
+  '2.1d': 'Inspeksi Gardu/Keypoint Tier 2',
+  '3.1a': 'ROW Fix',
+  '3.1b': 'ROW Var',
+  '3.2a': 'Pengukuran Gardu',
+  '3.2b': 'Pemeliharaan Gardu',
+  '3.1c': 'Konstruksi',
+  TEBANG_20_40_CM: 'Tebang 20\u201340 cm',
+  TEBANG_40_60_CM: 'Tebang 40\u201360 cm',
+}
+
 export const slaIndicators = [
   // ---------- A. SLA TEKNIS ----------
   {
@@ -696,6 +710,49 @@ export const slaIndicators = [
   ...indicator,
   inputMode: indicator.inputMode ?? 'manual',
 }))
+
+const existingVariableIndicators = [...variableCostPoints, '3.1c']
+  .map((point) => slaIndicators.find((indicator) => indicator.point === point))
+  .map((indicator) => ({
+    ...indicator,
+    code: indicator.point,
+    key: indicator.id,
+    label: variableCostLabelsByCode[indicator.point],
+    slaLinked: variableCostPoints.has(indicator.point),
+    workflowEnabled: true,
+    ...(indicator.id === 'A-3.1a' ? { revenueEligible: false } : {}),
+    ...(indicator.id === 'A-3.1c' ? { revenueMode: 'DIRECT_RUPIAH' } : {}),
+  }))
+
+export const variableCostIndicators = [
+  ...existingVariableIndicators,
+  {
+    id: '7e5b0214-f394-4f1e-86ad-2040d1972040',
+    key: 'VC-TEBANG-20-40',
+    code: 'TEBANG_20_40_CM',
+    label: variableCostLabelsByCode.TEBANG_20_40_CM,
+    unit: 'batang',
+    slaLinked: false,
+    workflowEnabled: false,
+    revenueEligible: true,
+    revenueMode: 'UNIT_RATE',
+  },
+  {
+    id: 'b612e8c7-68b6-4ed7-9bba-4060d1974060',
+    key: 'VC-TEBANG-40-60',
+    code: 'TEBANG_40_60_CM',
+    label: variableCostLabelsByCode.TEBANG_40_60_CM,
+    unit: 'batang',
+    slaLinked: false,
+    workflowEnabled: false,
+    revenueEligible: true,
+    revenueMode: 'UNIT_RATE',
+  },
+]
+
+export const variableCostIndicatorCount = variableCostIndicators.length
+export const slaVariableLinkedCount = variableCostPoints.size
+export const slaManualIndicatorCount = slaIndicators.length - slaVariableLinkedCount
 
 export const slaRoles = [
   { id: 'up3', name: 'Admin UP3' },

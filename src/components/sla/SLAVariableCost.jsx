@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { slaIndicators } from '../../data/slaPelayananTeknik.js'
+import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
 import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 
-const CANONICAL_9 = slaIndicators.filter((i) => i.inputMode === 'variable-cost' || i.id === 'A-3.1c')
-const STANDARD_8 = CANONICAL_9.filter((i) => i.id !== 'A-3.1c')
+const OPERATIONAL_9 = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
+const STANDARD_8 = OPERATIONAL_9.filter((indicator) => indicator.slaLinked)
 const ALL_KEY = 'ALL'
 
 function formatRp(value) {
@@ -434,7 +434,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const targetByPoint = new Map()
   const entryByPoint = new Map()
   if (!isConsolidated && effectiveUnitUuid) {
-    CANONICAL_9.forEach((ind) => {
+    OPERATIONAL_9.forEach((ind) => {
       const uuid = pointToUuids.get(ind.point)
       if (!uuid) return
       const target = targets.find((row) => row.unit_id === effectiveUnitUuid && row.indicator_id === uuid)
@@ -447,7 +447,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   return (
     <section className="sla-module-panel">
       <div className="sla-export-bar" style={{ justifyContent: 'space-between' }}>
-        <span className="sla-export-scope">VARIABLE COST — Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
+        <span className="sla-export-scope">VARIABLE COST — {variableCostIndicators.length} indikator · Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
           {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan</button>}
@@ -518,9 +518,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   <tr><td colSpan={isConsolidated ? 7 : 6}>Memuat data Variable Cost…</td></tr>
                 ) : error ? (
                   <tr><td colSpan={isConsolidated ? 7 : 6} className="sla-blocked-note">{error} <button type="button" className="sla-btn" onClick={loadMonthly}>Coba lagi</button></td></tr>
-                ) : CANONICAL_9.length === 0 ? (
+                ) : OPERATIONAL_9.length === 0 ? (
                   <tr><td colSpan={isConsolidated ? 7 : 6}>Belum ada data Variable Cost pada periode ini.</td></tr>
-                ) : CANONICAL_9.map((ind) => {
+                ) : OPERATIONAL_9.map((ind) => {
                   const isKonstruksi = ind.id === 'A-3.1c'
                   if (isConsolidated) {
                     if (isKonstruksi) {

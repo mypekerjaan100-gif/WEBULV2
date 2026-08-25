@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient.js'
+import { variableCostLabelsByCode } from './slaPelayananTeknik.js'
 
 const STATUS_LABEL = {
   PENDING: 'Menunggu Persetujuan',
@@ -315,22 +316,12 @@ export async function getEvidencePreviewUrl(storagePath) {
   return data.signedUrl
 }
 
-export const SHORT_LABELS = {
-  '2.1a': 'Inspeksi SUTM Tier 1',
-  '2.1b': 'Inspeksi SUTM Tier 2',
-  '2.1c': 'Inspeksi Gardu/Keypoint Tier 1',
-  '2.1d': 'Inspeksi Gardu/Keypoint Tier 2',
-  '3.1a': 'ROW Fix',
-  '3.1b': 'ROW Var',
-  '3.2a': 'Pengukuran Gardu',
-  '3.2b': 'Pemeliharaan Gardu',
-  '3.1c': 'Konstruksi',
-}
+export const SHORT_LABELS = variableCostLabelsByCode
 
 export function getShortLabel(indicator) {
   if (!indicator) return '—'
   const code = indicator.point_code ?? indicator.point ?? indicator.legacy_key ?? ''
-  return SHORT_LABELS[code] ?? code ?? '—'
+  return indicator.label ?? SHORT_LABELS[code] ?? code ?? '—'
 }
 
 export async function listSubmittedEntries({ contractId, up3Id }) {

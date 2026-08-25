@@ -35,6 +35,7 @@ import {
   slaSignatureGroups,
   slaUlpEntries,
   slaVersions,
+  variableCostIndicators,
   variableCostPoints,
 } from '../../data/slaPelayananTeknik.js'
 import { fetchVariableLinkedSlaTargets, listRejectedEntries, fetchManualSlaTargets, setManualSlaTarget, fetchIndicators, fetchActiveVersion } from '../../data/variableCostRepository.js'
@@ -711,9 +712,10 @@ export default function SLAPelayananTeknikPage({
           <span className="sla-hero-badge">
             {flatIndicators.length} indikator SLA
           </span>
-          <span className="sla-hero-badge">{activeVcCount} Variable Cost</span>
+          <span className="sla-hero-badge">{variableCostIndicators.length} Variable Cost</span>
+          <span className="sla-hero-badge">{activeVcCount} Variable-linked SLA</span>
           <span className="sla-hero-badge">
-            {flatIndicators.length - activeVcCount} Manual
+            {flatIndicators.length - activeVcCount} Manual SLA
           </span>
           <span className="sla-hero-badge">
             {up3Unit ? currentNameOf(up3Unit) : slaContractScope.region} &middot;{' '}
