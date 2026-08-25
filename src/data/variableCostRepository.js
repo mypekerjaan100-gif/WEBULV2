@@ -106,7 +106,12 @@ export async function fetchMonthlyEntries({ contractId, up3Id, unitIds, periodMo
   return data ?? []
 }
 
-export async function fetchIndicators({ contractId, up3Id }) {
+export async function fetchIndicators({ contractId, up3Id, versionId }) {
+  if (versionId) {
+    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,sla_version_id').eq('sla_version_id', versionId)
+    if (error) throw new Error(error.message)
+    return data ?? []
+  }
   const { data: versions } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'ACTIVE')
   if (!versions?.length) {
     const { data: anyVersions } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).limit(1)
@@ -122,10 +127,57 @@ export async function fetchIndicators({ contractId, up3Id }) {
   return data ?? []
 }
 
-export async function fetchActiveVersion({ contractId, up3Id }) {
-  const { data, error } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'ACTIVE').limit(1).single()
-  if (error) return null
+export async function fetchActiveVersion({ contractId, up3Id, periodMonth }) {
+  let query = supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'ACTIVE')
+  if (periodMonth) {
+    const monthEnd = new Date(`${periodMonth}T00:00:00Z`)
+    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1)
+    monthEnd.setUTCDate(0)
+    query = query.lte('period_start', monthEnd.toISOString().slice(0, 10)).gte('period_end', periodMonth)
+  }
+  const { data, error } = await query.limit(1).maybeSingle()
+  if (error) throw new Error(error.message)
   return data?.id ?? null
+}
+
+async function fetchReportingVersion({ contractId, up3Id, periodMonth }) {
+  const monthEnd = new Date(`${periodMonth}T00:00:00Z`)
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1)
+  monthEnd.setUTCDate(0)
+  const { data, error } = await supabase.from('sla_versions').select('id,status,period_start')
+    .eq('contract_id', contractId).eq('up3_id', up3Id).in('status', ['ACTIVE', 'ARCHIVED'])
+    .lte('period_start', monthEnd.toISOString().slice(0, 10)).gte('period_end', periodMonth)
+    .order('status').order('period_start', { ascending: false }).limit(1).maybeSingle()
+  if (error) throw new Error(error.message)
+  return data?.id ?? null
+}
+
+export async function setVariableTarget({ contractId, up3Id, unitId, versionId, indicatorId, periodMonth, targetValue }) {
+  return rpc('set_variable_target', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId,
+    p_sla_version_id: versionId,
+    p_indicator_id: indicatorId,
+    p_period_month: periodMonth,
+    p_target_value: targetValue,
+  }, 'TARGET_SAVE')
+}
+
+export async function fetchVariableLinkedSlaTargets({ contractId, up3Id, unitId, periodMonth }) {
+  const versionId = await fetchReportingVersion({ contractId, up3Id, periodMonth })
+  if (!versionId) return {}
+  const [targetRows, indicatorRows] = await Promise.all([
+    unitId
+      ? fetchMonthlyTargets({ contractId, up3Id, unitIds: [unitId], periodMonth, versionId })
+      : fetchUp3Targets({ contractId, up3Id, periodMonth, versionId }),
+    fetchIndicators({ contractId, up3Id, versionId }),
+  ])
+  const pointById = new Map(indicatorRows.map((row) => [row.id, row.point_code]))
+  return Object.fromEntries(targetRows.flatMap((row) => {
+    const point = pointById.get(row.indicator_id)
+    return point ? [[point, row.target_value]] : []
+  }))
 }
 
 export async function listDailyEntries({ contractId, up3Id, unitId, indicatorId, periodMonth }) {

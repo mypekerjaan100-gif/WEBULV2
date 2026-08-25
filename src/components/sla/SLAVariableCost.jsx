@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { slaIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 
 const CANONICAL_9 = slaIndicators.filter((i) => i.inputMode === 'variable-cost' || i.id === 'A-3.1c')
+const STANDARD_8 = CANONICAL_9.filter((i) => i.id !== 'A-3.1c')
 const ALL_KEY = 'ALL'
 
 function formatRp(value) {
@@ -25,7 +26,7 @@ function formatPercent(value) {
   return `${n.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 }
 
-export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id }) {
+export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id }) {
   const isUp3Role = role === 'up3'
   const contractId = orgMap?.contractUuid
   const up3Uuid = orgMap?.up3Uuid
@@ -53,19 +54,38 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   const [error, setError] = useState('')
   const [activeFeeders, setActiveFeeders] = useState([])
   const [drillIndicator, setDrillIndicator] = useState(null)
+  const [activeTab, setActiveTab] = useState('rekap')
+  const [activeVersionId, setActiveVersionId] = useState(null)
+  const [targetUnitId, setTargetUnitId] = useState(() => childUlps[0]?.uuid ?? '')
+  const [targetDrafts, setTargetDrafts] = useState({})
+  const [targetBusyPoint, setTargetBusyPoint] = useState('')
+  const [targetError, setTargetError] = useState('')
+  const [targetMessage, setTargetMessage] = useState('')
+  const monthlyRequestId = useRef(0)
 
   const loadMonthly = useCallback(async () => {
+    const requestId = ++monthlyRequestId.current
     if (!contractId || !up3Uuid || !periodMonth) { setLoading(false); return }
     if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
     setLoading(true); setError('')
     try {
-      const unitUuids = isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
+      const versionId = await fetchActiveVersion({ contractId, up3Id: up3Uuid, periodMonth })
+      if (requestId !== monthlyRequestId.current) return
+      setActiveVersionId(versionId)
+      if (!versionId) {
+        setTargets([]); setEntries([]); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
+        return
+      }
+      const unitUuids = activeTab === 'target' && targetUnitId
+        ? [targetUnitId]
+        : isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
       const [t, e, ind, up3t] = await Promise.all([
-        unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
-        unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
-        fetchIndicators({ contractId, up3Id: up3Uuid }).catch(() => []),
-        isConsolidated ? fetchUp3Targets({ contractId, up3Id: up3Uuid, periodMonth }).catch(() => []) : Promise.resolve([]),
+        unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
+        unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
+        fetchIndicators({ contractId, up3Id: up3Uuid, versionId }).catch(() => []),
+        isConsolidated ? fetchUp3Targets({ contractId, up3Id: up3Uuid, periodMonth, versionId }).catch(() => []) : Promise.resolve([]),
       ])
+      if (requestId !== monthlyRequestId.current) return
       setTargets(t ?? []); setEntries(e ?? []); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
       if (effectiveUnitUuid && !isConsolidated) {
         const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid }).catch(() => [])
@@ -73,9 +93,9 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
       } else if (isConsolidated) {
         setActiveFeeders([])
       } else setActiveFeeders([])
-    } catch (err) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setUp3Targets([]) }
-    finally { setLoading(false) }
-  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, childUlps.map((u) => u.uuid).join(',')])
+    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setUp3Targets([]) } }
+    finally { if (requestId === monthlyRequestId.current) setLoading(false) }
+  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, activeTab, targetUnitId, childUlps.map((u) => u.uuid).join(',')])
 
   useEffect(() => { loadMonthly() }, [loadMonthly])
 
@@ -86,7 +106,6 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   const [proposeName, setProposeName] = useState('')
   const [proposeBusy, setProposeBusy] = useState(false)
   const [directUlp, setDirectUlp] = useState(() => effectiveLegacy ?? ALL_KEY)
-  const [activeTab, setActiveTab] = useState('rekap')
   const [pendingList, setPendingList] = useState([])
   const [pendingLoading, setPendingLoading] = useState(false)
   const [pendingError, setPendingError] = useState('')
@@ -115,7 +134,6 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   const [dailyIndicator, setDailyIndicator] = useState(null)
   const [detailEntry, setDetailEntry] = useState(null)
   const [detailData, setDetailData] = useState(null)
-  const [activeVersionId, setActiveVersionId] = useState(null)
 
   const loadFeeders = useCallback(async () => {
     if (!contractId || !up3Uuid) return
@@ -148,9 +166,19 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   useEffect(() => { if (activeTab === 'persetujuan') loadPending() }, [loadPending, activeTab])
 
   useEffect(() => {
-    if (!contractId || !up3Uuid) return
-    fetchActiveVersion({ contractId, up3Id: up3Uuid }).then((id) => setActiveVersionId(id)).catch(() => {})
-  }, [contractId, up3Uuid])
+    if (!targetUnitId || !childUlps.some((unit) => unit.uuid === targetUnitId)) {
+      setTargetUnitId(childUlps[0]?.uuid ?? '')
+    }
+  }, [targetUnitId, childUlps.map((unit) => unit.uuid).join(',')])
+
+  useEffect(() => {
+    if (activeTab !== 'target') return
+    setTargetDrafts(Object.fromEntries(STANDARD_8.map((indicator) => {
+      const canonical = indicators.find((row) => row.point_code === indicator.point && row.sla_version_id === activeVersionId)
+      const target = targets.find((row) => row.unit_id === targetUnitId && row.indicator_id === canonical?.id)
+      return [indicator.point, target?.target_value ?? '']
+    })))
+  }, [activeTab, activeVersionId, targetUnitId, targets, indicators])
 
   useEffect(() => {
     if (!effectiveUnitUuid || isConsolidated) { setEmployees([]); return }
@@ -230,8 +258,31 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
     try { await rejectVariableEntry(id, reason.trim()); await loadPending(); await loadMonthly() } catch (e) { setPendingError(e.message) }
   }
 
+  const handleSaveTarget = async (indicator) => {
+    setTargetError(''); setTargetMessage('')
+    const canonical = indicators.find((row) => row.point_code === indicator.point && row.sla_version_id === activeVersionId)
+    const value = Number(targetDrafts[indicator.point])
+    if (!activeVersionId) { setTargetError('Tidak ada versi SLA aktif untuk periode ini.'); return }
+    if (!canonical || canonical.variable_cost_profile !== 'STANDARD') { setTargetError('Indikator standar tidak tersedia pada versi SLA aktif.'); return }
+    if (targetDrafts[indicator.point] === '' || !Number.isFinite(value) || value < 0) { setTargetError('Target wajib berupa angka >= 0.'); return }
+    setTargetBusyPoint(indicator.point)
+    try {
+      await setVariableTarget({
+        contractId,
+        up3Id: up3Uuid,
+        unitId: targetUnitId,
+        versionId: activeVersionId,
+        indicatorId: canonical.id,
+        periodMonth,
+        targetValue: value,
+      })
+      await loadMonthly()
+      setTargetMessage(`${getShortLabel(indicator)} tersimpan.`)
+    } catch (error) { setTargetError(error.message || 'Gagal menyimpan target.') }
+    finally { setTargetBusyPoint('') }
+  }
+
   // V3 helpers
-  const standard8 = CANONICAL_9.filter((i) => i.id !== 'A-3.1c')
   const openInputPicker = () => { if (isConsolidated) return; setShowInputPicker(true) }
   const chooseIndicator = (ind) => {
     setSelectedIndicator(ind)
@@ -309,14 +360,14 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   }
   const handleContinueDraft = async (row) => {
     setDailyList([]); setShowDailyList(false)
-    const ind = standard8.find((i) => {
+    const ind = STANDARD_8.find((i) => {
       const uuid = pointToUuids.get(i.point)
       // try to match via history: we don't have uuid for row, fallback to point via dailyIndicator
       return true
     })
     // Open form with existing data
     const data = await getVariableDetail(row.id)
-    setSelectedIndicator(standard8.find((s) => s.point === dailyIndicator?.point) ?? standard8[0])
+    setSelectedIndicator(STANDARD_8.find((s) => s.point === dailyIndicator?.point) ?? STANDARD_8[0])
     setFormDate(data.entry.work_date?.slice(0,10) ?? new Date().toISOString().slice(0,10))
     setFormFeeder(data.entry.feeder_id ?? '')
     setFormLocation(data.entry.location_address ?? '')
@@ -378,6 +429,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
           {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan</button>}
+          {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'target' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target')}>Target</button>}
           <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang</button>
         </div>
       </div>
@@ -566,7 +618,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
                 <div className="modal-header"><h3>Pilih Jenis Kegiatan</h3><button type="button" className="modal-close" onClick={() => setShowInputPicker(false)}>×</button></div>
                 <div className="modal-body" style={{ display: 'grid', gap: 10 }}>
-                  {standard8.map((ind) => (
+                  {STANDARD_8.map((ind) => (
                     <button key={ind.id} type="button" className="sla-btn" style={{ textAlign: 'left', padding: 12, justifyContent: 'flex-start' }} onClick={() => chooseIndicator(ind)}>
                       <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope}</small></div>
                     </button>
@@ -759,6 +811,44 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
               </div>
             </div>
           )}
+        </div>
+      ) : activeTab === 'target' ? (
+        <div>
+          <h3 style={{ margin: '0 0 12px' }}>TARGET VARIABLE COST</h3>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <label>Periode:{' '}
+              <select className="input-select" value={period} disabled={!!targetBusyPoint} onChange={(event) => onPeriodChange?.(event.target.value)}>
+                {periods.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>ULP:{' '}
+              <select className="input-select" value={targetUnitId} disabled={!!targetBusyPoint} onChange={(event) => { setTargetMessage(''); setTargetError(''); setTargetUnitId(event.target.value) }}>
+                {childUlps.map((unit) => <option key={unit.uuid} value={unit.uuid}>{unit.displayName}</option>)}
+              </select>
+            </label>
+          </div>
+          {targetError && <p className="sla-blocked-note">{targetError}</p>}
+          {targetMessage && <p className="text-muted">{targetMessage}</p>}
+          {!activeVersionId && <p className="sla-blocked-note">Tidak ada versi SLA aktif untuk periode ini.</p>}
+          <div className="sla-table-wrap">
+            <table className="sla-table">
+              <thead><tr><th>Kegiatan</th><th>Satuan</th><th>Target</th><th>Aksi</th></tr></thead>
+              <tbody>
+                {STANDARD_8.map((indicator) => {
+                  const canonical = indicators.find((row) => row.point_code === indicator.point && row.sla_version_id === activeVersionId)
+                  const busy = targetBusyPoint === indicator.point
+                  return (
+                    <tr key={indicator.id}>
+                      <td>{getShortLabel(indicator)}</td>
+                      <td>{canonical?.measurement_unit ?? indicator.unit ?? '—'}</td>
+                      <td><input type="number" min="0" className="input-field" value={targetDrafts[indicator.point] ?? ''} disabled={!activeVersionId || !!targetBusyPoint} onChange={(event) => setTargetDrafts((current) => ({ ...current, [indicator.point]: event.target.value }))} /></td>
+                      <td><button type="button" className="sla-btn sla-btn-primary" disabled={!activeVersionId || !!targetBusyPoint} onClick={() => handleSaveTarget(indicator)}>{busy ? 'Menyimpan…' : 'Simpan'}</button></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div>

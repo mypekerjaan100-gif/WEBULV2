@@ -1,4 +1,4 @@
-import { slaCategories } from '../../data/slaPelayananTeknik.js'
+import { slaCategories, variableCostPoints } from '../../data/slaPelayananTeknik.js'
 
 const COLUMN_COUNT = 14
 
@@ -39,6 +39,7 @@ export default function SLAIndicatorTable({
   onEntriesChange,
   targets,
   onTargetsChange,
+  variableTargets = {},
 }) {
   const isUp3Role = role === 'up3'
   const isUp3View = unitId === up3Id
@@ -100,6 +101,10 @@ export default function SLAIndicatorTable({
   )
 
   const renderTargetCell = (indicator) => {
+    const isVariableLinked = indicator.category === 'A' && indicator.inputMode === 'variable-cost' && variableCostPoints.has(indicator.point)
+    if (isVariableLinked) {
+      return <span className="sla-readonly" title="Target dikelola melalui Variable Cost oleh Admin UP3.">{formatValue(variableTargets[indicator.point])}</span>
+    }
     const target = targetOf(indicator.id)
     const isUlpField = !isUp3View
     const field = isUlpField ? 'target-ulp' : 'target-up3'

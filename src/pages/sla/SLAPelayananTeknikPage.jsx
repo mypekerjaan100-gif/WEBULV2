@@ -35,7 +35,9 @@ import {
   slaSignatureGroups,
   slaUlpEntries,
   slaVersions,
+  variableCostPoints,
 } from '../../data/slaPelayananTeknik.js'
+import { fetchVariableLinkedSlaTargets } from '../../data/variableCostRepository.js'
 import {
   currentNameOf,
   ulpIdsOfUp3,
@@ -99,6 +101,7 @@ export default function SLAPelayananTeknikPage({
   const [orgMap, setOrgMap] = useState(null)
   const [orgMapStatus, setOrgMapStatus] = useState('loading')
   const [orgMapError, setOrgMapError] = useState('')
+  const [variableSlaTargets, setVariableSlaTargets] = useState({})
   const actor = auth?.authority?.actor
   const isSuperAdmin = actor?.is_super_admin === true
   const contractAccess = actor?.contract_access ?? []
@@ -281,6 +284,24 @@ export default function SLAPelayananTeknikPage({
   const lemburPeriodMonth = periodKeyFromLabel(period)
   const selectedUnit = units.find((unit) => unit.id === effectiveUnitId)
   const isUp3View = effectiveUnitId === up3Id
+
+  useEffect(() => {
+    if (moduleId !== 'sla' || !orgMap?.contractUuid || !orgMap?.up3Uuid || !selectedUnitUuid) {
+      setVariableSlaTargets({})
+      return
+    }
+    let cancelled = false
+    setVariableSlaTargets({})
+    fetchVariableLinkedSlaTargets({
+      contractId: orgMap.contractUuid,
+      up3Id: orgMap.up3Uuid,
+      unitId: isUp3View ? null : selectedUnitUuid,
+      periodMonth: periodKeyFromLabel(period),
+    })
+      .then((rows) => { if (!cancelled) setVariableSlaTargets(rows) })
+      .catch(() => { if (!cancelled) setVariableSlaTargets({}) })
+    return () => { cancelled = true }
+  }, [moduleId, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid, isUp3View, period])
   const masterLocationUnits = (orgMap?.units ?? []).map((unit) => ({
     id: unit.uuid,
     type: unit.type,
@@ -845,6 +866,7 @@ export default function SLAPelayananTeknikPage({
               onEntriesChange={updateEntries}
               targets={selectedVersion.targets}
               onTargetsChange={updateActiveTargets}
+              variableTargets={Object.fromEntries(Object.entries(variableSlaTargets).filter(([point]) => variableCostPoints.has(point)))}
             />
           ) : (
             <section className="placeholder">
@@ -881,6 +903,8 @@ export default function SLAPelayananTeknikPage({
         ) : (
           <SLAVariableCost
             period={period}
+            periods={slaPeriods}
+            onPeriodChange={setPeriod}
             orgMap={orgMap}
             role={role}
             unitId={effectiveUnitId}
