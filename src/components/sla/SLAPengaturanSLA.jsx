@@ -1,10 +1,19 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { currentNameOf } from '../../data/organisasiPelayananTeknik.js'
 import {
   formatDateKey,
   versionMetadataValid,
   versionReferences,
 } from '../../data/versiSlaPelayananTeknik.js'
+import { variableCostPoints, slaPeriods } from '../../data/slaPelayananTeknik.js'
+import {
+  fetchIndicators,
+  fetchMonthlyTargets,
+  fetchTargetVersions,
+  periodLabelToMonth,
+  setManualSlaTarget,
+  setVariableTarget,
+} from '../../data/variableCostRepository.js'
 
 function parseNumber(raw) {
   if (raw === '') return null
@@ -29,6 +38,273 @@ const countIndicators = (version) =>
   version.sections
     ? version.sections.reduce((sum, section) => sum + section.indicators.length, 0)
     : '\u2013'
+
+const targetCellKey = (indicatorId, unitId) => `${indicatorId}:${unitId}`
+
+function TargetUlpView({ orgMap, versions }) {
+  const [period, setPeriod] = useState('Agustus 2026')
+  const [targetVersions, setTargetVersions] = useState([])
+  const [selectedVersionId, setSelectedVersionId] = useState('')
+  const [indicators, setIndicators] = useState([])
+  const [values, setValues] = useState({})
+  const [savedValues, setSavedValues] = useState({})
+  const [loadStatus, setLoadStatus] = useState('loading')
+  const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState(null)
+  const contractId = orgMap?.contractUuid
+  const up3Id = orgMap?.up3Uuid
+  const ulpUnits = (orgMap?.units ?? []).filter((unit) => unit.type === 'ULP')
+  const unitIds = ulpUnits.map((unit) => unit.uuid)
+  const periodMonth = periodLabelToMonth(period)
+
+  useEffect(() => {
+    if (!contractId || !up3Id) return
+    let cancelled = false
+    setLoadStatus('loading')
+    setFeedback(null)
+    fetchTargetVersions({ contractId, up3Id })
+      .then((rows) => {
+        if (cancelled) return
+        setTargetVersions(rows)
+        setSelectedVersionId((current) =>
+          rows.some((row) => row.id === current)
+            ? current
+            : (rows.find((row) => row.status === 'ACTIVE')?.id ?? rows[0]?.id ?? ''),
+        )
+        if (!rows.length) setLoadStatus('ready')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setLoadStatus('error')
+        setFeedback({ type: 'error', text: error.message || 'Gagal memuat versi SLA.' })
+      })
+    return () => { cancelled = true }
+  }, [contractId, up3Id])
+
+  useEffect(() => {
+    if (!contractId || !up3Id || !selectedVersionId || !periodMonth || !unitIds.length) return
+    let cancelled = false
+    setLoadStatus('loading')
+    setFeedback(null)
+    Promise.all([
+      fetchIndicators({ contractId, up3Id, versionId: selectedVersionId }),
+      fetchMonthlyTargets({
+        contractId,
+        up3Id,
+        unitIds,
+        periodMonth,
+        versionId: selectedVersionId,
+      }),
+    ])
+      .then(([indicatorRows, targetRows]) => {
+        if (cancelled) return
+        const editableIndicators = indicatorRows.filter((indicator) =>
+          indicator.point_code !== '3.1c' &&
+          (indicator.input_mode === 'MANUAL' ||
+            (indicator.input_mode === 'VARIABLE_COST' &&
+              indicator.variable_cost_profile === 'STANDARD' &&
+              variableCostPoints.has(indicator.point_code))),
+        )
+        const databaseVersion = targetVersions.find((version) => version.id === selectedVersionId)
+        const canonicalVersion = versions.find((version) =>
+          version.id === databaseVersion?.legacy_key || version.name === databaseVersion?.name,
+        )
+        if (!canonicalVersion?.sections) {
+          throw new Error('Struktur canonical versi SLA tidak tersedia pada halaman SLA utama.')
+        }
+        const databaseByLegacyKey = new Map(
+          editableIndicators.map((indicator) => [indicator.legacy_key, indicator]),
+        )
+        const orderedIndicators = canonicalVersion.sections.flatMap((section) =>
+          section.indicators
+            .filter((indicator) => indicator.point !== '3.1c')
+            .map((indicator) => {
+              const databaseIndicator = databaseByLegacyKey.get(indicator.id)
+              return databaseIndicator
+                ? {
+                    ...databaseIndicator,
+                    sectionCode: section.code,
+                    sectionName: section.name,
+                    displayPoint: indicator.point,
+                    displayCriteria: indicator.criteria,
+                    displayUnit: indicator.unit || databaseIndicator.measurement_unit || '\u2013',
+                  }
+                : null
+            })
+            .filter(Boolean),
+        )
+        if (orderedIndicators.length !== editableIndicators.length) {
+          throw new Error('Keanggotaan indikator versi SLA tidak cocok dengan struktur halaman SLA utama.')
+        }
+        const nextValues = {}
+        targetRows.forEach((row) => {
+          nextValues[targetCellKey(row.indicator_id, row.unit_id)] = String(row.target_value)
+        })
+        setIndicators(orderedIndicators)
+        setValues(nextValues)
+        setSavedValues(nextValues)
+        setLoadStatus('ready')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setIndicators([])
+        setValues({})
+        setSavedValues({})
+        setLoadStatus('error')
+        setFeedback({ type: 'error', text: error.message || 'Gagal memuat target ULP.' })
+      })
+    return () => { cancelled = true }
+  }, [contractId, up3Id, selectedVersionId, periodMonth, unitIds.join(','), targetVersions, versions])
+
+  const handleSave = async () => {
+    const changes = []
+    indicators.forEach((indicator) => {
+      ulpUnits.forEach((unit) => {
+        const key = targetCellKey(indicator.id, unit.uuid)
+        const value = values[key] ?? ''
+        if (value !== (savedValues[key] ?? '')) changes.push({ indicator, unit, value })
+      })
+    })
+    if (!changes.length) {
+      setFeedback({ type: 'success', text: 'Tidak ada perubahan target.' })
+      return
+    }
+    if (changes.some((change) => change.value === '' || !Number.isFinite(Number(change.value)))) {
+      setFeedback({ type: 'error', text: 'Target yang diubah wajib berupa angka.' })
+      return
+    }
+    setSaving(true)
+    setFeedback(null)
+    try {
+      await Promise.all(changes.map(({ indicator, unit, value }) => {
+        const save = indicator.input_mode === 'VARIABLE_COST'
+          ? setVariableTarget
+          : setManualSlaTarget
+        return save({
+          contractId,
+          up3Id,
+          unitId: unit.uuid,
+          versionId: selectedVersionId,
+          indicatorId: indicator.id,
+          periodMonth,
+          targetValue: Number(value),
+        })
+      }))
+      const rows = await fetchMonthlyTargets({
+        contractId,
+        up3Id,
+        unitIds,
+        periodMonth,
+        versionId: selectedVersionId,
+      })
+      const persisted = {}
+      rows.forEach((row) => {
+        persisted[targetCellKey(row.indicator_id, row.unit_id)] = String(row.target_value)
+      })
+      setValues(persisted)
+      setSavedValues(persisted)
+      setFeedback({ type: 'success', text: `${changes.length} target ULP berhasil disimpan.` })
+    } catch (error) {
+      setFeedback({ type: 'error', text: error.message || 'Gagal menyimpan target ULP.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="sla-target-settings">
+      <div className="sla-settings-toolbar">
+        <h2 className="sla-settings-title">PENGATURAN TARGET ULP</h2>
+      </div>
+      <div className="sla-target-selectors">
+        <label className="sla-context-field">
+          <span className="sla-context-label">Periode</span>
+          <select className="sla-select" value={period} onChange={(event) => setPeriod(event.target.value)}>
+            {slaPeriods.map((item) => <option key={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="sla-context-field">
+          <span className="sla-context-label">SLA Version</span>
+          <select className="sla-select" value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
+            {targetVersions.map((version) => (
+              <option key={version.id} value={version.id}>
+                {version.name} ({version.status})
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {feedback && (
+        <div className={`sla-message ${feedback.type === 'error' ? 'sla-message-error' : ''}`} role="status">
+          {feedback.text}
+        </div>
+      )}
+      {loadStatus === 'loading' ? (
+        <p className="sla-flat-note">Memuat target ULP...</p>
+      ) : loadStatus === 'error' ? null : (
+        <div className="sla-preview-scroll sla-target-matrix-scroll">
+          <table className="sla-preview-table sla-target-matrix">
+            <thead>
+              <tr>
+                <th>Poin</th>
+                <th>Kegiatan</th>
+                <th>Satuan</th>
+                {ulpUnits.map((unit) => <th key={unit.uuid}>{unit.displayName}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {indicators.map((indicator, index) => (
+                <Fragment key={indicator.id}>
+                  {(index === 0 || indicators[index - 1].sectionCode !== indicator.sectionCode) && (
+                    <tr className="sla-preview-cat">
+                      <td colSpan={3 + ulpUnits.length}>{indicator.sectionName}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td className="sla-target-point">{indicator.displayPoint}</td>
+                    <td className="sla-target-activity">{indicator.displayCriteria}</td>
+                    <td>{indicator.displayUnit}</td>
+                    {ulpUnits.map((unit) => {
+                      const key = targetCellKey(indicator.id, unit.uuid)
+                      return (
+                        <td key={unit.uuid}>
+                          <input
+                            type="number"
+                            step="any"
+                            className="sla-input sla-target-input"
+                            value={values[key] ?? ''}
+                            aria-label={`${indicator.displayPoint} ${unit.displayName}`}
+                            onChange={(event) => setValues((current) => ({
+                              ...current,
+                              [key]: event.target.value,
+                            }))}
+                          />
+                        </td>
+                      )
+                    })}
+                  </tr>
+                </Fragment>
+              ))}
+              {!indicators.length && (
+                <tr><td colSpan={3 + ulpUnits.length}>Tidak ada indikator target untuk versi ini.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="sla-target-actions">
+        <button
+          type="button"
+          className="sla-btn sla-btn-primary"
+          disabled={saving || loadStatus !== 'ready' || !selectedVersionId}
+          onClick={handleSave}
+        >
+          {saving ? 'Menyimpan...' : 'Simpan Target'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function MetadataForm({ version, onSave }) {
   const [name, setName] = useState(version.name ?? '')
@@ -128,6 +404,7 @@ export default function SLAPengaturanSLA({
   onActivate,
   onRollback,
   onDeleteVersion,
+  orgMap,
 }) {
   const ulpUnits = units.filter((unit) => unit.type === 'ULP')
   const up3Unit = units.find((unit) => unit.type === 'UP3')
@@ -142,6 +419,7 @@ export default function SLAPengaturanSLA({
   const [viewingId, setViewingId] = useState(null)
   const [metadataId, setMetadataId] = useState(null)
   const [message, setMessage] = useState(null)
+  const [settingsView, setSettingsView] = useState('structure')
 
   const editingVersion = versions.find((version) => version.id === editingId)
   const viewingVersion = versions.find((version) => version.id === viewingId)
@@ -727,6 +1005,32 @@ export default function SLAPengaturanSLA({
         </div>
       </div>
 
+      <div className="sla-settings-tabs" role="tablist" aria-label="Pengaturan SLA">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={settingsView === 'structure'}
+          className={`sla-settings-tab ${settingsView === 'structure' ? 'sla-settings-tab-active' : ''}`}
+          onClick={() => setSettingsView('structure')}
+        >
+          Struktur / Versi SLA
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={settingsView === 'targets'}
+          className={`sla-settings-tab ${settingsView === 'targets' ? 'sla-settings-tab-active' : ''}`}
+          onClick={() => setSettingsView('targets')}
+        >
+          Target ULP
+        </button>
+      </div>
+
+      {settingsView === 'targets' ? (
+        <TargetUlpView orgMap={orgMap} versions={versions} />
+      ) : (
+        <Fragment>
+
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Pengaturan SLA / Addendum</h2>
         <button
@@ -1129,6 +1433,8 @@ export default function SLAPengaturanSLA({
             </Fragment>
           )}
         </div>
+      )}
+        </Fragment>
       )}
     </section>
   )

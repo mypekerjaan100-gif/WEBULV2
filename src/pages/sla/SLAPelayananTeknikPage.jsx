@@ -748,6 +748,7 @@ export default function SLAPelayananTeknikPage({
           onActivate={handleActivateVersion}
           onRollback={handleRollbackVersion}
           onDeleteVersion={handleDeleteVersion}
+          orgMap={orgMap}
         />
       ) : moduleId === 'master-penandatangan' ? (
         <SLAMasterPenandatangan

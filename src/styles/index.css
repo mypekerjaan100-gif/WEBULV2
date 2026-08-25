@@ -776,6 +776,84 @@ button {
   font-size: 18px;
 }
 
+.sla-settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sla-settings-tab {
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sla-settings-tab-active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.sla-target-settings {
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+}
+
+.sla-target-selectors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.sla-target-matrix-scroll {
+  max-height: 560px;
+}
+
+.sla-target-matrix {
+  min-width: 1180px;
+}
+
+.sla-target-matrix th:not(:first-child),
+.sla-target-matrix td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.sla-target-activity {
+  min-width: 340px;
+}
+
+.sla-target-point {
+  min-width: 64px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sla-target-input {
+  width: 105px;
+}
+
+.sla-target-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.sla-message-error {
+  border-color: #f3c1bc;
+  background: #fdeceb;
+  color: #b42318;
+}
+
 .sla-btn {
   padding: 8px 14px;
   border: 1px solid var(--color-border);

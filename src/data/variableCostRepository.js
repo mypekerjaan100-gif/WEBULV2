@@ -89,6 +89,17 @@ export async function fetchMonthlyTargets({ contractId, up3Id, unitIds, periodMo
   return data ?? []
 }
 
+export async function fetchTargetVersions({ contractId, up3Id }) {
+  const { data, error } = await supabase
+    .from('sla_versions')
+    .select('id,legacy_key,name,status,period_start,period_end')
+    .eq('contract_id', contractId)
+    .eq('up3_id', up3Id)
+    .order('period_start', { ascending: false })
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
 export async function fetchUp3Targets({ contractId, up3Id, periodMonth, versionId }) {
   let query = supabase.from('sla_targets').select('indicator_id,target_value').eq('contract_id', contractId).eq('up3_id', up3Id).eq('period_month', periodMonth).is('unit_id', null)
   if (versionId) query = query.eq('sla_version_id', versionId)
@@ -108,7 +119,7 @@ export async function fetchMonthlyEntries({ contractId, up3Id, unitIds, periodMo
 
 export async function fetchIndicators({ contractId, up3Id, versionId }) {
   if (versionId) {
-    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,input_mode,sla_version_id').eq('sla_version_id', versionId)
+    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,criteria,measurement_unit,variable_cost_profile,input_mode,sla_version_id').eq('sla_version_id', versionId)
     if (error) throw new Error(error.message)
     return data ?? []
   }
@@ -117,12 +128,12 @@ export async function fetchIndicators({ contractId, up3Id, versionId }) {
     const { data: anyVersions } = await supabase.from('sla_versions').select('id').eq('contract_id', contractId).eq('up3_id', up3Id).limit(1)
     if (!anyVersions?.length) return []
     const versionIds = anyVersions.map((v) => v.id)
-    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,sla_version_id').in('sla_version_id', versionIds)
+    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,criteria,measurement_unit,variable_cost_profile,input_mode,sla_version_id').in('sla_version_id', versionIds)
     if (error) throw new Error(error.message)
     return data ?? []
   }
   const versionIds = versions.map((v) => v.id)
-  const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,input_mode,sla_version_id').in('sla_version_id', versionIds)
+  const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,criteria,measurement_unit,variable_cost_profile,input_mode,sla_version_id').in('sla_version_id', versionIds)
   if (error) throw new Error(error.message)
   return data ?? []
 }
