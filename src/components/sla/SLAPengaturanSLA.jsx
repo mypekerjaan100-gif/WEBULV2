@@ -10,6 +10,7 @@ import {
   fetchIndicators,
   fetchMonthlyTargets,
   fetchTargetVersions,
+  getShortLabel,
   periodLabelToMonth,
   setManualSlaTarget,
   setVariableTarget,
@@ -127,6 +128,9 @@ function TargetUlpView({ orgMap, versions }) {
                     sectionName: section.name,
                     displayPoint: indicator.point,
                     displayCriteria: indicator.criteria,
+                    displayLabel: databaseIndicator.input_mode === 'VARIABLE_COST'
+                      ? getShortLabel(databaseIndicator)
+                      : indicator.criteria,
                     displayUnit: indicator.unit || databaseIndicator.measurement_unit || '\u2013',
                   }
                 : null
@@ -247,7 +251,7 @@ function TargetUlpView({ orgMap, versions }) {
             <thead>
               <tr>
                 <th>Poin</th>
-                <th>Kegiatan</th>
+                <th>Indikator</th>
                 <th>Satuan</th>
                 {ulpUnits.map((unit) => <th key={unit.uuid}>{unit.displayName}</th>)}
               </tr>
@@ -262,7 +266,9 @@ function TargetUlpView({ orgMap, versions }) {
                   )}
                   <tr>
                     <td className="sla-target-point">{indicator.displayPoint}</td>
-                    <td className="sla-target-activity">{indicator.displayCriteria}</td>
+                    <td className="sla-target-activity" title={indicator.displayCriteria}>
+                      <span className="sla-target-indicator-label">{indicator.displayLabel}</span>
+                    </td>
                     <td>{indicator.displayUnit}</td>
                     {ulpUnits.map((unit) => {
                       const key = targetCellKey(indicator.id, unit.uuid)

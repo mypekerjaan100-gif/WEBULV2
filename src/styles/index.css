@@ -829,7 +829,19 @@ button {
 }
 
 .sla-target-activity {
-  min-width: 340px;
+  width: 340px;
+  min-width: 300px;
+  max-width: 360px;
+  white-space: normal !important;
+}
+
+.sla-target-indicator-label {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .sla-target-point {
