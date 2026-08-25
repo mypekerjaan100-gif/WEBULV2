@@ -42,28 +42,28 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
 
   const [targets, setTargets] = useState([])
   const [entries, setEntries] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeFeeders, setActiveFeeders] = useState([])
 
   const loadMonthly = useCallback(async () => {
-    if (!contractId || !up3Uuid || !periodMonth) return
+    if (!contractId || !up3Uuid || !periodMonth) { setLoading(false); return }
+    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setActiveFeeders([]); setLoading(false); return }
     setLoading(true); setError('')
     try {
-      const unitUuids = isAdminUlpView ? (effectiveUnitUuid ? [effectiveUnitUuid] : []) : (effectiveUnitUuid ? [effectiveUnitUuid] : childUlps.map((u) => u.uuid))
+      const unitUuids = isAdminUlpView ? [effectiveUnitUuid] : (effectiveUnitUuid ? [effectiveUnitUuid] : childUlps.map((u) => u.uuid))
       const [t, e] = await Promise.all([
-        fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }),
-        fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }),
+        fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids.length ? unitUuids : undefined, periodMonth }),
+        fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids.length ? unitUuids : undefined, periodMonth }),
       ])
-      setTargets(t); setEntries(e)
-      // also load active feeders for selector source
+      setTargets(t ?? []); setEntries(e ?? [])
       if (effectiveUnitUuid) {
         const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid })
-        setActiveFeeders(af)
+        setActiveFeeders(af ?? [])
       } else setActiveFeeders([])
-    } catch (err) { setError(err.message || 'Gagal memuat data Variable Cost') }
+    } catch (err) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]) }
     finally { setLoading(false) }
-  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, childUlps])
+  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, childUlps.map((u) => u.uuid).join(',')])
 
   useEffect(() => { loadMonthly() }, [loadMonthly])
 

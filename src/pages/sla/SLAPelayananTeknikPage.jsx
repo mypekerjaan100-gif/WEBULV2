@@ -338,7 +338,7 @@ export default function SLAPelayananTeknikPage({
         ].filter(Boolean)
       : authorizedModules
   const activeVcCount = flatIndicators.filter(
-    (indicator) => indicator.inputMode === 'variable-cost',
+    (indicator) => indicator.inputMode === 'variable-cost' || indicator.id === 'A-3.1c',
   ).length
 
   const refreshLembur = useCallback(async () => {
@@ -621,8 +621,8 @@ export default function SLAPelayananTeknikPage({
         <p className="page-description">
           Navigasi Pelayanan Teknik: SLA (indikator A&ndash;D dalam satu tabel
           kontinu), Variable Cost, Lembur, Master Organisasi, Database Pegawai,
-          dan Pengaturan SLA khusus Admin UP3. Seluruh nilai dummy, termasuk
-          demo Role Preview.
+          dan Pengaturan SLA khusus Admin UP3. Data operasional bersumber dari
+          Supabase.
         </p>
         <div className="sla-hero-meta">
           <span className="sla-hero-badge">
