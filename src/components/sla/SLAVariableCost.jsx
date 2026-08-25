@@ -308,19 +308,24 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     setFormFeeder(''); setFormLocation(''); setFormWo(''); setFormRealisasi(''); setFormPetugas([]); setFormKeterangan(''); setFormFiles([]); setFormError(''); setEditingEntryId(null); setEditingRejectionReason('')
     setShowForm(true)
   }
-  const openDailyList = async (ind) => {
+  const openDailyList = async (ind, rejectedOnly = false) => {
     if (isConsolidated) return
     setDailyIndicator(ind)
     setShowDailyList(true)
     setDailyLoading(true)
     try {
       const uuid = pointToUuids.get(ind.point) ?? ind.id
-      // Try to resolve indicator UUID via fetched indicators
       const indicatorRow = indicators.find((r) => r.point_code === ind.point || r.legacy_key === ind.id)
       const indicatorId = indicatorRow?.id ?? uuid
-      const versionId = indicatorRow?.sla_version_id ?? activeVersionId
       const list = await listDailyEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, indicatorId, periodMonth })
-      setDailyList(list)
+      let filtered = list
+      if (rejectedOnly) filtered = list.filter((r) => r.status === 'REJECTED')
+      filtered.sort((a, b) => {
+        if (a.status === 'REJECTED' && b.status !== 'REJECTED') return -1
+        if (b.status === 'REJECTED' && a.status !== 'REJECTED') return 1
+        return new Date(b.work_date) - new Date(a.work_date)
+      })
+      setDailyList(filtered)
     } catch (e) { setDailyList([]) }
     finally { setDailyLoading(false) }
   }
@@ -469,7 +474,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                 <strong>{rejectedList.length} transaksi perlu diperbaiki</strong>
                 <div className="text-muted" style={{ fontSize: 12 }}>Admin UP3 mengembalikan pengajuan untuk diperbaiki.</div>
               </div>
-              <button type="button" className="sla-btn sla-btn-primary" onClick={() => document.getElementById('perlu-perbaikan-section')?.scrollIntoView({ behavior: 'smooth' })}>Lihat Perbaikan</button>
+              <button type="button" className="sla-btn sla-btn-primary" onClick={() => {
+                if (rejectedList.length === 1) handleRepairRejected(rejectedList[0])
+                else document.getElementById('perlu-perbaikan-section')?.scrollIntoView({ behavior: 'smooth' })
+              }}>Lihat Perbaikan</button>
             </div>
           )}
           {isAdminUlpView && rejectedList.length > 0 && (
@@ -567,9 +575,15 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       </tr>
                     )
                   }
+                  const rejectedCount = isAdminUlpView ? rejectedList.filter((r) => {
+                    const uuid = pointToUuids.get(ind.point)
+                    return uuid ? r.indicator_id === uuid : false
+                  }).length : 0
                   return (
                     <tr key={ind.id} style={!isConsolidated && !isUp3Role ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && !isUp3Role) openDailyList(ind) }}>
-                      <td>{getShortLabel(ind)}</td>
+                      <td>{getShortLabel(ind)}{rejectedCount > 0 && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); const uuid = pointToUuids.get(ind.point); const related = rejectedList.filter((r) => r.indicator_id === uuid); if (related.length === 1) handleRepairRejected(related[0]); else openDailyList(ind, true); }} style={{ marginLeft: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 10, padding: '2px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{rejectedCount} Perlu Perbaikan</button>
+                      )}</td>
                       <td>{ind.unit ?? '—'}</td>
                       <td>{target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)}</td>
                       <td>{entry?.work_order == null ? '0' : formatNumber(entry.work_order)}</td>
@@ -746,14 +760,17 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   {dailyLoading ? <p>Memuat…</p> : dailyList.length === 0 ? <p className="text-muted">Belum ada transaksi harian untuk indikator ini.</p> : (
                     <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
                       {dailyList.map((row) => (
-                        <tr key={row.id}>
+                        <tr key={row.id} style={row.status === 'REJECTED' ? { background: '#fef2f2' } : undefined}>
                           <td>{row.work_date?.slice(0,10)}</td>
                           <td>{row.feeder_id ? (activeFeeders.find((f) => f.id === row.feeder_id)?.name ?? row.feeder_id.slice(0,8)) : '—'}</td>
                           <td>{row.location_address ?? '—'}</td>
                           <td>{row.work_order ?? '—'}</td>
                           <td>{row.realization ?? '—'}</td>
                           <td>—</td>
-                          <td>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</td>
+                          <td>
+                            <div>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</div>
+                            {row.status === 'REJECTED' && row.rejection_reason && <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, whiteSpace: 'normal' }}>Alasan: {row.rejection_reason}</div>}
+                          </td>
                           <td style={{ display: 'flex', gap: 6 }}>
                             <button type="button" className="sla-btn" onClick={() => openDetail(row.id)}>Lihat Detail</button>
                             {row.status === 'DRAFT' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleContinueDraft(row)}>Lanjutkan Draft</button>}

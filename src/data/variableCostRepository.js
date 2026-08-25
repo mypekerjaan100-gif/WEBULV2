@@ -181,7 +181,7 @@ export async function fetchVariableLinkedSlaTargets({ contractId, up3Id, unitId,
 }
 
 export async function listDailyEntries({ contractId, up3Id, unitId, indicatorId, periodMonth }) {
-  let query = supabase.from('variable_cost_entries').select('id,work_date,feeder_id,location_address,work_order,realization,description,status,created_at,updated_at').eq('contract_id', contractId).eq('up3_id', up3Id).eq('unit_id', unitId).eq('indicator_id', indicatorId).order('work_date', { ascending: false })
+  let query = supabase.from('variable_cost_entries').select('id,work_date,feeder_id,location_address,work_order,realization,description,rejection_reason,status,created_at,updated_at').eq('contract_id', contractId).eq('up3_id', up3Id).eq('unit_id', unitId).eq('indicator_id', indicatorId).order('work_date', { ascending: false })
   if (periodMonth) {
     const start = periodMonth
     const end = new Date(start)
@@ -306,13 +306,27 @@ export async function listSubmittedEntries({ contractId, up3Id }) {
   return data ?? []
 }
 
-export async function listRejectedEntries({ contractId, up3Id, unitId }) {
+export async function listRejectedEntries({ contractId, up3Id, unitId, periodMonth }) {
   let query = supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,rejection_reason,status,created_at, feeders(name), sla_indicators(point_code,criteria,measurement_unit,legacy_key)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'REJECTED').order('work_date', { ascending: false })
   if (unitId) query = query.eq('unit_id', unitId)
+  if (periodMonth) {
+    const start = periodMonth
+    const end = new Date(start)
+    end.setMonth(end.getMonth() + 1)
+    const endStr = end.toISOString().slice(0, 10)
+    query = query.gte('work_date', start).lt('work_date', endStr)
+  }
   const { data, error } = await query
   if (error) {
     let fallbackQuery = supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,rejection_reason,status,created_at, feeders(name)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'REJECTED').order('work_date', { ascending: false })
     if (unitId) fallbackQuery = fallbackQuery.eq('unit_id', unitId)
+    if (periodMonth) {
+      const start = periodMonth
+      const end = new Date(start)
+      end.setMonth(end.getMonth() + 1)
+      const endStr = end.toISOString().slice(0, 10)
+      fallbackQuery = fallbackQuery.gte('work_date', start).lt('work_date', endStr)
+    }
     const { data: fallback, error: fallbackError } = await fallbackQuery
     if (fallbackError) throw new Error(fallbackError.message)
     return fallback ?? []
