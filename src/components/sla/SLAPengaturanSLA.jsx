@@ -13,7 +13,6 @@ import {
   getShortLabel,
   periodLabelToMonth,
   setManualSlaTarget,
-  setVariableTarget,
 } from '../../data/variableCostRepository.js'
 
 function parseNumber(raw) {
@@ -162,7 +161,7 @@ function TargetUlpView({ orgMap, versions }) {
 
   const handleSave = async () => {
     const changes = []
-    indicators.forEach((indicator) => {
+    indicators.filter((indicator) => indicator.input_mode === 'MANUAL').forEach((indicator) => {
       ulpUnits.forEach((unit) => {
         const key = targetCellKey(indicator.id, unit.uuid)
         const value = values[key] ?? ''
@@ -180,11 +179,8 @@ function TargetUlpView({ orgMap, versions }) {
     setSaving(true)
     setFeedback(null)
     try {
-      await Promise.all(changes.map(({ indicator, unit, value }) => {
-        const save = indicator.input_mode === 'VARIABLE_COST'
-          ? setVariableTarget
-          : setManualSlaTarget
-        return save({
+      await Promise.all(changes.map(({ indicator, unit, value }) =>
+        setManualSlaTarget({
           contractId,
           up3Id,
           unitId: unit.uuid,
@@ -192,8 +188,8 @@ function TargetUlpView({ orgMap, versions }) {
           indicatorId: indicator.id,
           periodMonth,
           targetValue: Number(value),
-        })
-      }))
+        }),
+      ))
       const rows = await fetchMonthlyTargets({
         contractId,
         up3Id,
@@ -268,6 +264,9 @@ function TargetUlpView({ orgMap, versions }) {
                     <td className="sla-target-point">{indicator.displayPoint}</td>
                     <td className="sla-target-activity" title={indicator.displayCriteria}>
                       <span className="sla-target-indicator-label">{indicator.displayLabel}</span>
+                      {indicator.input_mode === 'VARIABLE_COST' && (
+                        <span className="sla-target-source-note">Dikelola di Variable Cost</span>
+                      )}
                     </td>
                     <td>{indicator.displayUnit}</td>
                     {ulpUnits.map((unit) => {
@@ -279,6 +278,7 @@ function TargetUlpView({ orgMap, versions }) {
                             step="any"
                             className="sla-input sla-target-input"
                             value={values[key] ?? ''}
+                            disabled={indicator.input_mode === 'VARIABLE_COST'}
                             aria-label={`${indicator.displayPoint} ${unit.displayName}`}
                             onChange={(event) => setValues((current) => ({
                               ...current,
