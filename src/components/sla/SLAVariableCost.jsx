@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { slaIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 
 const CANONICAL_9 = slaIndicators.filter((i) => i.inputMode === 'variable-cost' || i.id === 'A-3.1c')
@@ -87,6 +87,11 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
   const [proposeBusy, setProposeBusy] = useState(false)
   const [directUlp, setDirectUlp] = useState(() => effectiveLegacy ?? ALL_KEY)
   const [activeTab, setActiveTab] = useState('rekap')
+  const [pendingList, setPendingList] = useState([])
+  const [pendingLoading, setPendingLoading] = useState(false)
+  const [pendingError, setPendingError] = useState('')
+  const [approvalDetail, setApprovalDetail] = useState(null)
+  const [approvalData, setApprovalData] = useState(null)
 
   // V3 daily input state
   const [showInputPicker, setShowInputPicker] = useState(false)
@@ -129,6 +134,18 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
 
   useEffect(() => { if (activeTab === 'penyulang') loadFeeders() }, [loadFeeders, activeTab])
   useEffect(() => { setDirectUlp(effectiveLegacy ?? ALL_KEY) }, [effectiveLegacy])
+
+  const loadPending = useCallback(async () => {
+    if (!contractId || !up3Uuid) return
+    setPendingLoading(true); setPendingError('')
+    try {
+      const list = await listSubmittedEntries({ contractId, up3Id: up3Uuid })
+      setPendingList(list)
+    } catch (e) { setPendingError(e.message) }
+    finally { setPendingLoading(false) }
+  }, [contractId, up3Uuid])
+
+  useEffect(() => { if (activeTab === 'persetujuan') loadPending() }, [loadPending, activeTab])
 
   useEffect(() => {
     if (!contractId || !up3Uuid) return
@@ -194,6 +211,24 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
     if (!window.confirm(`Hapus Penyulang "${f.name}"?`)) return
     try { await deleteFeeder(f.id); await loadFeeders() }
     catch (e) { setFeederError(e.message.includes('deactivate') ? 'Penyulang sudah memiliki riwayat transaksi — tidak dapat dihapus permanen. Gunakan Nonaktifkan.' : e.message) }
+  }
+
+  const openApprovalDetail = async (row) => {
+    setApprovalDetail(row)
+    try {
+      const data = await getVariableDetail(row.id)
+      // resolve indicator for short label
+      const ind = indicators.find((r) => r.id === row.indicator_id) ?? slaIndicators.find((s) => s.id === row.indicator_id) ?? null
+      setApprovalData({ ...data, indicator: ind, row })
+    } catch { setApprovalData(null) }
+  }
+  const handleApproveTx = async (id) => {
+    try { await approveVariableEntry(id); await loadPending(); await loadMonthly() } catch (e) { setPendingError(e.message) }
+  }
+  const handleRejectTx = async (id) => {
+    const reason = window.prompt('Alasan penolakan (wajib):')
+    if (!reason?.trim()) return
+    try { await rejectVariableEntry(id, reason.trim()); await loadPending(); await loadMonthly() } catch (e) { setPendingError(e.message) }
   }
 
   // V3 helpers
@@ -334,6 +369,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
         <span className="sla-export-scope">VARIABLE COST — Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
+          {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan</button>}
           <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang</button>
         </div>
       </div>
@@ -372,7 +408,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                       const totalRevenue = cons.realisasi
                       return (
                         <tr key={ind.id}>
-                          <td>{ind.scope} — {ind.criteria}</td>
+                          <td>{getShortLabel(ind)}</td>
                           <td>—</td>
                           <td><span className="text-muted">Belum diatur</span></td>
                           <td colSpan={2} style={{ textAlign: 'center' }}>{totalRevenue ? formatRp(totalRevenue) : 'Belum ada data'}</td>
@@ -394,7 +430,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                     }
                     return (
                       <tr key={ind.id}>
-                        <td>{ind.point} — {ind.criteria}</td>
+                        <td>{getShortLabel(ind)}</td>
                         <td>{ind.unit ?? '—'}</td>
                         <td>{up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)}</td>
                         <td>{formatNumber(cons.wo)}</td>
@@ -409,7 +445,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                   if (isKonstruksi) {
                     return (
                       <tr key={ind.id} style={!isConsolidated && !isUp3Role ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && !isUp3Role) openDailyList(ind) }}>
-                        <td>{ind.scope} — {ind.criteria}</td>
+                        <td>{getShortLabel(ind)}</td>
                         <td>—</td>
                         <td><span className="text-muted">Belum diatur</span></td>
                         <td colSpan={isConsolidated ? 2 : 3} style={{ textAlign: 'center' }}>
@@ -421,7 +457,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                   }
                   return (
                     <tr key={ind.id} style={!isConsolidated && !isUp3Role ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && !isUp3Role) openDailyList(ind) }}>
-                      <td>{ind.point} — {ind.criteria}</td>
+                      <td>{getShortLabel(ind)}</td>
                       <td>{ind.unit ?? '—'}</td>
                       <td>{target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)}</td>
                       <td>{entry?.work_order == null ? '0' : formatNumber(entry.work_order)}</td>
@@ -460,7 +496,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
             <div className="modal-backdrop" onClick={() => setDrillIndicator(null)}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
                 <div className="modal-header">
-                  <h3>Detail {drillIndicator.point} — {drillIndicator.criteria} · Periode {period}</h3>
+                  <h3>Detail {getShortLabel(drillIndicator)} · Periode {period}</h3>
                   <button type="button" className="modal-close" onClick={() => setDrillIndicator(null)}>×</button>
                 </div>
                 <div className="modal-body">
@@ -524,7 +560,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                 <div className="modal-body" style={{ display: 'grid', gap: 10 }}>
                   {standard8.map((ind) => (
                     <button key={ind.id} type="button" className="sla-btn" style={{ textAlign: 'left', padding: 12, justifyContent: 'flex-start' }} onClick={() => chooseIndicator(ind)}>
-                      <div><strong>{ind.point} — {ind.criteria}</strong><br/><small>{ind.unit} · {ind.scope}</small></div>
+                      <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope}</small></div>
                     </button>
                   ))}
                   <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi akan tersedia pada tahap berikutnya.</div>
@@ -535,7 +571,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
           {showForm && selectedIndicator && (
             <div className="modal-backdrop" onClick={() => setShowForm(false)}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: '90vh', overflowY: 'auto' }}>
-                <div className="modal-header"><h3>{editingEntryId ? 'Lanjutkan Draft' : 'Input Kegiatan'} — {selectedIndicator.point}</h3><button type="button" className="modal-close" onClick={() => setShowForm(false)}>×</button></div>
+                <div className="modal-header"><h3>{editingEntryId ? 'Lanjutkan Draft' : 'Input Kegiatan'} — {getShortLabel(selectedIndicator)}</h3><button type="button" className="modal-close" onClick={() => setShowForm(false)}>×</button></div>
                 <div className="modal-body" style={{ display: 'grid', gap: 16 }}>
                   {formError && <div className="sla-blocked-note">{formError}</div>}
                   <section>
@@ -587,7 +623,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
           {showDailyList && dailyIndicator && (
             <div className="modal-backdrop" onClick={() => setShowDailyList(false)}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760 }}>
-                <div className="modal-header"><h3>{dailyIndicator.point} — Harian · Periode {period} · {effectiveUnit?.displayName}</h3><button type="button" className="modal-close" onClick={() => setShowDailyList(false)}>×</button></div>
+                <div className="modal-header"><h3>{getShortLabel(dailyIndicator)} — Harian · Periode {period} · {effectiveUnit?.displayName}</h3><button type="button" className="modal-close" onClick={() => setShowDailyList(false)}>×</button></div>
                 <div className="modal-body">
                   {dailyLoading ? <p>Memuat…</p> : dailyList.length === 0 ? <p className="text-muted">Belum ada transaksi harian untuk indikator ini.</p> : (
                     <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
@@ -620,12 +656,14 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                 <div className="modal-body">
                   {!detailData ? <p>Memuat…</p> : (
                     <div style={{ display: 'grid', gap: 8 }}>
-                      <div><strong>Indikator:</strong> {dailyIndicator?.point ?? detailData.entry.indicator_id?.slice(0,8)}</div>
+                      <div><strong>Nama Kegiatan:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id) ?? dailyIndicator; return ind ? getShortLabel(ind) : (dailyIndicator ? getShortLabel(dailyIndicator) : detailData.entry.indicator_id?.slice(0,8)) })()}</div>
+                      <div><strong>Referensi SLA:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id); return ind?.point_code ?? ind?.point ?? '—' })()}</div>
+                      <div><strong>Deskripsi SLA resmi:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id); return ind?.criteria ?? '—' })()}</div>
+                      <div><strong>Satuan:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id); return ind?.measurement_unit ?? selectedIndicator?.unit ?? dailyIndicator?.unit ?? '—' })()}</div>
                       <div><strong>Tanggal:</strong> {detailData.entry.work_date?.slice(0,10)}</div>
                       <div><strong>ULP:</strong> {effectiveUnit?.displayName}</div>
                       <div><strong>Penyulang:</strong> {detailData.entry.feeder_id ? (activeFeeders.find((f) => f.id === detailData.entry.feeder_id)?.name ?? detailData.entry.feeder_id) : '—'}</div>
                       <div><strong>Lokasi:</strong> {detailData.entry.location_address ?? '—'}</div>
-                      <div><strong>Satuan:</strong> {selectedIndicator?.unit ?? dailyIndicator?.unit ?? '—'}</div>
                       <div><strong>WO:</strong> {detailData.entry.work_order ?? '—'}</div>
                       <div><strong>Realisasi:</strong> {detailData.entry.realization ?? '—'}</div>
                       <div><strong>Petugas:</strong> {(detailData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
@@ -648,6 +686,72 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
             </div>
           )}
         </>
+      ) : activeTab === 'persetujuan' ? (
+        <div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+            <button type="button" className="sla-btn" onClick={loadPending}>Muat Ulang</button>
+            {pendingError && <span className="sla-blocked-note">{pendingError}</span>}
+          </div>
+          {pendingLoading ? <p>Memuat persetujuan…</p> : pendingList.length === 0 ? <p className="text-muted">Tidak ada transaksi menunggu persetujuan.</p> : (
+            <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>ULP</th><th>Kegiatan</th><th>Penyulang</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+              {pendingList.map((row) => {
+                const ulp = childUlps.find((u) => u.uuid === row.unit_id)
+                const ind = indicators.find((r) => r.id === row.indicator_id) ?? slaIndicators.find((s) => s.id === row.indicator_id)
+                const short = ind ? getShortLabel(ind) : (row.indicator_id?.slice(0,8) ?? '—')
+                const feederName = row.feeders?.name ?? '—'
+                return (
+                  <tr key={row.id}>
+                    <td>{row.work_date?.slice(0,10)}</td>
+                    <td>{ulp?.displayName ?? row.unit_id?.slice(0,8)}</td>
+                    <td>{short}<br/><small className="text-muted">Ref: {ind?.point_code ?? '—'}</small></td>
+                    <td>{feederName}</td>
+                    <td>{row.work_order ?? '—'}</td>
+                    <td>{row.realization ?? '—'}</td>
+                    <td>—</td>
+                    <td>Menunggu Persetujuan</td>
+                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button type="button" className="sla-btn" onClick={() => openApprovalDetail(row)}>Lihat Detail</button>
+                      <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApproveTx(row.id)}>Setujui</button>
+                      <button type="button" className="sla-btn" onClick={() => handleRejectTx(row.id)}>Tolak</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody></table></div>
+          )}
+          {approvalDetail && (
+            <div className="modal-backdrop" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+                <div className="modal-header"><h3>Detail Persetujuan — {approvalData?.indicator ? getShortLabel(approvalData.indicator) : '—'}</h3><button type="button" className="modal-close" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>×</button></div>
+                <div className="modal-body">
+                  {!approvalData ? <p>Memuat…</p> : (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div><strong>Nama Kegiatan:</strong> {approvalData.indicator ? getShortLabel(approvalData.indicator) : '—'}</div>
+                      <div><strong>Referensi SLA:</strong> {approvalData.indicator?.point_code ?? '—'}</div>
+                      <div><strong>Deskripsi SLA resmi:</strong> {approvalData.indicator?.criteria ?? slaIndicators.find((s) => s.id === approvalData.row.indicator_id)?.criteria ?? '—'}</div>
+                      <div><strong>Satuan:</strong> {approvalData.indicator?.measurement_unit ?? '—'}</div>
+                      <div><strong>ULP:</strong> {childUlps.find((u) => u.uuid === approvalData.row.unit_id)?.displayName ?? approvalData.row.unit_id}</div>
+                      <div><strong>Tanggal:</strong> {approvalData.entry.work_date?.slice(0,10)}</div>
+                      <div><strong>Penyulang:</strong> {approvalData.entry.feeder_id ? (approvalData.entry.feeders?.name ?? approvalData.entry.feeder_id) : '—'}</div>
+                      <div><strong>Lokasi:</strong> {approvalData.entry.location_address ?? '—'}</div>
+                      <div><strong>WO:</strong> {approvalData.entry.work_order ?? '—'}</div>
+                      <div><strong>Realisasi:</strong> {approvalData.entry.realization ?? '—'}</div>
+                      <div><strong>Petugas:</strong> {(approvalData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
+                      <div><strong>Keterangan:</strong> {approvalData.entry.description ?? '—'}</div>
+                      <div><strong>Status:</strong> Menunggu Persetujuan</div>
+                      <div><strong>Evidence:</strong> {(approvalData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (<ul>{(approvalData.evidences ?? []).map((ev) => (<li key={ev.id}><button type="button" className="sla-btn" onClick={async () => { const url = await getEvidencePreviewUrl(ev.storage_path); window.open(url, '_blank') }}>{ev.file_name}</button> — {ev.mime_type}</li>))}</ul>)}</div>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                        <button type="button" className="sla-btn" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>Tutup</button>
+                        <button type="button" className="sla-btn" onClick={() => handleRejectTx(approvalDetail.id)}>Tolak</button>
+                        <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApproveTx(approvalDetail.id)}>Setujui</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
         <div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>

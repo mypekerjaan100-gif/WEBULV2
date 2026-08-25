@@ -188,6 +188,38 @@ export async function getEvidencePreviewUrl(storagePath) {
   return data.signedUrl
 }
 
+export const SHORT_LABELS = {
+  '2.1a': 'Inspeksi SUTM Tier 1',
+  '2.1b': 'Inspeksi SUTM Tier 2',
+  '2.1c': 'Inspeksi Gardu/Keypoint Tier 1',
+  '2.1d': 'Inspeksi Gardu/Keypoint Tier 2',
+  '3.1a': 'ROW Fix',
+  '3.1b': 'ROW Var',
+  '3.2a': 'Pengukuran Gardu',
+  '3.2b': 'Pemeliharaan Gardu',
+  '3.1c': 'Konstruksi',
+}
+
+export function getShortLabel(indicator) {
+  if (!indicator) return '—'
+  const code = indicator.point_code ?? indicator.point ?? indicator.legacy_key ?? ''
+  return SHORT_LABELS[code] ?? code ?? '—'
+}
+
+export async function listSubmittedEntries({ contractId, up3Id }) {
+  const { data, error } = await supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,status,created_at, feeders(name)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'SUBMITTED').order('work_date', { ascending: false })
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function approveVariableEntry(entryId) {
+  return rpc('approve_variable_cost_entry', { p_entry_id: entryId })
+}
+
+export async function rejectVariableEntry(entryId, reason) {
+  return rpc('reject_variable_cost_entry', { p_entry_id: entryId, p_reason: reason })
+}
+
 // Helper to resolve period label to YYYY-MM-01
 const MONTH_MAP = {
   Januari: '01', Februari: '02', Maret: '03', April: '04', Mei: '05', Juni: '06',
