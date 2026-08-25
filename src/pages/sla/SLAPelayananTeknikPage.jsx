@@ -37,7 +37,7 @@ import {
   slaVersions,
   variableCostPoints,
 } from '../../data/slaPelayananTeknik.js'
-import { fetchVariableLinkedSlaTargets } from '../../data/variableCostRepository.js'
+import { fetchVariableLinkedSlaTargets, listRejectedEntries } from '../../data/variableCostRepository.js'
 import {
   currentNameOf,
   ulpIdsOfUp3,
@@ -102,6 +102,7 @@ export default function SLAPelayananTeknikPage({
   const [orgMapStatus, setOrgMapStatus] = useState('loading')
   const [orgMapError, setOrgMapError] = useState('')
   const [variableSlaTargets, setVariableSlaTargets] = useState({})
+  const [variableRejectedCount, setVariableRejectedCount] = useState(0)
   const actor = auth?.authority?.actor
   const isSuperAdmin = actor?.is_super_admin === true
   const contractAccess = actor?.contract_access ?? []
@@ -302,6 +303,15 @@ export default function SLAPelayananTeknikPage({
       .catch(() => { if (!cancelled) setVariableSlaTargets({}) })
     return () => { cancelled = true }
   }, [moduleId, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid, isUp3View, period])
+
+  useEffect(() => {
+    if (!isAdminUlp || !orgMap?.contractUuid || !orgMap?.up3Uuid || !selectedUnitUuid) { setVariableRejectedCount(0); return }
+    let cancelled = false
+    listRejectedEntries({ contractId: orgMap.contractUuid, up3Id: orgMap.up3Uuid, unitId: selectedUnitUuid })
+      .then((rows) => { if (!cancelled) setVariableRejectedCount((rows ?? []).length) })
+      .catch(() => { if (!cancelled) setVariableRejectedCount(0) })
+    return () => { cancelled = true }
+  }, [isAdminUlp, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid])
   const masterLocationUnits = (orgMap?.units ?? []).map((unit) => ({
     id: unit.uuid,
     type: unit.type,
@@ -669,6 +679,9 @@ export default function SLAPelayananTeknikPage({
             onClick={() => setModuleId(module.id)}
           >
             {module.name}
+            {module.id === 'variable-cost' && isAdminUlp && variableRejectedCount > 0 && (
+              <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>{variableRejectedCount}</span>
+            )}
           </button>
         ))}
       </nav>
@@ -909,6 +922,7 @@ export default function SLAPelayananTeknikPage({
             role={role}
             unitId={effectiveUnitId}
             up3Id={up3Id}
+            onRejectedCountChange={setVariableRejectedCount}
           />
         )
       ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (

@@ -306,6 +306,20 @@ export async function listSubmittedEntries({ contractId, up3Id }) {
   return data ?? []
 }
 
+export async function listRejectedEntries({ contractId, up3Id, unitId }) {
+  let query = supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,rejection_reason,status,created_at, feeders(name), sla_indicators(point_code,criteria,measurement_unit,legacy_key)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'REJECTED').order('work_date', { ascending: false })
+  if (unitId) query = query.eq('unit_id', unitId)
+  const { data, error } = await query
+  if (error) {
+    let fallbackQuery = supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,rejection_reason,status,created_at, feeders(name)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'REJECTED').order('work_date', { ascending: false })
+    if (unitId) fallbackQuery = fallbackQuery.eq('unit_id', unitId)
+    const { data: fallback, error: fallbackError } = await fallbackQuery
+    if (fallbackError) throw new Error(fallbackError.message)
+    return fallback ?? []
+  }
+  return data ?? []
+}
+
 export async function approveVariableEntry(entryId) {
   return rpc('approve_variable_cost_entry', { p_entry_id: entryId })
 }

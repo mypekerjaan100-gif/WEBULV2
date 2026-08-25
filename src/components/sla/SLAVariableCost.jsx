@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { slaIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 
 const CANONICAL_9 = slaIndicators.filter((i) => i.inputMode === 'variable-cost' || i.id === 'A-3.1c')
@@ -26,7 +26,7 @@ function formatPercent(value) {
   return `${n.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 }
 
-export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id }) {
+export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange }) {
   const isUp3Role = role === 'up3'
   const contractId = orgMap?.contractUuid
   const up3Uuid = orgMap?.up3Uuid
@@ -61,6 +61,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [targetBusyPoint, setTargetBusyPoint] = useState('')
   const [targetError, setTargetError] = useState('')
   const [targetMessage, setTargetMessage] = useState('')
+  const [rejectedList, setRejectedList] = useState([])
+  const [rejectedLoading, setRejectedLoading] = useState(false)
+  const [editingRejectionReason, setEditingRejectionReason] = useState('')
   const monthlyRequestId = useRef(0)
 
   const loadMonthly = useCallback(async () => {
@@ -164,6 +167,20 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   }, [contractId, up3Uuid])
 
   useEffect(() => { if (activeTab === 'persetujuan') loadPending() }, [loadPending, activeTab])
+
+  const loadRejected = useCallback(async () => {
+    if (!isAdminUlpView || !contractId || !up3Uuid || !effectiveUnitUuid) { setRejectedList([]); if (onRejectedCountChange) onRejectedCountChange(0); return }
+    setRejectedLoading(true)
+    try {
+      const list = await listRejectedEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid })
+      setRejectedList(list ?? [])
+      if (onRejectedCountChange) onRejectedCountChange((list ?? []).length)
+    } catch { setRejectedList([]); if (onRejectedCountChange) onRejectedCountChange(0) }
+    finally { setRejectedLoading(false) }
+  }, [isAdminUlpView, contractId, up3Uuid, effectiveUnitUuid, onRejectedCountChange])
+
+  useEffect(() => { loadRejected() }, [loadRejected])
+  useEffect(() => { if (isAdminUlpView && activeTab === 'rekap') loadRejected() }, [activeTab, isAdminUlpView, loadRejected])
 
   useEffect(() => {
     if (!targetUnitId || !childUlps.some((unit) => unit.uuid === targetUnitId)) {
@@ -288,7 +305,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     setSelectedIndicator(ind)
     setShowInputPicker(false)
     setFormDate(new Date().toISOString().slice(0,10))
-    setFormFeeder(''); setFormLocation(''); setFormWo(''); setFormRealisasi(''); setFormPetugas([]); setFormKeterangan(''); setFormFiles([]); setFormError(''); setEditingEntryId(null)
+    setFormFeeder(''); setFormLocation(''); setFormWo(''); setFormRealisasi(''); setFormPetugas([]); setFormKeterangan(''); setFormFiles([]); setFormError(''); setEditingEntryId(null); setEditingRejectionReason('')
     setShowForm(true)
   }
   const openDailyList = async (ind) => {
@@ -349,8 +366,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         // validate evidence after upload
         await submitVariableEntry(entryId)
       }
-      setShowForm(false); setSelectedIndicator(null); setEditingEntryId(null)
+      setShowForm(false); setSelectedIndicator(null); setEditingEntryId(null); setEditingRejectionReason('')
       await loadMonthly()
+      await loadRejected()
       if (dailyIndicator) {
         const list = await listDailyEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, indicatorId, periodMonth })
         setDailyList(list)
@@ -359,15 +377,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     finally { setFormBusy(false) }
   }
   const handleContinueDraft = async (row) => {
-    setDailyList([]); setShowDailyList(false)
-    const ind = STANDARD_8.find((i) => {
-      const uuid = pointToUuids.get(i.point)
-      // try to match via history: we don't have uuid for row, fallback to point via dailyIndicator
-      return true
-    })
-    // Open form with existing data
     const data = await getVariableDetail(row.id)
-    setSelectedIndicator(STANDARD_8.find((s) => s.point === dailyIndicator?.point) ?? STANDARD_8[0])
+    const indicatorForRow = data.indicator ?? indicators.find((r) => r.id === data.entry.indicator_id) ?? null
+    const matchedStandard = indicatorForRow ? STANDARD_8.find((s) => s.point === indicatorForRow.point_code) ?? STANDARD_8.find((s) => s.point === indicatorForRow.legacy_key) : null
+    setSelectedIndicator(matchedStandard ?? STANDARD_8.find((s) => s.point === dailyIndicator?.point) ?? STANDARD_8[0])
     setFormDate(data.entry.work_date?.slice(0,10) ?? new Date().toISOString().slice(0,10))
     setFormFeeder(data.entry.feeder_id ?? '')
     setFormLocation(data.entry.location_address ?? '')
@@ -375,7 +388,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     setFormRealisasi(String(data.entry.realization ?? ''))
     setFormPetugas((data.personnel ?? []).map((p) => p.employee_id))
     setFormKeterangan(data.entry.description ?? '')
-    setFormFiles([]); setEditingEntryId(row.id); setShowForm(true)
+    setFormFiles([]); setEditingEntryId(row.id); setEditingRejectionReason(data.entry.rejection_reason ?? ''); setShowForm(true)
+    setDailyList([]); setShowDailyList(false)
+  }
+  const handleRepairRejected = async (row) => {
+    await handleContinueDraft(row)
   }
 
   // Build point -> UUID map for grouping
@@ -446,6 +463,41 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
 
       {activeTab === 'rekap' ? (
         <>
+          {isAdminUlpView && rejectedList.length > 0 && !rejectedLoading && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '12px 16px', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <strong>{rejectedList.length} transaksi perlu diperbaiki</strong>
+                <div className="text-muted" style={{ fontSize: 12 }}>Admin UP3 mengembalikan pengajuan untuk diperbaiki.</div>
+              </div>
+              <button type="button" className="sla-btn sla-btn-primary" onClick={() => document.getElementById('perlu-perbaikan-section')?.scrollIntoView({ behavior: 'smooth' })}>Lihat Perbaikan</button>
+            </div>
+          )}
+          {isAdminUlpView && rejectedList.length > 0 && (
+            <section id="perlu-perbaikan-section" style={{ marginBottom: 16, border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>PERLU PERBAIKAN</h3>
+              <div className="sla-table-wrap">
+                <table className="sla-table">
+                  <thead><tr><th>Tanggal</th><th>Kegiatan</th><th>Penyulang</th><th>Alasan Penolakan</th><th>Aksi</th></tr></thead>
+                  <tbody>
+                    {rejectedList.map((row) => {
+                      const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? null
+                      const short = ind ? getShortLabel(ind) : (row.indicator_id?.slice(0, 8) ?? '—')
+                      const feederName = row.feeders?.name ?? '—'
+                      return (
+                        <tr key={row.id}>
+                          <td>{row.work_date?.slice(0, 10)}</td>
+                          <td>{short}</td>
+                          <td>{feederName}</td>
+                          <td style={{ maxWidth: 220, whiteSpace: 'normal' }}>{row.rejection_reason ?? '—'}</td>
+                          <td><button type="button" className="sla-btn sla-btn-primary" onClick={() => handleRepairRejected(row)}>Perbaiki Sekarang</button></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
           <div className="sla-table-wrap">
             <table className="sla-table">
               <thead>
@@ -629,11 +681,17 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             </div>
           )}
           {showForm && selectedIndicator && (
-            <div className="modal-backdrop" onClick={() => setShowForm(false)}>
+            <div className="modal-backdrop" onClick={() => { setShowForm(false); setEditingRejectionReason('') }}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: '90vh', overflowY: 'auto' }}>
-                <div className="modal-header"><h3>{editingEntryId ? 'Lanjutkan Draft' : 'Input Kegiatan'} — {getShortLabel(selectedIndicator)}</h3><button type="button" className="modal-close" onClick={() => setShowForm(false)}>×</button></div>
+                <div className="modal-header"><h3>{editingEntryId ? (editingRejectionReason ? 'Perbaiki Pengajuan' : 'Lanjutkan Draft') : 'Input Kegiatan'} — {getShortLabel(selectedIndicator)}</h3><button type="button" className="modal-close" onClick={() => { setShowForm(false); setEditingRejectionReason('') }}>×</button></div>
                 <div className="modal-body" style={{ display: 'grid', gap: 16 }}>
                   {formError && <div className="sla-blocked-note">{formError}</div>}
+                  {editingRejectionReason && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: 10, borderRadius: 6 }}>
+                      <strong>Alasan penolakan dari Admin UP3</strong>
+                      <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{editingRejectionReason}</div>
+                    </div>
+                  )}
                   <section>
                     <h4 style={{ margin: '0 0 8px' }}>A. Informasi Kegiatan</h4>
                     <div style={{ display: 'grid', gap: 8 }}>
@@ -672,9 +730,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                     {formFiles.length > 0 && <ul style={{ marginTop: 8 }}>{formFiles.map((f, i) => <li key={i}>{f.name} — {(f.size/1024).toFixed(0)} KB <button type="button" onClick={() => setFormFiles(formFiles.filter((_, idx) => idx !== i))}>Hapus</button></li>)}</ul>}
                   </section>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                    <button type="button" className="sla-btn" disabled={formBusy} onClick={() => setShowForm(false)}>Batal</button>
+                    <button type="button" className="sla-btn" disabled={formBusy} onClick={() => { setShowForm(false); setEditingRejectionReason('') }}>Batal</button>
                     <button type="button" className="sla-btn" disabled={formBusy} onClick={() => handleSaveDraft(false)}>{formBusy ? 'Menyimpan…' : 'Simpan Draft'}</button>
-                    <button type="button" className="sla-btn sla-btn-primary" disabled={formBusy} onClick={() => handleSaveDraft(true)}>{formBusy ? 'Mengajukan…' : 'Ajukan'}</button>
+                    <button type="button" className="sla-btn sla-btn-primary" disabled={formBusy} onClick={() => handleSaveDraft(true)}>{formBusy ? 'Mengajukan…' : (editingRejectionReason ? 'Ajukan Ulang' : 'Ajukan')}</button>
                   </div>
                 </div>
               </div>
@@ -695,11 +753,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                           <td>{row.work_order ?? '—'}</td>
                           <td>{row.realization ?? '—'}</td>
                           <td>—</td>
-                          <td>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak' : row.status}</td>
+                          <td>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</td>
                           <td style={{ display: 'flex', gap: 6 }}>
                             <button type="button" className="sla-btn" onClick={() => openDetail(row.id)}>Lihat Detail</button>
                             {row.status === 'DRAFT' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleContinueDraft(row)}>Lanjutkan Draft</button>}
-                            {row.status === 'REJECTED' && <button type="button" className="sla-btn" onClick={() => handleContinueDraft(row)}>Perbaiki</button>}
+                            {row.status === 'REJECTED' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleContinueDraft(row)}>Perbaiki Sekarang</button>}
                           </td>
                         </tr>
                       ))}
