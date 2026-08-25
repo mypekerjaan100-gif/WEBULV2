@@ -37,7 +37,7 @@ import {
   slaVersions,
   variableCostPoints,
 } from '../../data/slaPelayananTeknik.js'
-import { fetchVariableLinkedSlaTargets, listRejectedEntries } from '../../data/variableCostRepository.js'
+import { fetchVariableLinkedSlaTargets, listRejectedEntries, fetchManualSlaTargets, setManualSlaTarget, fetchIndicators, fetchActiveVersion } from '../../data/variableCostRepository.js'
 import {
   currentNameOf,
   ulpIdsOfUp3,
@@ -103,6 +103,9 @@ export default function SLAPelayananTeknikPage({
   const [orgMapError, setOrgMapError] = useState('')
   const [variableSlaTargets, setVariableSlaTargets] = useState({})
   const [variableRejectedCount, setVariableRejectedCount] = useState(0)
+  const [slaManualSaveMessage, setSlaManualSaveMessage] = useState('')
+  const [slaManualSaveError, setSlaManualSaveError] = useState('')
+  const [slaManualSaving, setSlaManualSaving] = useState(false)
   const actor = auth?.authority?.actor
   const isSuperAdmin = actor?.is_super_admin === true
   const contractAccess = actor?.contract_access ?? []
@@ -353,6 +356,28 @@ export default function SLAPelayananTeknikPage({
   const flatIndicators = selectedVersion
     ? flattenVersionIndicators(selectedVersion)
     : []
+  useEffect(() => {
+    if (moduleId !== 'sla' || !orgMap?.contractUuid || !orgMap?.up3Uuid || !selectedUnitUuid || isUp3View) return
+    let cancelled = false
+    const periodMonth = periodKeyFromLabel(period)
+    fetchManualSlaTargets({ contractId: orgMap.contractUuid, up3Id: orgMap.up3Uuid, unitId: selectedUnitUuid, periodMonth })
+      .then((map) => {
+        if (cancelled) return
+        setVersions((prev) => prev.map((v) => {
+          if (v.id !== selectedVersion?.id) return v
+          const newTargets = { ...v.targets }
+          const manualIds = flatIndicators.filter((ind) => !variableCostPoints.has(ind.point) && ind.point !== '3.1c' && ind.inputMode !== 'variable-cost').map((ind) => ind.id)
+          manualIds.forEach((legacyKey) => {
+            const value = map[legacyKey] ?? null
+            const existing = newTargets[legacyKey] ?? { up3: null, ulp: null, ulpTargets: {} }
+            newTargets[legacyKey] = { ...existing, ulp: value, ulpTargets: { ...(existing.ulpTargets ?? {}), [effectiveUnitId]: value } }
+          })
+          return { ...v, targets: newTargets }
+        }))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [moduleId, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid, isUp3View, period, selectedVersion?.id, effectiveUnitId]) // eslint-disable-line react-hooks/exhaustive-deps
   const authorizedModules = isLemburManagementRead && !canViewAdminUp3Modules && !canViewReadOnlyMasterLocations
     ? pelayananTeknikModules.filter((module) => module.id === 'lembur')
     : pelayananTeknikModules.filter(
@@ -369,7 +394,7 @@ export default function SLAPelayananTeknikPage({
         ].filter(Boolean)
       : authorizedModules
   const activeVcCount = flatIndicators.filter(
-    (indicator) => indicator.inputMode === 'variable-cost' || indicator.id === 'A-3.1c',
+    (indicator) => variableCostPoints.has(indicator.point),
   ).length
 
   const refreshLembur = useCallback(async () => {
@@ -562,6 +587,33 @@ export default function SLAPelayananTeknikPage({
     setVersions((prev) =>
       markScopedVersionUsed(prev, id, slaContractScope.contractId, up3Id),
     )
+  }
+
+  const handleSaveManualSlaTargets = async () => {
+    if (!isAdminUp3 || isUp3View || !selectedUnitUuid || !orgMap?.contractUuid || !orgMap?.up3Uuid || !selectedVersion) return
+    const periodMonth = periodKeyFromLabel(period)
+    setSlaManualSaveError(''); setSlaManualSaveMessage('')
+    let versionId
+    try {
+      versionId = await fetchActiveVersion({ contractId: orgMap.contractUuid, up3Id: orgMap.up3Uuid, periodMonth })
+      if (!versionId) throw new Error('Tidak ada versi SLA aktif untuk periode ini.')
+      const indicators = await fetchIndicators({ contractId: orgMap.contractUuid, up3Id: orgMap.up3Uuid, versionId })
+      const manualIndicators = flatIndicators.filter((ind) => !variableCostPoints.has(ind.point) && ind.point !== '3.1c' && ind.inputMode !== 'variable-cost')
+      setSlaManualSaving(true)
+      for (const ind of manualIndicators) {
+        const targetEntry = selectedVersion.targets?.[ind.id]
+        const raw = targetEntry?.ulpTargets?.[effectiveUnitId] ?? targetEntry?.ulp ?? null
+        if (raw == null || raw === '') continue
+        const dbInd = indicators.find((r) => r.legacy_key === ind.id)
+        if (!dbInd) continue
+        await setManualSlaTarget({ contractId: orgMap.contractUuid, up3Id: orgMap.up3Uuid, unitId: selectedUnitUuid, versionId, indicatorId: dbInd.id, periodMonth, targetValue: Number(raw) })
+      }
+      setSlaManualSaveMessage('Target berhasil disimpan.')
+    } catch (e) {
+      setSlaManualSaveError(e.message || 'Gagal menyimpan target.')
+    } finally {
+      setSlaManualSaving(false)
+    }
   }
 
   const handleCreateDraft = ({ name, period: draftPeriod, source, baseVersionId, periodStart, periodEnd }) => {
@@ -870,17 +922,27 @@ export default function SLAPelayananTeknikPage({
             </button>
           </div>
           {selectedVersion ? (
-            <SLAIndicatorTable
-              indicators={flatIndicators}
-              role={role}
-              unitId={effectiveUnitId}
-              up3Id={up3Id}
-              entries={entriesByUnit[effectiveUnitId] ?? {}}
-              onEntriesChange={updateEntries}
-              targets={selectedVersion.targets}
-              onTargetsChange={updateActiveTargets}
-              variableTargets={Object.fromEntries(Object.entries(variableSlaTargets).filter(([point]) => variableCostPoints.has(point)))}
-            />
+            <>
+              <SLAIndicatorTable
+                indicators={flatIndicators}
+                role={role}
+                unitId={effectiveUnitId}
+                up3Id={up3Id}
+                entries={entriesByUnit[effectiveUnitId] ?? {}}
+                onEntriesChange={updateEntries}
+                targets={selectedVersion.targets}
+                onTargetsChange={updateActiveTargets}
+                variableTargets={Object.fromEntries(Object.entries(variableSlaTargets).filter(([point]) => variableCostPoints.has(point)))}
+              />
+              {isAdminUp3 && !isUp3View && (
+                <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button type="button" className="sla-btn sla-btn-primary" disabled={slaManualSaving} onClick={handleSaveManualSlaTargets}>{slaManualSaving ? 'Menyimpan...' : 'Simpan Target'}</button>
+                  {slaManualSaveMessage && <span style={{ color: '#065f46', fontSize: 13 }}>{slaManualSaveMessage}</span>}
+                  {slaManualSaveError && <span className="sla-blocked-note">{slaManualSaveError}</span>}
+                  <span className="text-muted" style={{ fontSize: 12 }}>Target dari Variable Cost read-only.</span>
+                </div>
+              )}
+            </>
           ) : (
             <section className="placeholder">
               <h2 className="placeholder-title">Belum ada SLA untuk UP3 ini</h2>

@@ -108,7 +108,7 @@ export async function fetchMonthlyEntries({ contractId, up3Id, unitIds, periodMo
 
 export async function fetchIndicators({ contractId, up3Id, versionId }) {
   if (versionId) {
-    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,sla_version_id').eq('sla_version_id', versionId)
+    const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,input_mode,sla_version_id').eq('sla_version_id', versionId)
     if (error) throw new Error(error.message)
     return data ?? []
   }
@@ -122,9 +122,36 @@ export async function fetchIndicators({ contractId, up3Id, versionId }) {
     return data ?? []
   }
   const versionIds = versions.map((v) => v.id)
-  const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,sla_version_id').in('sla_version_id', versionIds)
+  const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,measurement_unit,variable_cost_profile,input_mode,sla_version_id').in('sla_version_id', versionIds)
   if (error) throw new Error(error.message)
   return data ?? []
+}
+
+export async function fetchManualSlaTargets({ contractId, up3Id, unitId, periodMonth, versionId }) {
+  const vid = versionId ?? await fetchReportingVersion({ contractId, up3Id, periodMonth })
+  if (!vid) return {}
+  const { data: indicatorRows } = await supabase.from('sla_indicators').select('id,legacy_key,point_code,input_mode').eq('sla_version_id', vid)
+  const manualById = new Map((indicatorRows ?? []).filter((r) => r.input_mode === 'MANUAL').map((r) => [r.id, r.legacy_key]))
+  const { data: targetRows, error } = await supabase.from('sla_targets').select('indicator_id,target_value').eq('contract_id', contractId).eq('up3_id', up3Id).eq('sla_version_id', vid).eq('period_month', periodMonth).eq('target_scope', 'ULP').eq('unit_id', unitId)
+  if (error) throw new Error(error.message)
+  const map = {}
+  for (const row of targetRows ?? []) {
+    const legacy = manualById.get(row.indicator_id)
+    if (legacy) map[legacy] = row.target_value
+  }
+  return map
+}
+
+export async function setManualSlaTarget({ contractId, up3Id, unitId, versionId, indicatorId, periodMonth, targetValue }) {
+  return rpc('set_manual_sla_target', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId,
+    p_sla_version_id: versionId,
+    p_indicator_id: indicatorId,
+    p_period_month: periodMonth,
+    p_target_value: targetValue,
+  }, 'MANUAL_TARGET_SAVE')
 }
 
 export async function fetchActiveVersion({ contractId, up3Id, periodMonth }) {

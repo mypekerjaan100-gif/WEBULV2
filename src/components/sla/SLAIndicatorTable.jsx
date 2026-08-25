@@ -101,9 +101,12 @@ export default function SLAIndicatorTable({
   )
 
   const renderTargetCell = (indicator) => {
+    if (indicator.point === '3.1c') {
+      return <span className="sla-readonly">—</span>
+    }
     const isVariableLinked = indicator.category === 'A' && indicator.inputMode === 'variable-cost' && variableCostPoints.has(indicator.point)
     if (isVariableLinked) {
-      return <span className="sla-readonly" title="Target dikelola melalui Variable Cost oleh Admin UP3.">{formatValue(variableTargets[indicator.point])}</span>
+      return <span className="sla-readonly" title="Target dikelola melalui Variable Cost oleh Admin UP3.">{formatValue(variableTargets[indicator.point])} <span style={{ fontSize: 10, color: '#6b7280' }}>• Dari Variable Cost</span></span>
     }
     const target = targetOf(indicator.id)
     const isUlpField = !isUp3View
