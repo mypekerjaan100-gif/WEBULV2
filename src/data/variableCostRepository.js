@@ -148,7 +148,12 @@ export async function getVariableDetail(entryId) {
   const { data: personnel } = await supabase.from('variable_cost_entry_personnel').select('employee_id, employees(name)').eq('variable_cost_entry_id', entryId)
   const { data: evidences } = await supabase.from('variable_cost_evidence').select('*').eq('variable_cost_entry_id', entryId)
   const { data: history } = await supabase.from('variable_cost_status_history').select('*').eq('variable_cost_entry_id', entryId).order('changed_at', { ascending: true })
-  return { entry: data, personnel: personnel ?? [], evidences: evidences ?? [], history: history ?? [] }
+  let indicator = null
+  if (data?.indicator_id) {
+    const { data: ind } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,criteria,measurement_unit,variable_cost_profile').eq('id', data.indicator_id).maybeSingle()
+    indicator = ind ?? null
+  }
+  return { entry: data, personnel: personnel ?? [], evidences: evidences ?? [], history: history ?? [], indicator }
 }
 
 export async function saveVariableEntry(params) {
@@ -239,8 +244,13 @@ export function getShortLabel(indicator) {
 }
 
 export async function listSubmittedEntries({ contractId, up3Id }) {
-  const { data, error } = await supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,status,created_at, feeders(name)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'SUBMITTED').order('work_date', { ascending: false })
-  if (error) throw new Error(error.message)
+  const { data, error } = await supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,status,created_at, feeders(name), sla_indicators(point_code,criteria,measurement_unit,legacy_key)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'SUBMITTED').order('work_date', { ascending: false })
+  if (error) {
+    // fallback without join if FK not detected
+    const { data: fallback, error: fallbackError } = await supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,status,created_at, feeders(name)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'SUBMITTED').order('work_date', { ascending: false })
+    if (fallbackError) throw new Error(fallbackError.message)
+    return fallback ?? []
+  }
   return data ?? []
 }
 

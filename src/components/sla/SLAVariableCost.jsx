@@ -217,8 +217,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
     setApprovalDetail(row)
     try {
       const data = await getVariableDetail(row.id)
-      // resolve indicator for short label
-      const ind = indicators.find((r) => r.id === row.indicator_id) ?? slaIndicators.find((s) => s.id === row.indicator_id) ?? null
+      const ind = data.indicator ?? row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? null
       setApprovalData({ ...data, indicator: ind, row })
     } catch { setApprovalData(null) }
   }
@@ -656,10 +655,10 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
                 <div className="modal-body">
                   {!detailData ? <p>Memuat…</p> : (
                     <div style={{ display: 'grid', gap: 8 }}>
-                      <div><strong>Nama Kegiatan:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id) ?? dailyIndicator; return ind ? getShortLabel(ind) : (dailyIndicator ? getShortLabel(dailyIndicator) : detailData.entry.indicator_id?.slice(0,8)) })()}</div>
-                      <div><strong>Referensi SLA:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id); return ind?.point_code ?? ind?.point ?? '—' })()}</div>
-                      <div><strong>Deskripsi SLA resmi:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id); return ind?.criteria ?? '—' })()}</div>
-                      <div><strong>Satuan:</strong> {(() => { const ind = indicators.find((r) => r.id === detailData.entry.indicator_id) ?? slaIndicators.find((s) => s.id === detailData.entry.indicator_id); return ind?.measurement_unit ?? selectedIndicator?.unit ?? dailyIndicator?.unit ?? '—' })()}</div>
+                      <div><strong>Nama Kegiatan:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id) ?? dailyIndicator; return ind ? getShortLabel(ind) : (dailyIndicator ? getShortLabel(dailyIndicator) : detailData.entry.indicator_id?.slice(0,8)) })()}</div>
+                      <div><strong>Referensi SLA:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.point_code ?? ind?.point ?? '—' })()}</div>
+                      <div><strong>Deskripsi SLA resmi:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.criteria ?? '—' })()}</div>
+                      <div><strong>Satuan:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.measurement_unit ?? selectedIndicator?.unit ?? dailyIndicator?.unit ?? '—' })()}</div>
                       <div><strong>Tanggal:</strong> {detailData.entry.work_date?.slice(0,10)}</div>
                       <div><strong>ULP:</strong> {effectiveUnit?.displayName}</div>
                       <div><strong>Penyulang:</strong> {detailData.entry.feeder_id ? (activeFeeders.find((f) => f.id === detailData.entry.feeder_id)?.name ?? detailData.entry.feeder_id) : '—'}</div>
@@ -696,7 +695,7 @@ export default function SLAVariableCost({ period, orgMap, role, unitId, up3Id })
             <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>ULP</th><th>Kegiatan</th><th>Penyulang</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
               {pendingList.map((row) => {
                 const ulp = childUlps.find((u) => u.uuid === row.unit_id)
-                const ind = indicators.find((r) => r.id === row.indicator_id) ?? slaIndicators.find((s) => s.id === row.indicator_id)
+                const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? null
                 const short = ind ? getShortLabel(ind) : (row.indicator_id?.slice(0,8) ?? '—')
                 const feederName = row.feeders?.name ?? '—'
                 return (
