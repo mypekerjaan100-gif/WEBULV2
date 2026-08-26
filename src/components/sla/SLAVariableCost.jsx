@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabaseClient.js'
 const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
 const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
 const ALL_KEY = 'ALL'
+const EMPTY_VALUE = '—'
 
 function formatRp(value) {
   if (value == null || value === '') return '—'
@@ -527,11 +528,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <tr key={ind.id}>
                         <td>{getShortLabel(ind)}</td>
                         <td>{ind.unit}</td>
-                        <td>\u2014</td>
+                        <td>{EMPTY_VALUE}</td>
                         <td>0</td>
                         <td>0</td>
-                        <td>\u2014</td>
-                        {(isConsolidated || (!isUp3Role && !isConsolidated)) && <td>\u2014</td>}
+                        <td>{EMPTY_VALUE}</td>
+                        {(isConsolidated || (!isUp3Role && !isConsolidated)) && <td>{EMPTY_VALUE}</td>}
                       </tr>
                     )
                   }
