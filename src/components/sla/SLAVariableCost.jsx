@@ -3,8 +3,8 @@ import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
 import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 
-const OPERATIONAL_9 = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
-const STANDARD_8 = OPERATIONAL_9.filter((indicator) => indicator.slaLinked)
+const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
+const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
 const ALL_KEY = 'ALL'
 
 function formatRp(value) {
@@ -434,7 +434,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const targetByPoint = new Map()
   const entryByPoint = new Map()
   if (!isConsolidated && effectiveUnitUuid) {
-    OPERATIONAL_9.forEach((ind) => {
+    WORKFLOW_INDICATORS.forEach((ind) => {
       const uuid = pointToUuids.get(ind.point)
       if (!uuid) return
       const target = targets.find((row) => row.unit_id === effectiveUnitUuid && row.indicator_id === uuid)
@@ -518,10 +518,23 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   <tr><td colSpan={isConsolidated ? 7 : 6}>Memuat data Variable Cost…</td></tr>
                 ) : error ? (
                   <tr><td colSpan={isConsolidated ? 7 : 6} className="sla-blocked-note">{error} <button type="button" className="sla-btn" onClick={loadMonthly}>Coba lagi</button></td></tr>
-                ) : OPERATIONAL_9.length === 0 ? (
+                ) : variableCostIndicators.length === 0 ? (
                   <tr><td colSpan={isConsolidated ? 7 : 6}>Belum ada data Variable Cost pada periode ini.</td></tr>
-                ) : OPERATIONAL_9.map((ind) => {
+                ) : variableCostIndicators.map((ind) => {
                   const isKonstruksi = ind.id === 'A-3.1c'
+                  if (!ind.workflowEnabled) {
+                    return (
+                      <tr key={ind.id}>
+                        <td>{getShortLabel(ind)}</td>
+                        <td>{ind.unit}</td>
+                        <td>\u2014</td>
+                        <td>0</td>
+                        <td>0</td>
+                        <td>\u2014</td>
+                        {(isConsolidated || (!isUp3Role && !isConsolidated)) && <td>\u2014</td>}
+                      </tr>
+                    )
+                  }
                   if (isConsolidated) {
                     if (isKonstruksi) {
                       const cons = getConsolidatedValues(ind.point)
