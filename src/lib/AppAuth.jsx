@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect, useRef, createContext, useContext } from 'react'
 import { supabase } from './supabaseClient.js'
 import { callUserManagement } from './userManagement.js'
 
@@ -38,6 +38,9 @@ export default function AppAuth({ children }) {
   const [error, setError] = useState(null)
   const [recoveryEmail, setRecoveryEmail] = useState('')
   const [authority, setAuthority] = useState({ loading: true, actor: null, error: null })
+  const [activeAccessId, setActiveAccessId] = useState(null)
+  const sessionUserIdRef = useRef(null)
+  sessionUserIdRef.current = session?.user?.id ?? null
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -61,6 +64,8 @@ export default function AppAuth({ children }) {
       } else if (event === 'SIGNED_IN') {
         setView('app')
       } else if (event === 'SIGNED_OUT') {
+        if (sessionUserIdRef.current) sessionStorage.removeItem(`skw-active-access:${sessionUserIdRef.current}`)
+        setActiveAccessId(null)
         setAuthority({ loading: false, actor: null, error: null })
         setView('signin')
       }
@@ -115,12 +120,14 @@ export default function AppAuth({ children }) {
   }
 
   const signOut = async () => {
+    if (session?.user?.id) sessionStorage.removeItem(`skw-active-access:${session.user.id}`)
     const { error: authErr } = await supabase.auth.signOut()
     if (authErr) {
       setError(authErr.message)
       return false
     }
     setSession(null)
+    setActiveAccessId(null)
     setAuthority({ loading: false, actor: null, error: null })
     setView('signin')
     return true
@@ -203,10 +210,63 @@ export default function AppAuth({ children }) {
     )
   }
 
+  const availableAccesses = authority.actor.contract_access ?? []
+  const accessStorageKey = `skw-active-access:${session.user.id}`
+  const storedAccessId = sessionStorage.getItem(accessStorageKey)
+  const activeAccess = availableAccesses.length === 1
+    ? availableAccesses[0]
+    : availableAccesses.find((access) => access.membership_id === activeAccessId || access.membership_id === storedAccessId) ?? null
+
+  if (!authority.actor.is_super_admin && availableAccesses.length > 1 && !activeAccess) {
+    if (storedAccessId) sessionStorage.removeItem(accessStorageKey)
+    return (
+      <AccessSelector
+        accesses={availableAccesses}
+        onSelect={(access) => {
+          sessionStorage.setItem(accessStorageKey, access.membership_id)
+          setActiveAccessId(access.membership_id)
+        }}
+        onSignOut={signOut}
+      />
+    )
+  }
+
+  const effectiveAuthority = authority.actor.is_super_admin ? authority : {
+    ...authority,
+    actor: {
+      ...authority.actor,
+      available_accesses: availableAccesses,
+      active_access: activeAccess,
+      contract_access: activeAccess ? [activeAccess] : availableAccesses,
+    },
+  }
+
   return (
-    <AuthContext.Provider value={{ session, user: session.user, authority, signOut }}>
+    <AuthContext.Provider value={{ session, user: session.user, authority: effectiveAuthority, signOut }}>
       {children}
     </AuthContext.Provider>
+  )
+}
+
+function AccessSelector({ accesses, onSelect, onSignOut }) {
+  return (
+    <div className="access-selector-page">
+      <section className="access-selector-card">
+        <div><span className="access-selector-kicker">Akses Operasional</span><h1>Pilih Akses</h1><p>Pilih peran dan lingkup kerja untuk sesi ini.</p></div>
+        <div className="access-selector-options">
+          {accesses.map((access) => {
+            const roleLabel = access.role === 'ADMIN_UP3' ? 'Admin UP3' : access.role === 'ADMIN_ULP' ? 'Admin ULP' : access.role
+            const scopeLabel = access.role === 'ADMIN_UP3' ? access.operational_up3_name : access.operational_unit_name
+            return (
+              <button type="button" className="access-selector-option" data-membership-id={access.membership_id} key={access.membership_id} onClick={() => onSelect(access)}>
+                <span>{roleLabel}</span><strong>{scopeLabel ?? 'Lingkup tidak tersedia'}</strong><small>{access.contract_title}</small>
+              </button>
+            )
+          })}
+        </div>
+        <button type="button" className="access-selector-signout" onClick={onSignOut}>Keluar</button>
+      </section>
+    </div>
   )
 }
 

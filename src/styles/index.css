@@ -225,6 +225,95 @@ button {
   white-space: nowrap;
 }
 
+.header-scope-status {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.access-selector-page {
+  min-height: 100vh;
+  padding: 32px 18px;
+  display: grid;
+  place-items: center;
+  background: #f6f7fb;
+}
+
+.access-selector-card {
+  width: min(560px, 100%);
+  padding: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: var(--color-surface);
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.12);
+}
+
+.access-selector-card h1 {
+  margin: 5px 0 6px;
+  font-size: 26px;
+}
+
+.access-selector-card p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.access-selector-kicker {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.access-selector-options {
+  margin: 22px 0 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.access-selector-option {
+  padding: 15px 16px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.access-selector-option:hover {
+  border-color: var(--color-primary);
+  background: #f5f3ff;
+}
+
+.access-selector-option span {
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.access-selector-option strong {
+  font-size: 16px;
+}
+
+.access-selector-option small {
+  color: var(--color-text-muted);
+}
+
+.access-selector-signout {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
 .approval-notification {
   position: relative;
 }

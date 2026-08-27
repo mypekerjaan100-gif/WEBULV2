@@ -13,9 +13,15 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
   const [notificationOpen, setNotificationOpen] = useState(false)
   const notificationRef = useRef(null)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
+  const activeAccess = authority?.actor?.active_access ?? authority?.actor?.contract_access?.[0] ?? null
   const loginRole = isSuperAdmin
     ? 'SUPER_ADMIN'
-    : authority?.actor?.contract_access?.[0]?.role ?? 'Akses terverifikasi'
+    : activeAccess?.role ?? 'Akses terverifikasi'
+  const scopeLabel = activeAccess?.role === 'ADMIN_UP3'
+    ? activeAccess.operational_up3_name
+    : activeAccess?.role === 'ADMIN_ULP'
+      ? activeAccess.operational_unit_name
+      : null
   const activeContract = contracts.find(
     (contract) => contract.id === activeContractId,
   )
@@ -102,6 +108,7 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
         <span className="header-login-status">
           Login: {loginRole}
         </span>
+        {scopeLabel && <span className="header-scope-status">Scope: {scopeLabel}</span>}
         {isSuperAdmin && preview && <SlaPreviewBar preview={preview} />}
         <button
           type="button"

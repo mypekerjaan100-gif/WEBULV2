@@ -23,7 +23,7 @@ export async function handleSessionContext(
       adminClient.from("profiles").select("status").eq("id", user.id).maybeSingle(),
       adminClient.from("system_role_memberships").select("authorization_roles!inner(code)").eq("user_id", user.id).eq("status", "ACTIVE"),
       adminClient.from("organization_memberships").select("id, internal_org_unit_id, organization_role, status").eq("user_id", user.id).eq("status", "ACTIVE"),
-      adminClient.from("contract_memberships").select("contract_id, contract_role, operational_up3_id, operational_unit_id").eq("user_id", user.id).eq("status", "ACTIVE"),
+      adminClient.from("contract_memberships").select("id, contract_id, contract_role, operational_up3_id, operational_unit_id").eq("user_id", user.id).eq("status", "ACTIVE"),
       adminClient.from("contracts").select("id, code, title"),
       adminClient.from("organization_name_history").select("organization_unit_id, name, effective_from, effective_to"),
       adminClient.from("internal_organization_units").select("id, code, name, type, parent_id"),
@@ -47,6 +47,7 @@ export async function handleSessionContext(
       | { code: string; title: string }
       | undefined;
     return {
+      membership_id: membership.id,
       contract_id: membership.contract_id,
       contract_code: contract?.code ?? null,
       contract_title: contract?.title ?? "Unknown",
