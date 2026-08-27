@@ -3,19 +3,32 @@ import { supabase } from './supabaseClient.js'
 import { callUserManagement } from './userManagement.js'
 
 const AuthContext = createContext(null)
+const AUTHORITY_TIMEOUT_MS = 15000
 
 export function useAuth() {
   return useContext(AuthContext)
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId))
+}
+
 async function resolveAuthority() {
   try {
-    const { data, error } = await callUserManagement('session_context')
+    const { data, error } = await withTimeout(
+      callUserManagement('session_context'),
+      AUTHORITY_TIMEOUT_MS,
+      'Verifikasi otoritas melebihi batas waktu. Silakan coba lagi.',
+    )
     if (error) return { actor: null, error }
     if (!data?.actor) return { actor: null, error: 'Otoritas akun tidak tersedia.' }
     return { actor: data.actor, error: null }
-  } catch {
-    return { actor: null, error: 'Gagal memverifikasi otoritas akun.' }
+  } catch (error) {
+    return { actor: null, error: error.message || 'Gagal memverifikasi otoritas akun.' }
   }
 }
 
@@ -64,29 +77,38 @@ export default function AppAuth({ children }) {
 
     let cancelled = false
     setAuthority({ loading: true, actor: null, error: null })
-    resolveAuthority().then(({ actor, error: capabilityError }) => {
-      if (cancelled) return
-      setAuthority({
-        loading: false,
-        actor,
-        error: capabilityError,
-      })
-    })
+    let resolvedActor = null
+    let resolvedError = null
+    const bootstrapAuthority = async () => {
+      try {
+        const result = await resolveAuthority()
+        resolvedActor = result.actor
+        resolvedError = result.error
+      } catch {
+        resolvedError = 'Gagal memverifikasi otoritas akun.'
+      } finally {
+        if (!cancelled) {
+          setAuthority({ loading: false, actor: resolvedActor, error: resolvedError })
+        }
+      }
+    }
+    bootstrapAuthority()
 
     return () => { cancelled = true }
   }, [session?.user?.id])
 
   const signIn = async (email, password) => {
     setError(null)
+    setAuthority({ loading: true, actor: null, error: null })
     const { data, error: authErr } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
     if (authErr) {
       setError(authErr.message)
+      setAuthority({ loading: false, actor: null, error: null })
       return false
     }
-    setAuthority({ loading: true, actor: null, error: null })
     setSession(data.session)
     setView('app')
     return true
@@ -157,9 +179,13 @@ export default function AppAuth({ children }) {
         actionLabel="Coba Lagi"
         onAction={() => {
           setAuthority({ loading: true, actor: null, error: null })
-          resolveAuthority().then(({ actor, error: capabilityError }) => {
-            setAuthority({ loading: false, actor, error: capabilityError })
-          })
+          resolveAuthority()
+            .then(({ actor, error: capabilityError }) => {
+              setAuthority({ loading: false, actor, error: capabilityError })
+            })
+            .catch(() => {
+              setAuthority({ loading: false, actor: null, error: 'Gagal memverifikasi otoritas akun.' })
+            })
         }}
         secondaryActionLabel="Keluar"
         onSecondaryAction={signOut}

@@ -2,6 +2,16 @@ import { variableCostIndicators } from './slaPelayananTeknik.js'
 import { listOvertimeReplacements, listOvertimeWork } from './overtimeReplacementRepository.js'
 import { getShortLabel, listFeeders, listSubmittedEntries } from './variableCostRepository.js'
 
+const NOTIFICATION_SOURCE_TIMEOUT_MS = 10000
+
+function withTimeout(promise, sourceLabel) {
+  let timeoutId
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(`${sourceLabel} melebihi batas waktu.`)), NOTIFICATION_SOURCE_TIMEOUT_MS)
+  })
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId))
+}
+
 function unitName(units, unitId) {
   return units.find((unit) => unit.uuid === unitId)?.displayName ?? unitId?.slice(0, 8) ?? '—'
 }
@@ -76,7 +86,7 @@ const APPROVAL_SOURCES = [
 export async function listAdminUp3ApprovalNotifications({ contractId, up3Id, units = [] }) {
   const groups = await Promise.all(APPROVAL_SOURCES.map(async (source) => {
     try {
-      const items = await source.load({ contractId, up3Id, units })
+      const items = await withTimeout(source.load({ contractId, up3Id, units }), source.label)
       items.sort((left, right) => String(right.sortAt ?? '').localeCompare(String(left.sortAt ?? '')))
       return { id: source.id, label: source.label, count: items.length, items, error: '' }
     } catch (error) {
