@@ -120,6 +120,8 @@ export default function SLALembur({
   isUlManagement = false,
   isUpManagement = false,
   managementScopeLabel = null,
+  approvalTarget = null,
+  onApprovalTargetHandled,
 }) {
   const [draft, setDraft] = useState(() => initialDraft(periodMonth))
   const [activeActivityId, setActiveActivityId] = useState(null)
@@ -150,6 +152,14 @@ export default function SLALembur({
   const [detailEvidenceUrls, setDetailEvidenceUrls] = useState({})
   const [detailFinancial, setDetailFinancial] = useState([])
   const [evidencePreview, setEvidencePreview] = useState(null)
+  const handledApprovalToken = useRef(null)
+
+  useEffect(() => {
+    if (approvalTarget?.source !== 'lembur' || !approvalTarget.token || approvalTarget.token === handledApprovalToken.current) return
+    handledApprovalToken.current = approvalTarget.token
+    setDetailActivityId(approvalTarget.id)
+    onApprovalTargetHandled?.()
+  }, [approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const range = buildPontianakRange(draft.date, draft.startTime, draft.endTime)
   const replacedEmployee = employeeOptions.find((e) => e.id === draft.replacedEmployeeId)
@@ -915,7 +925,7 @@ export default function SLALembur({
             </div>
           </div>
           {detailActivityId && (
-            <div className="rekap-detail-overlay" onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}>
+            <div className="rekap-detail-overlay" data-approval-id={detailActivityId} onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}>
               <div className="rekap-detail-modal lembur-detail-modal" onClick={e=>e.stopPropagation()}>
                 {detailActivity && (
                   <>

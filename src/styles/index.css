@@ -225,6 +225,177 @@ button {
   white-space: nowrap;
 }
 
+.approval-notification {
+  position: relative;
+}
+
+.approval-notification-trigger {
+  min-width: 40px;
+  height: 36px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.approval-notification-trigger:hover,
+.approval-notification-trigger[aria-expanded='true'] {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.approval-notification-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #b91c1c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.approval-notification-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(620px, calc(100vh - 90px));
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+  z-index: 30;
+}
+
+.approval-notification-heading,
+.approval-notification-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.approval-notification-heading {
+  position: sticky;
+  top: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  z-index: 1;
+}
+
+.approval-notification-heading div {
+  display: grid;
+  gap: 2px;
+}
+
+.approval-notification-heading span,
+.approval-notification-item span,
+.approval-notification-group-empty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.approval-notification-heading button {
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.approval-notification-group {
+  padding: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.approval-notification-group:last-child {
+  border-bottom: 0;
+}
+
+.approval-notification-group-title {
+  padding: 2px 6px 8px;
+  font-size: 13px;
+}
+
+.approval-notification-group-title span {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.approval-notification-item {
+  width: 100%;
+  padding: 9px 10px;
+  display: grid;
+  gap: 3px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.approval-notification-item:hover {
+  background: var(--color-bg);
+}
+
+.approval-notification-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.approval-notification-empty,
+.approval-notification-group-empty,
+.approval-notification-group-error {
+  display: block;
+  margin: 0;
+  padding: 14px 16px;
+}
+
+.approval-notification-group-error {
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.approval-count-badge {
+  min-width: 19px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #b91c1c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.approval-focused-row td {
+  background: #fffbeb;
+  box-shadow: inset 0 1px #f59e0b, inset 0 -1px #f59e0b;
+}
+
 .header-logout-button {
   padding: 6px 10px;
   border: 1px solid var(--color-border);
@@ -2413,6 +2584,16 @@ button {
 
   .header-menu-button {
     display: block;
+  }
+
+  .header-login-status {
+    display: none;
+  }
+
+  .approval-notification-panel {
+    position: fixed;
+    top: calc(var(--header-height) - 4px);
+    right: 12px;
   }
 
   .app-content {

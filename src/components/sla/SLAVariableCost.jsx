@@ -28,8 +28,11 @@ function formatPercent(value) {
   if (Number.isNaN(n)) return '—'
   return `${n.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 }
+function formatApprovalStatus(status) {
+  return status === 'SUBMITTED' ? 'Menunggu Persetujuan' : status === 'APPROVED' ? 'Disetujui' : status === 'REJECTED' ? 'Ditolak' : status ?? '—'
+}
 
-export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange }) {
+export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange }) {
   const isUp3Role = role === 'up3'
   const contractId = orgMap?.contractUuid
   const up3Uuid = orgMap?.up3Uuid
@@ -68,6 +71,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [rejectedLoading, setRejectedLoading] = useState(false)
   const [editingRejectionReason, setEditingRejectionReason] = useState('')
   const monthlyRequestId = useRef(0)
+  const handledApprovalToken = useRef(null)
+  const approvalDetailRequestId = useRef(0)
 
   const loadMonthly = useCallback(async () => {
     const requestId = ++monthlyRequestId.current
@@ -118,6 +123,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [pendingError, setPendingError] = useState('')
   const [approvalDetail, setApprovalDetail] = useState(null)
   const [approvalData, setApprovalData] = useState(null)
+  const [approvalDetailError, setApprovalDetailError] = useState('')
+  const [focusedFeederId, setFocusedFeederId] = useState(null)
 
   // V3 daily input state
   const [showInputPicker, setShowInputPicker] = useState(false)
@@ -243,11 +250,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     finally { setProposeBusy(false) }
   }
 
-  const handleApprove = async (id) => { try { await approveFeeder(id); await loadFeeders() } catch (e) { setFeederError(e.message) } }
+  const handleApprove = async (id) => { try { await approveFeeder(id); await loadFeeders(); await onApprovalChange?.(); setFocusedFeederId(null) } catch (e) { setFeederError(e.message) } }
   const handleReject = async (id) => {
     const reason = window.prompt('Alasan penolakan (wajib):')
     if (!reason) return
-    try { await rejectFeeder(id, reason); await loadFeeders() } catch (e) { setFeederError(e.message) }
+    try { await rejectFeeder(id, reason); await loadFeeders(); await onApprovalChange?.(); setFocusedFeederId(null) } catch (e) { setFeederError(e.message) }
   }
   const handleToggleActive = async (f) => {
     try {
@@ -263,20 +270,50 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   }
 
   const openApprovalDetail = async (row) => {
+    const requestId = ++approvalDetailRequestId.current
     setApprovalDetail(row)
+    setApprovalData(null)
+    setApprovalDetailError('')
     try {
       const data = await getVariableDetail(row.id)
+      if (requestId !== approvalDetailRequestId.current) return
       const ind = data.indicator ?? row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
       setApprovalData({ ...data, indicator: ind, row })
-    } catch { setApprovalData(null) }
+      if (data.entry.status !== 'SUBMITTED') onApprovalChange?.()
+    } catch (error) {
+      if (requestId === approvalDetailRequestId.current) setApprovalDetailError(error.message || 'Detail persetujuan gagal dimuat.')
+    }
   }
+  useEffect(() => {
+    if (!approvalTarget?.token || approvalTarget.token === handledApprovalToken.current) return
+    if (approvalTarget.source === 'variable') {
+      handledApprovalToken.current = approvalTarget.token
+      setActiveTab('persetujuan')
+      openApprovalDetail({ id: approvalTarget.id, unit_id: approvalTarget.unitId })
+      onApprovalTargetHandled?.()
+    } else if (approvalTarget.source === 'feeder') {
+      handledApprovalToken.current = approvalTarget.token
+      const targetUnit = childUlps.find((unit) => unit.uuid === approvalTarget.unitId)
+      setSelectedUlpLegacy(targetUnit?.legacyKey ?? approvalTarget.unitId)
+      setFeederStatusFilter('')
+      setFocusedFeederId(approvalTarget.id)
+      setActiveTab('penyulang')
+      onApprovalTargetHandled?.()
+    }
+  }, [approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!focusedFeederId || !feeders.some((feeder) => feeder.id === focusedFeederId)) return
+    document.getElementById(`feeder-${focusedFeederId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [focusedFeederId, feeders])
+
   const handleApproveTx = async (id) => {
-    try { await approveVariableEntry(id); await loadPending(); await loadMonthly() } catch (e) { setPendingError(e.message) }
+    try { await approveVariableEntry(id); setApprovalDetail(null); setApprovalData(null); await loadPending(); await loadMonthly(); await onApprovalChange?.() } catch (e) { setPendingError(e.message) }
   }
   const handleRejectTx = async (id) => {
     const reason = window.prompt('Alasan penolakan (wajib):')
     if (!reason?.trim()) return
-    try { await rejectVariableEntry(id, reason.trim()); await loadPending(); await loadMonthly() } catch (e) { setPendingError(e.message) }
+    try { await rejectVariableEntry(id, reason.trim()); setApprovalDetail(null); setApprovalData(null); await loadPending(); await loadMonthly(); await onApprovalChange?.() } catch (e) { setPendingError(e.message) }
   }
 
   const handleSaveTarget = async (indicator) => {
@@ -457,9 +494,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         <span className="sla-export-scope">VARIABLE COST — {variableCostIndicators.length} indikator · Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
-          {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan</button>}
+          {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan{(approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</button>}
           {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'target' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target')}>Target</button>}
-          <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang</button>
+          <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang{isUp3Role && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}</button>
         </div>
       </div>
 
@@ -875,11 +912,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             </tbody></table></div>
           )}
           {approvalDetail && (
-            <div className="modal-backdrop" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>
+            <div className="modal-backdrop" data-approval-id={approvalDetail.id} onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
                 <div className="modal-header"><h3>Detail Persetujuan — {approvalData?.indicator ? getShortLabel(approvalData.indicator) : '—'}</h3><button type="button" className="modal-close" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>×</button></div>
                 <div className="modal-body">
-                  {!approvalData ? <p>Memuat…</p> : (
+                  {approvalDetailError ? <p className="sla-blocked-note">{approvalDetailError}</p> : !approvalData ? <p>Memuat…</p> : (
                     <div style={{ display: 'grid', gap: 8 }}>
                       <div><strong>Nama Kegiatan:</strong> {approvalData.indicator ? getShortLabel(approvalData.indicator) : '—'}</div>
                       <div><strong>Referensi SLA:</strong> {approvalData.indicator?.point_code ?? '—'}</div>
@@ -893,12 +930,12 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>Realisasi:</strong> {approvalData.entry.realization ?? '—'}</div>
                       <div><strong>Petugas:</strong> {(approvalData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
                       <div><strong>Keterangan:</strong> {approvalData.entry.description ?? '—'}</div>
-                      <div><strong>Status:</strong> Menunggu Persetujuan</div>
+                      <div><strong>Status:</strong> {formatApprovalStatus(approvalData.entry.status)}</div>
                       <div><strong>Evidence:</strong> {(approvalData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (<ul>{(approvalData.evidences ?? []).map((ev) => (<li key={ev.id}><button type="button" className="sla-btn" onClick={async () => { const url = await getEvidencePreviewUrl(ev.storage_path); window.open(url, '_blank') }}>{ev.file_name}</button> — {ev.mime_type}</li>))}</ul>)}</div>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
                         <button type="button" className="sla-btn" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>Tutup</button>
-                        <button type="button" className="sla-btn" onClick={() => handleRejectTx(approvalDetail.id)}>Tolak</button>
-                        <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApproveTx(approvalDetail.id)}>Setujui</button>
+                        {approvalData.entry.status === 'SUBMITTED' && <button type="button" className="sla-btn" onClick={() => handleRejectTx(approvalDetail.id)}>Tolak</button>}
+                        {approvalData.entry.status === 'SUBMITTED' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApproveTx(approvalDetail.id)}>Setujui</button>}
                       </div>
                     </div>
                   )}
@@ -993,7 +1030,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                 <thead><tr><th>Nama Penyulang</th><th>Status</th><th>Tanggal Pengajuan</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {feeders.map((f) => (
-                    <tr key={f.id}>
+                    <tr key={f.id} id={`feeder-${f.id}`} className={focusedFeederId === f.id ? 'approval-focused-row' : ''}>
                       <td>{f.name}</td>
                       <td>{formatFeederStatus(f.status)}{f.status === 'REJECTED' && f.rejection_reason ? ` — ${f.rejection_reason}` : ''}</td>
                       <td>{f.proposed_at ? new Date(f.proposed_at).toLocaleDateString('id-ID') : '—'}</td>

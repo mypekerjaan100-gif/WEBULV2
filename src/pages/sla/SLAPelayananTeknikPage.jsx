@@ -72,6 +72,13 @@ const ROLE_NOTES = {
   ulp: 'Admin ULP \u2014 Target read-only. Indikator Manual: Satuan, WO, Realisasi, dan Pencapaian dapat diedit. 8 indikator Variable Cost: Realisasi dan Pencapaian read-only (otomatis).',
 }
 
+function periodLabelFromMonth(periodMonth) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodMonth ?? '')) return null
+  const [year, month] = periodMonth.split('-')
+  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+  return monthNames[Number(month) - 1] ? `${monthNames[Number(month) - 1]} ${year}` : null
+}
+
 export default function SLAPelayananTeknikPage({
   onBack,
   contractId,
@@ -85,6 +92,10 @@ export default function SLAPelayananTeknikPage({
   isRealScopedUser = false,
   isManagementUser = false,
   organizationAccess = [],
+  approvalNotifications = { count: 0, groups: [] },
+  approvalTarget = null,
+  onApprovalTargetHandled,
+  onApprovalChange,
 }) {
   const [moduleId, setModuleId] = useState('sla')
   const [period, setPeriod] = useState('Agustus 2026')
@@ -135,6 +146,18 @@ export default function SLAPelayananTeknikPage({
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || isAdminUp3
   const canReadEmployeeFinancials = isSuperAdmin || (isAdminUp3 && !isAdminUlp) || isLemburManagementRead
+  const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
+
+  useEffect(() => {
+    if (!isAdminUp3 || !approvalTarget) return
+    if (approvalTarget.source === 'lembur') {
+      const targetPeriod = slaPeriods.find((label) => periodKeyFromLabel(label) === approvalTarget.periodMonth) ?? periodLabelFromMonth(approvalTarget.periodMonth)
+      if (targetPeriod) setPeriod(targetPeriod)
+      setModuleId('lembur')
+    } else if (approvalTarget.source === 'variable' || approvalTarget.source === 'feeder') {
+      setModuleId('variable-cost')
+    }
+  }, [isAdminUp3, approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshLocations = useCallback(async ({ preserveOnError = false } = {}) => {
     if (!preserveOnError) setLocationLoadStatus('loading')
@@ -438,6 +461,11 @@ export default function SLAPelayananTeknikPage({
     }
   }, [orgMap?.contractUuid, orgMap?.up3Uuid, role, lemburUnitUuid, lemburPeriodMonth])
 
+  const refreshLemburAndApprovals = useCallback(async () => {
+    await refreshLembur()
+    await onApprovalChange?.()
+  }, [refreshLembur, onApprovalChange])
+
   useEffect(() => {
     if (moduleId !== 'lembur' || !auth?.session) return
     refreshLembur()
@@ -733,6 +761,12 @@ export default function SLAPelayananTeknikPage({
             onClick={() => setModuleId(module.id)}
           >
             {module.name}
+            {isAdminUp3 && module.id === 'variable-cost' && (approvalCounts.variable ?? 0) > 0 && (
+              <span className="approval-count-badge">{approvalCounts.variable}</span>
+            )}
+            {isAdminUp3 && module.id === 'lembur' && (approvalCounts.lembur ?? 0) > 0 && (
+              <span className="approval-count-badge">{approvalCounts.lembur}</span>
+            )}
             {module.id === 'variable-cost' && isAdminUlp && variableRejectedCount > 0 && (
               <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>{variableRejectedCount}</span>
             )}
@@ -988,6 +1022,10 @@ export default function SLAPelayananTeknikPage({
             unitId={effectiveUnitId}
             up3Id={up3Id}
             onRejectedCountChange={setVariableRejectedCount}
+            approvalCounts={approvalCounts}
+            approvalTarget={isAdminUp3 ? approvalTarget : null}
+            onApprovalTargetHandled={onApprovalTargetHandled}
+            onApprovalChange={onApprovalChange}
           />
         )
       ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (
@@ -1037,7 +1075,9 @@ export default function SLAPelayananTeknikPage({
             onSubmit={submitLembur}
             onSaveWorkDraft={saveWorkLembur}
             onSubmitWork={submitWorkLembur}
-            onRefresh={refreshLembur}
+            onRefresh={refreshLemburAndApprovals}
+            approvalTarget={isAdminUp3 && periodKeyFromLabel(period) === approvalTarget?.periodMonth ? approvalTarget : null}
+            onApprovalTargetHandled={onApprovalTargetHandled}
           />
         )
       ) : (

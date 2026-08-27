@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Sidebar from '../components/Sidebar.jsx'
 import Header from '../components/Header.jsx'
 
-export default function AppLayout({ activeContractId, currentPage, onNavigate, onNavigatePage, preview, children }) {
+export default function AppLayout({ activeContractId, currentPage, onNavigate, onNavigatePage, preview, approvalNotifications, approvalNotificationError, onRefreshApprovalNotifications, onOpenApprovalNotification, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const closeSidebar = () => setSidebarOpen(false)
@@ -29,6 +29,10 @@ export default function AppLayout({ activeContractId, currentPage, onNavigate, o
           currentPage={currentPage}
           onOpenSidebar={() => setSidebarOpen(true)}
           preview={preview}
+          approvalNotifications={approvalNotifications}
+          approvalNotificationError={approvalNotificationError}
+          onRefreshApprovalNotifications={onRefreshApprovalNotifications}
+          onOpenApprovalNotification={onOpenApprovalNotification}
         />
         <main className="app-content">{children}</main>
       </div>

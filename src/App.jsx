@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import AppLayout from './layout/AppLayout.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import ContractPage from './pages/ContractPage.jsx'
@@ -12,6 +12,18 @@ import {
 import { contracts } from './data/contracts.js'
 import { getOrgUnits } from './data/orgIdMap.js'
 import { useAuth } from './lib/AppAuth.jsx'
+import { listAdminUp3ApprovalNotifications } from './data/approvalNotificationRepository.js'
+
+const EMPTY_APPROVAL_NOTIFICATIONS = { scopeKey: null, count: 0, groups: [] }
+
+function mergeApprovalNotifications(current, incoming) {
+  const groups = incoming.groups.map((group) => {
+    if (!group.error) return group
+    const previous = current.groups.find((item) => item.id === group.id)
+    return previous ? { ...previous, error: group.error } : group
+  })
+  return { scopeKey: incoming.scopeKey, count: groups.reduce((total, group) => total + group.count, 0), groups }
+}
 
 export default function App() {
   const { authority } = useAuth()
@@ -36,11 +48,57 @@ export default function App() {
   )
   const [unitId, setUnitId] = useState(() => seedUp3Id)
   const [realScope, setRealScope] = useState(null)
+  const [approvalNotifications, setApprovalNotifications] = useState(EMPTY_APPROVAL_NOTIFICATIONS)
+  const [approvalNotificationError, setApprovalNotificationError] = useState('')
+  const [approvalTarget, setApprovalTarget] = useState(null)
+  const approvalRequestId = useRef(0)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access ?? []
   const organizationAccess = authority?.actor?.organization_access ?? []
   const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
   const isManagementUserRaw = !isSuperAdmin && organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
+  const adminUp3Access = !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
+    ? contractAccess[0]
+    : null
+  const adminUp3ScopeKey = adminUp3Access ? `${adminUp3Access.contract_id}:${adminUp3Access.operational_up3_id}` : null
+
+  const refreshApprovalNotifications = useCallback(async () => {
+    const requestId = ++approvalRequestId.current
+    if (!adminUp3Access?.contract_id || !adminUp3Access.operational_up3_id) {
+      setApprovalNotifications(EMPTY_APPROVAL_NOTIFICATIONS)
+      setApprovalNotificationError('')
+      return
+    }
+    try {
+      const orgUnits = await getOrgUnits()
+      const result = await listAdminUp3ApprovalNotifications({
+        contractId: adminUp3Access.contract_id,
+        up3Id: adminUp3Access.operational_up3_id,
+        units: orgUnits,
+      })
+      if (requestId !== approvalRequestId.current) return
+      const scopedResult = { ...result, scopeKey: adminUp3ScopeKey }
+      setApprovalNotifications((current) => current.scopeKey === adminUp3ScopeKey
+        ? mergeApprovalNotifications(current, scopedResult)
+        : scopedResult)
+      setApprovalNotificationError('')
+    } catch (error) {
+      if (requestId !== approvalRequestId.current) return
+      setApprovalNotificationError(error.message || 'Notifikasi persetujuan gagal dimuat.')
+    }
+  }, [adminUp3Access?.contract_id, adminUp3Access?.operational_up3_id, adminUp3ScopeKey])
+
+  useEffect(() => {
+    refreshApprovalNotifications()
+    return () => { approvalRequestId.current += 1 }
+  }, [refreshApprovalNotifications])
+
+  useEffect(() => {
+    if (!adminUp3Access) return undefined
+    const refreshOnFocus = () => refreshApprovalNotifications()
+    window.addEventListener('focus', refreshOnFocus)
+    return () => window.removeEventListener('focus', refreshOnFocus)
+  }, [adminUp3Access, refreshApprovalNotifications])
 
   useEffect(() => {
     let cancelled = false
@@ -108,6 +166,13 @@ export default function App() {
     setActiveContractId(null)
   }
 
+  const openApprovalNotification = (item) => {
+    if (!adminUp3Access?.contract_code) return
+    setApprovalTarget({ ...item, token: `${item.source}:${item.id}:${Date.now()}` })
+    setActiveContractId(adminUp3Access.contract_code)
+    setCurrentPage(null)
+  }
+
   const handleRoleChange = (nextRole) => {
     if (isRealScopedUser) return
     setRole(nextRole)
@@ -141,6 +206,9 @@ export default function App() {
   const activeContract = contracts.find((contract) =>
     contract.id === activeContractId && (isSuperAdmin || authorizedContractIds.includes(contract.id)),
   )
+  const visibleApprovalNotifications = adminUp3Access && isRealScopedUser && approvalNotifications.scopeKey === adminUp3ScopeKey
+    ? approvalNotifications
+    : null
 
   const preview = {
     role: actualRole,
@@ -160,6 +228,10 @@ export default function App() {
         onNavigate={navigate}
         onNavigatePage={navigatePage}
         preview={preview}
+        approvalNotifications={visibleApprovalNotifications}
+        approvalNotificationError={approvalNotificationError}
+        onRefreshApprovalNotifications={refreshApprovalNotifications}
+        onOpenApprovalNotification={openApprovalNotification}
       >
         {currentPage === 'pengguna-akses' ? (
           <UserListPage onBack={() => navigatePage(null)} />
@@ -179,6 +251,10 @@ export default function App() {
               isRealScopedUser={isRealScopedUser}
               isManagementUser={isManagementUser}
               organizationAccess={organizationAccess}
+              approvalNotifications={visibleApprovalNotifications ?? EMPTY_APPROVAL_NOTIFICATIONS}
+              approvalTarget={approvalTarget}
+              onApprovalTargetHandled={() => setApprovalTarget(null)}
+              onApprovalChange={refreshApprovalNotifications}
             />
           ) : (
             <ContractPage contract={activeContract} onBack={() => navigate(null)} />
