@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 
 const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
 const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
+const INPUT_INDICATORS = variableCostIndicators.filter((indicator) => indicator.ulpInputEnabled)
+const TEBANG_INDICATOR_IDS = variableCostIndicators.filter((indicator) => indicator.code?.startsWith('TEBANG_')).map((indicator) => indicator.id)
 const ALL_KEY = 'ALL'
 const EMPTY_VALUE = '—'
 
@@ -83,14 +85,15 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       const unitUuids = activeTab === 'target' && targetUnitId
         ? [targetUnitId]
         : isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
-      const [t, e, ind, up3t] = await Promise.all([
+      const [t, e, tebang, ind, up3t] = await Promise.all([
         unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
+        unitUuids.length ? fetchApprovedVariableMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, indicatorIds: TEBANG_INDICATOR_IDS, periodMonth, versionId }) : Promise.resolve([]),
         fetchIndicators({ contractId, up3Id: up3Uuid, versionId }).catch(() => []),
         isConsolidated ? fetchUp3Targets({ contractId, up3Id: up3Uuid, periodMonth, versionId }).catch(() => []) : Promise.resolve([]),
       ])
       if (requestId !== monthlyRequestId.current) return
-      setTargets(t ?? []); setEntries(e ?? []); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
+      setTargets(t ?? []); setEntries([...(e ?? []), ...(tebang ?? [])]); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
       if (effectiveUnitUuid && !isConsolidated) {
         const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid }).catch(() => [])
         setActiveFeeders(af ?? [])
@@ -263,7 +266,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     setApprovalDetail(row)
     try {
       const data = await getVariableDetail(row.id)
-      const ind = data.indicator ?? row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? null
+      const ind = data.indicator ?? row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
       setApprovalData({ ...data, indicator: ind, row })
     } catch { setApprovalData(null) }
   }
@@ -348,7 +351,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     if (!formPetugas.length) { setFormError('Pilih minimal 1 petugas'); return }
     // Resolve indicator UUID
     const indicatorRow = indicators.find((r) => r.point_code === selectedIndicator.point || r.legacy_key === selectedIndicator.id)
-    const indicatorId = indicatorRow?.id
+    const indicatorId = selectedIndicator.slaLinked ? indicatorRow?.id : selectedIndicator.id
     const versionId = indicatorRow?.sla_version_id ?? activeVersionId
     if (!indicatorId || !versionId) { setFormError('Indikator belum tersedia di Supabase. Hubungi Admin.'); return }
     setFormBusy(true)
@@ -385,8 +388,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const handleContinueDraft = async (row) => {
     const data = await getVariableDetail(row.id)
     const indicatorForRow = data.indicator ?? indicators.find((r) => r.id === data.entry.indicator_id) ?? null
-    const matchedStandard = indicatorForRow ? STANDARD_8.find((s) => s.point === indicatorForRow.point_code) ?? STANDARD_8.find((s) => s.point === indicatorForRow.legacy_key) : null
-    setSelectedIndicator(matchedStandard ?? STANDARD_8.find((s) => s.point === dailyIndicator?.point) ?? STANDARD_8[0])
+    const matchedInput = INPUT_INDICATORS.find((item) => item.id === data.entry.indicator_id) ?? (indicatorForRow ? INPUT_INDICATORS.find((item) => item.point === indicatorForRow.point_code || item.point === indicatorForRow.legacy_key) : null)
+    setSelectedIndicator(matchedInput ?? INPUT_INDICATORS.find((item) => item.point === dailyIndicator?.point) ?? INPUT_INDICATORS[0])
     setFormDate(data.entry.work_date?.slice(0,10) ?? new Date().toISOString().slice(0,10))
     setFormFeeder(data.entry.feeder_id ?? '')
     setFormLocation(data.entry.location_address ?? '')
@@ -404,6 +407,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   // Build point -> UUID map for grouping
   const pointToUuids = new Map()
   indicators.forEach((ind) => { if (ind.point_code) pointToUuids.set(ind.point_code, ind.id) })
+  variableCostIndicators.filter((indicator) => indicator.code?.startsWith('TEBANG_')).forEach((indicator) => {
+    if (indicator.point) pointToUuids.set(indicator.point, indicator.id)
+  })
 
   function getConsolidatedValues(point) {
     // For V2 with empty indicators table, fallback to sum across all entries for display correctness
@@ -489,7 +495,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   <thead><tr><th>Tanggal</th><th>Kegiatan</th><th>Penyulang</th><th>Alasan Penolakan</th><th>Aksi</th></tr></thead>
                   <tbody>
                     {rejectedList.map((row) => {
-                      const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? null
+                      const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
                       const short = ind ? getShortLabel(ind) : (row.indicator_id?.slice(0, 8) ?? '—')
                       const feederName = row.feeders?.name ?? '—'
                       return (
@@ -566,10 +572,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <tr key={ind.id}>
                         <td>{getShortLabel(ind)}</td>
                         <td>{ind.unit ?? '—'}</td>
-                        <td>{up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)}</td>
+                        <td>{ind.slaLinked ? (up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)) : EMPTY_VALUE}</td>
                         <td>{formatNumber(cons.wo)}</td>
                         <td>{formatNumber(cons.realisasi)}</td>
-                        <td>{up3Target == null ? '—' : pencapaian}</td>
+                        <td>{ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
                         <td><button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button></td>
                       </tr>
                     )
@@ -599,10 +605,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         <button type="button" onClick={(e) => { e.stopPropagation(); const uuid = pointToUuids.get(ind.point); const related = rejectedList.filter((r) => r.indicator_id === uuid); if (related.length === 1) handleRepairRejected(related[0]); else openDailyList(ind, true); }} style={{ marginLeft: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 10, padding: '2px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{rejectedCount} Perlu Perbaikan</button>
                       )}</td>
                       <td>{ind.unit ?? '—'}</td>
-                      <td>{target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)}</td>
+                      <td>{ind.slaLinked ? (target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)) : EMPTY_VALUE}</td>
                       <td>{entry?.work_order == null ? '0' : formatNumber(entry.work_order)}</td>
                       <td>{entry?.realization == null ? '0' : formatNumber(entry.realization)}</td>
-                      <td>{entry?.achievement == null ? '—' : formatPercent(entry.achievement)}</td>
+                      <td>{ind.slaLinked && entry?.achievement != null ? formatPercent(entry.achievement) : EMPTY_VALUE}</td>
                       {!isConsolidated && !isUp3Role && <td><button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openDailyList(ind) }}>Lihat Detail</button></td>}
                     </tr>
                   )
@@ -698,9 +704,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
                 <div className="modal-header"><h3>Pilih Jenis Kegiatan</h3><button type="button" className="modal-close" onClick={() => setShowInputPicker(false)}>×</button></div>
                 <div className="modal-body" style={{ display: 'grid', gap: 10 }}>
-                  {STANDARD_8.map((ind) => (
+                  {INPUT_INDICATORS.map((ind) => (
                     <button key={ind.id} type="button" className="sla-btn" style={{ textAlign: 'left', padding: 12, justifyContent: 'flex-start' }} onClick={() => chooseIndicator(ind)}>
-                      <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope}</small></div>
+                      <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope ?? 'Variable Cost'}</small></div>
                     </button>
                   ))}
                   <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi akan tersedia pada tahap berikutnya.</div>
@@ -845,7 +851,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>ULP</th><th>Kegiatan</th><th>Penyulang</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
               {pendingList.map((row) => {
                 const ulp = childUlps.find((u) => u.uuid === row.unit_id)
-                const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? null
+                const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
                 const short = ind ? getShortLabel(ind) : (row.indicator_id?.slice(0,8) ?? '—')
                 const feederName = row.feeders?.name ?? '—'
                 return (
@@ -877,8 +883,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                     <div style={{ display: 'grid', gap: 8 }}>
                       <div><strong>Nama Kegiatan:</strong> {approvalData.indicator ? getShortLabel(approvalData.indicator) : '—'}</div>
                       <div><strong>Referensi SLA:</strong> {approvalData.indicator?.point_code ?? '—'}</div>
-                      <div><strong>Deskripsi SLA resmi:</strong> {approvalData.indicator?.criteria ?? slaIndicators.find((s) => s.id === approvalData.row.indicator_id)?.criteria ?? '—'}</div>
-                      <div><strong>Satuan:</strong> {approvalData.indicator?.measurement_unit ?? '—'}</div>
+                      <div><strong>Deskripsi SLA resmi:</strong> {approvalData.indicator?.criteria ?? '—'}</div>
+                      <div><strong>Satuan:</strong> {approvalData.indicator?.measurement_unit ?? approvalData.indicator?.unit ?? '—'}</div>
                       <div><strong>ULP:</strong> {childUlps.find((u) => u.uuid === approvalData.row.unit_id)?.displayName ?? approvalData.row.unit_id}</div>
                       <div><strong>Tanggal:</strong> {approvalData.entry.work_date?.slice(0,10)}</div>
                       <div><strong>Penyulang:</strong> {approvalData.entry.feeder_id ? (approvalData.entry.feeders?.name ?? approvalData.entry.feeder_id) : '—'}</div>

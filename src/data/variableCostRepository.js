@@ -118,6 +118,35 @@ export async function fetchMonthlyEntries({ contractId, up3Id, unitIds, periodMo
   return data ?? []
 }
 
+export async function fetchApprovedVariableMonthlyEntries({ contractId, up3Id, unitIds, indicatorIds, periodMonth, versionId }) {
+  if (!unitIds?.length || !indicatorIds?.length) return []
+  const end = new Date(`${periodMonth}T00:00:00Z`)
+  end.setUTCMonth(end.getUTCMonth() + 1)
+  const { data, error } = await supabase.from('variable_cost_entries')
+    .select('unit_id,indicator_id,measurement_unit,work_order,realization')
+    .eq('contract_id', contractId).eq('up3_id', up3Id).eq('sla_version_id', versionId)
+    .eq('status', 'APPROVED').in('unit_id', unitIds).in('indicator_id', indicatorIds)
+    .gte('work_date', periodMonth).lt('work_date', end.toISOString().slice(0, 10))
+  if (error) throw new Error(error.message)
+  const aggregates = new Map()
+  for (const row of data ?? []) {
+    const key = `${row.unit_id}:${row.indicator_id}`
+    const current = aggregates.get(key) ?? {
+      unit_id: row.unit_id,
+      indicator_id: row.indicator_id,
+      measurement_unit: row.measurement_unit,
+      work_order: 0,
+      realization: 0,
+      achievement: null,
+      target_value: null,
+    }
+    current.work_order += Number(row.work_order ?? 0)
+    current.realization += Number(row.realization ?? 0)
+    aggregates.set(key, current)
+  }
+  return [...aggregates.values()]
+}
+
 export async function fetchIndicators({ contractId, up3Id, versionId }) {
   if (versionId) {
     const { data, error } = await supabase.from('sla_indicators').select('id,point_code,legacy_key,criteria,measurement_unit,variable_cost_profile,input_mode,sla_version_id').eq('sla_version_id', versionId)
