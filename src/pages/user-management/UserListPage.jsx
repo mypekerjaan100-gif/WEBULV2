@@ -280,10 +280,46 @@ function ContractAccessForm({ user, onSuccess }) {
 function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
   const [showAccessForm, setShowAccessForm] = useState(false)
   const [accessFormType, setAccessFormType] = useState('contract')
+  const [actionBusy, setActionBusy] = useState('')
+  const [actionError, setActionError] = useState('')
   if (!user) return null
   const hasOrg = user.organizationMemberships.length > 0
   const hasContract = user.contractMemberships.length > 0
   const hasRole = user.isSuperAdmin || user.roles.length > 0
+  const totalActive = (user.isSuperAdmin ? 1 : 0) + user.organizationMemberships.length + user.contractMemberships.length
+  const isDuplicate = totalActive > 1
+  const currentAccess = user.isSuperAdmin
+    ? { role: 'SUPER_ADMIN', scope: 'System' }
+    : hasContract
+      ? { role: user.contractMemberships[0].role, scope: user.contractMemberships[0].role === 'ADMIN_UP3' ? user.contractMemberships[0].up3Name : user.contractMemberships[0].ulpName }
+      : hasOrg
+        ? { role: user.organizationMemberships[0].role, scope: user.organizationMemberships[0].unitName }
+        : null
+
+  const handleRevoke = async () => {
+    if (!window.confirm('Cabut akses aktif pengguna ini?')) return
+    setActionBusy('revoke'); setActionError('')
+    const { error } = await callUserManagement('revoke_access', { targetUserId: user.id })
+    setActionBusy('')
+    if (error) { setActionError(error); return }
+    await onRefresh(); onClose()
+  }
+  const handleDeactivate = async () => {
+    if (!window.confirm('Nonaktifkan akun pengguna ini? Akun tidak dapat login operasional.')) return
+    setActionBusy('deactivate'); setActionError('')
+    const { error } = await callUserManagement('deactivate_account', { targetUserId: user.id })
+    setActionBusy('')
+    if (error) { setActionError(error); return }
+    await onRefresh(); onClose()
+  }
+  const handleKeep = async (keepId) => {
+    setActionBusy('resolve'); setActionError('')
+    const { error } = await callUserManagement('resolve_duplicate', { targetUserId: user.id, payload: { keepMembershipId: keepId } })
+    setActionBusy('')
+    if (error) { setActionError(error); return }
+    await onRefresh(); onClose()
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -312,6 +348,37 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
                 </>
               )}
             </dl>
+          </section>
+          <section className="detail-section">
+            <h4>AKSES SAAT INI</h4>
+            {isDuplicate ? (
+              <div className="detail-hint" style={{ color: '#b45309' }}>Pengguna memiliki lebih dari satu akses aktif. Pilih akses yang dipertahankan.</div>
+            ) : currentAccess ? (
+              <dl className="detail-grid">
+                <dt>Role</dt><dd>{currentAccess.role}</dd>
+                <dt>Scope</dt><dd>{currentAccess.scope}</dd>
+              </dl>
+            ) : (
+              <span className="text-muted">Belum memiliki akses aktif.</span>
+            )}
+            {isDuplicate && (
+              <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                {user.contractMemberships.map((cm) => (
+                  <button key={cm.contractName + cm.role} type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={() => handleKeep(cm.membershipId ?? cm.id)}>Pertahankan {cm.role} — {cm.role === 'ADMIN_UP3' ? cm.up3Name : cm.ulpName}</button>
+                ))}
+                {user.organizationMemberships.map((om) => (
+                  <button key={om.unitName + om.role} type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={() => handleKeep(om.membershipId ?? om.id)}>Pertahankan {om.role} — {om.unitName}</button>
+                ))}
+              </div>
+            )}
+            {isSuperAdmin && !isDuplicate && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAccessForm((v) => !v)}>{showAccessForm ? 'Tutup' : 'Ubah Akses'}</button>
+                {currentAccess && <button type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={handleRevoke}>{actionBusy === 'revoke' ? 'Memproses...' : 'Cabut Akses'}</button>}
+                <button type="button" className="btn btn-sm" style={{ background: '#dc2626', color: '#fff' }} disabled={!!actionBusy} onClick={handleDeactivate}>{actionBusy === 'deactivate' ? 'Memproses...' : 'Nonaktifkan Akun'}</button>
+              </div>
+            )}
+            {actionError && <p style={{ color: '#dc2626', fontSize: 13 }}>{actionError}</p>}
           </section>
           <section className="detail-section">
             <h4>System Role</h4>
@@ -370,12 +437,12 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
               <span className="text-muted">Belum Ada</span>
             )}
           </section>
-          {!hasRole && !hasOrg && !hasContract && (
+          {!hasRole && !hasOrg && !hasContract && !isDuplicate && (
             <div className="detail-hint">
                Belum ada akses yang ditetapkan.
             </div>
           )}
-          {isSuperAdmin && (
+          {isSuperAdmin && !isDuplicate && (
             <section className="detail-section">
               <div className="detail-section-heading">
                 <h4>Atur Akses</h4>

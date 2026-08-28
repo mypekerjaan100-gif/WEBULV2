@@ -64,58 +64,20 @@ export async function handleAssignContractAccess(
     if (!ulp) return { status: 400, body: { error: "invalid_role_scope" } };
   }
 
-  let existingQuery = adminClient
-    .from("contract_memberships")
-    .select("id, status, effective_to")
-    .eq("user_id", targetUserId)
-    .eq("contract_id", request.contractId)
-    .eq("contract_role", contractRole)
-    .eq("operational_up3_id", request.operationalUp3Id)
-    .is("effective_to", null);
-  existingQuery = request.operationalUnitId == null
-    ? existingQuery.is("operational_unit_id", null)
-    : existingQuery.eq("operational_unit_id", request.operationalUnitId);
-  const { data: existing } = await existingQuery.maybeSingle();
-  if (existing?.status === "ACTIVE") {
-    return { status: 200, body: { membershipId: existing.id, idempotent: true } };
+  // Single-role: use atomic replace function that revokes previous active role
+  const { data: newId, error: replaceError } = await adminClient.rpc("admin_replace_contract_access", {
+    p_target_user_id: targetUserId,
+    p_contract_id: request.contractId,
+    p_contract_role: contractRole,
+    p_up3_id: request.operationalUp3Id,
+    p_unit_id: request.operationalUnitId ?? null,
+    p_actor_id: actorUserId,
+  });
+  if (replaceError) {
+    if (replaceError.message?.includes("single-role violation")) {
+      return { status: 409, body: { error: "single_role_violation", message: "Pengguna sudah memiliki akses aktif lain." } };
+    }
+    return { status: 500, body: { error: "contract_assignment_failed", message: replaceError.message } };
   }
-  if (existing) return { status: 409, body: { error: "existing_inactive_assignment" } };
-
-  const effectiveFrom = new Date().toISOString().slice(0, 10);
-  const assignment = {
-    user_id: targetUserId,
-    contract_id: request.contractId,
-    contract_role: contractRole,
-    operational_up3_id: request.operationalUp3Id,
-    operational_unit_id: request.operationalUnitId ?? null,
-    status: "ACTIVE",
-    effective_from: effectiveFrom,
-    created_by: actorUserId,
-    updated_by: actorUserId,
-  };
-  const { data: membership, error: membershipError } = await adminClient
-    .from("contract_memberships")
-    .insert(assignment)
-    .select("id")
-    .single();
-  if (membershipError || !membership) {
-    return { status: 500, body: { error: "contract_assignment_failed" } };
-  }
-
-  const requestId = crypto.randomUUID();
-  const safeScope = {
-    contract_id: request.contractId,
-    contract_role: contractRole,
-    operational_up3_id: request.operationalUp3Id,
-    operational_unit_id: request.operationalUnitId ?? null,
-  };
-  const { error: auditError } = await adminClient.from("authorization_audit_events").insert([
-    { event_type: "ROLE_ASSIGNED", actor_user_id: actorUserId, target_user_id: targetUserId, target_role_id: role.id, request_id: requestId, after_state: safeScope, metadata: { assignment: safeScope } },
-    { event_type: "MEMBERSHIP_ADDED", actor_user_id: actorUserId, target_user_id: targetUserId, request_id: requestId, after_state: safeScope, metadata: { assignment: safeScope, membership_id: membership.id } },
-  ]);
-  if (auditError) {
-    console.error("Contract assignment audit failed", auditError.message);
-    return { status: 500, body: { error: "contract_assignment_audit_failed" } };
-  }
-  return { status: 200, body: { membershipId: membership.id, idempotent: false } };
+  return { status: 200, body: { membershipId: newId, idempotent: false } };
 }

@@ -13,15 +13,15 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
   const [notificationOpen, setNotificationOpen] = useState(false)
   const notificationRef = useRef(null)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
-  const activeAccess = authority?.actor?.active_access ?? authority?.actor?.contract_access?.[0] ?? null
+  const contractAccess = authority?.actor?.contract_access?.[0] ?? null
+  const orgAccess = authority?.actor?.organization_access?.[0] ?? null
+  const activeAccess = contractAccess ?? orgAccess
   const loginRole = isSuperAdmin
     ? 'SUPER_ADMIN'
-    : activeAccess?.role ?? 'Akses terverifikasi'
-  const scopeLabel = activeAccess?.role === 'ADMIN_UP3'
-    ? activeAccess.operational_up3_name
-    : activeAccess?.role === 'ADMIN_ULP'
-      ? activeAccess.operational_unit_name
-      : null
+    : activeAccess?.role ?? activeAccess?.organization_role ?? 'Akses terverifikasi'
+  const scopeLabel = activeAccess?.role === 'ADMIN_ULP'
+    ? activeAccess.operational_unit_name
+    : activeAccess?.operational_up3_name ?? activeAccess?.operational_unit_name ?? activeAccess?.internal_org_unit_name ?? null
   const activeContract = contracts.find(
     (contract) => contract.id === activeContractId,
   )

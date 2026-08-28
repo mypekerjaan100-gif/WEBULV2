@@ -12,6 +12,7 @@ interface UserSummary {
   employeeCount: number;
   contracts: string[];
   organizationMemberships: {
+    membershipId: string;
     unitId: string;
     unitName: string;
     role: string;
@@ -19,6 +20,7 @@ interface UserSummary {
     assignedAt: string;
   }[];
   contractMemberships: {
+    membershipId: string;
     contractId: string;
     contractName: string;
     role: string;
@@ -80,11 +82,11 @@ export async function handleListUsers(): Promise<{
     adminClient.from("employees").select("user_id, contract_id, id").in("user_id", userIds),
     adminClient
       .from("organization_memberships")
-      .select("user_id, internal_org_unit_id, organization_role, status, effective_from")
+      .select("user_id, id, internal_org_unit_id, organization_role, status, effective_from")
       .in("user_id", userIds),
     adminClient
       .from("contract_memberships")
-      .select("user_id, contract_id, contract_role, operational_up3_id, operational_unit_id, status")
+      .select("user_id, id, contract_id, contract_role, operational_up3_id, operational_unit_id, status")
       .in("user_id", userIds)
       .eq("status", "ACTIVE"),
     adminClient.from("contracts").select("id, title"),
@@ -158,6 +160,7 @@ export async function handleListUsers(): Promise<{
     const uid = om.user_id as string;
     if (!orgMap.has(uid)) orgMap.set(uid, []);
     orgMap.get(uid)!.push({
+      membershipId: om.id as string,
       unitId: om.internal_org_unit_id as string,
       unitName: internalNameMap.get(om.internal_org_unit_id as string) ?? nameMap.get(om.internal_org_unit_id as string) ?? "Unknown",
       role: om.organization_role as string,
@@ -171,6 +174,7 @@ export async function handleListUsers(): Promise<{
     const uid = cm.user_id as string;
     if (!contractMap.has(uid)) contractMap.set(uid, []);
     contractMap.get(uid)!.push({
+      membershipId: cm.id as string,
       contractId: cm.contract_id as string,
       contractName: contractNameMap.get(cm.contract_id as string) ?? "Unknown",
       role: cm.contract_role as string,

@@ -1,12 +1,12 @@
 export const ACTION_TO_OPERATION = {
   list_users: "LIST_USERS",
   invite_user: "INVITE_USER",
-  // Contract access is an assignment of a scoped membership. Reuse the
-  // established operation so the existing SUPER_ADMIN authorization boundary
-  // remains the sole privilege check.
   access_options: "ASSIGN_MEMBERSHIP",
   assign_contract_access: "ASSIGN_MEMBERSHIP",
   assign_organization_access: "ASSIGN_MEMBERSHIP",
+  revoke_access: "ASSIGN_MEMBERSHIP",
+  deactivate_account: "DISABLE_USER",
+  resolve_duplicate: "ASSIGN_MEMBERSHIP",
   assign_membership: "ASSIGN_MEMBERSHIP",
   revoke_membership: "REVOKE_MEMBERSHIP",
   assign_role: "ASSIGN_ROLE",

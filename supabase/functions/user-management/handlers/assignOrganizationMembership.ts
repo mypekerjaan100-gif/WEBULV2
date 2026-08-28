@@ -73,57 +73,14 @@ export async function handleAssignOrganizationMembership(
     return { status: 400, body: { error: "invalid_role_scope" } };
   }
 
-  // Prevent duplicate ACTIVE assignment for same user+role+unit where effective_to is null
-  const { data: existing } = await adminClient
-    .from("organization_memberships")
-    .select("id, status, effective_to")
-    .eq("user_id", targetUserId)
-    .eq("internal_org_unit_id", internalOrgUnitId)
-    .eq("organization_role", organizationRole)
-    .is("effective_to", null)
-    .maybeSingle();
-
-  if (existing?.status === "ACTIVE") {
-    return { status: 200, body: { membershipId: existing.id, idempotent: true } };
+  const { data: newId, error: replaceError } = await adminClient.rpc("admin_replace_organization_access", {
+    p_target_user_id: targetUserId,
+    p_internal_unit_id: internalOrgUnitId,
+    p_org_role: organizationRole,
+    p_actor_id: actorUserId,
+  });
+  if (replaceError) {
+    return { status: 500, body: { error: "organization_assignment_failed", message: replaceError.message } };
   }
-  if (existing) {
-    return { status: 409, body: { error: "existing_inactive_assignment" } };
-  }
-
-  const effectiveFrom = new Date().toISOString().slice(0, 10);
-  const assignment = {
-    user_id: targetUserId,
-    internal_org_unit_id: internalOrgUnitId,
-    organization_role: organizationRole,
-    status: "ACTIVE",
-    effective_from: effectiveFrom,
-    effective_to: null,
-    created_by: actorUserId,
-    updated_by: actorUserId,
-  };
-
-  const { data: membership, error: membershipError } = await adminClient
-    .from("organization_memberships")
-    .insert(assignment)
-    .select("id")
-    .single();
-
-  if (membershipError || !membership) {
-    return { status: 500, body: { error: "organization_assignment_failed", message: membershipError?.message } };
-  }
-
-  const requestId = crypto.randomUUID();
-  const safeScope = {
-    internal_org_unit_id: internalOrgUnitId,
-    organization_role: organizationRole,
-  };
-  const { error: auditError } = await adminClient.from("authorization_audit_events").insert([
-    { event_type: "ROLE_ASSIGNED", actor_user_id: actorUserId, target_user_id: targetUserId, target_role_id: role.id, request_id: requestId, after_state: safeScope, metadata: { assignment: safeScope } },
-    { event_type: "MEMBERSHIP_ADDED", actor_user_id: actorUserId, target_user_id: targetUserId, request_id: requestId, after_state: safeScope, metadata: { assignment: safeScope, membership_id: membership.id } },
-  ]);
-  if (auditError) {
-    console.error("Organization assignment audit failed", auditError.message);
-    return { status: 500, body: { error: "organization_assignment_audit_failed" } };
-  }
-  return { status: 200, body: { membershipId: membership.id, idempotent: false } };
+  return { status: 200, body: { membershipId: newId, idempotent: false } };
 }

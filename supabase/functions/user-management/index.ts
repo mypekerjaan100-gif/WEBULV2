@@ -11,6 +11,9 @@ import { handleSessionContext } from "./handlers/sessionContext.ts";
 import { handleAccessOptions } from "./handlers/accessOptions.ts";
 import { handleAssignContractAccess } from "./handlers/assignContractAccess.ts";
 import { handleAssignOrganizationMembership } from "./handlers/assignOrganizationMembership.ts";
+import { handleRevokeAccess } from "./handlers/revokeAccess.ts";
+import { handleDeactivateAccount } from "./handlers/deactivateAccount.ts";
+import { handleResolveDuplicate } from "./handlers/resolveDuplicate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,6 +119,21 @@ Deno.serve(async (request: Request) => {
         body.payload,
         user.id,
       );
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (body.action === "revoke_access") {
+      const result = await handleRevokeAccess(body.targetUserId, user.id);
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (body.action === "deactivate_account") {
+      const result = await handleDeactivateAccount(body.targetUserId, user.id);
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (body.action === "resolve_duplicate") {
+      const result = await handleResolveDuplicate(body.targetUserId, body.payload, user.id);
       return jsonResponse(result.status, result.body);
     }
 
