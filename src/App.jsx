@@ -12,6 +12,7 @@ import {
 import { contracts } from './data/contracts.js'
 import { getOrgUnits } from './data/orgIdMap.js'
 import { useAuth } from './lib/AppAuth.jsx'
+import { supabase } from './lib/supabaseClient.js'
 import { listAdminUp3ApprovalNotifications } from './data/approvalNotificationRepository.js'
 
 const EMPTY_APPROVAL_NOTIFICATIONS = { scopeKey: null, count: 0, groups: [] }
@@ -57,14 +58,35 @@ export default function App() {
   const organizationAccess = authority?.actor?.organization_access ?? []
   const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
   const isManagementUserRaw = !isSuperAdmin && organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
+  const isTeamLeader = !isSuperAdmin && organizationAccess.some((a) => a.organization_role === 'TEAM_LEADER')
+  const teamLeaderUnitId = isTeamLeader ? organizationAccess.find((a) => a.organization_role === 'TEAM_LEADER')?.internal_org_unit_id : null
   const adminUp3Access = !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
     ? contractAccess[0]
     : null
+  const teamLeaderAccess = isTeamLeader ? { isTeamLeader: true, unitId: teamLeaderUnitId } : null
   const adminUp3ScopeKey = adminUp3Access ? `${adminUp3Access.contract_id}:${adminUp3Access.operational_up3_id}` : null
+  const teamLeaderScopeKey = teamLeaderUnitId ? `team-leader:${teamLeaderUnitId}` : null
+  const effectiveApprovalAccess = adminUp3Access || teamLeaderAccess
+  const effectiveApprovalScopeKey = adminUp3ScopeKey || teamLeaderScopeKey
 
   const refreshApprovalNotifications = useCallback(async () => {
     const requestId = ++approvalRequestId.current
-    if (!adminUp3Access?.contract_id || !adminUp3Access.operational_up3_id) {
+    let contractId = adminUp3Access?.contract_id
+    let up3Id = adminUp3Access?.operational_up3_id
+    let scopeKey = adminUp3ScopeKey
+    if (!contractId || !up3Id) {
+      if (isTeamLeader && teamLeaderUnitId) {
+        try {
+          const { data: mapping } = await supabase.from('organization_contract_access').select('contract_id, operational_up3_id').eq('internal_org_unit_id', teamLeaderUnitId).eq('status','ACTIVE').maybeSingle()
+          if (mapping?.contract_id && mapping?.operational_up3_id) {
+            contractId = mapping.contract_id
+            up3Id = mapping.operational_up3_id
+            scopeKey = teamLeaderScopeKey
+          }
+        } catch {}
+      }
+    }
+    if (!contractId || !up3Id) {
       setApprovalNotifications(EMPTY_APPROVAL_NOTIFICATIONS)
       setApprovalNotificationError('')
       return
@@ -72,13 +94,13 @@ export default function App() {
     try {
       const orgUnits = await getOrgUnits()
       const result = await listAdminUp3ApprovalNotifications({
-        contractId: adminUp3Access.contract_id,
-        up3Id: adminUp3Access.operational_up3_id,
+        contractId,
+        up3Id,
         units: orgUnits,
       })
       if (requestId !== approvalRequestId.current) return
-      const scopedResult = { ...result, scopeKey: adminUp3ScopeKey }
-      setApprovalNotifications((current) => current.scopeKey === adminUp3ScopeKey
+      const scopedResult = { ...result, scopeKey }
+      setApprovalNotifications((current) => current.scopeKey === scopeKey
         ? mergeApprovalNotifications(current, scopedResult)
         : scopedResult)
       setApprovalNotificationError('')
@@ -86,7 +108,7 @@ export default function App() {
       if (requestId !== approvalRequestId.current) return
       setApprovalNotificationError(error.message || 'Notifikasi persetujuan gagal dimuat.')
     }
-  }, [adminUp3Access?.contract_id, adminUp3Access?.operational_up3_id, adminUp3ScopeKey])
+  }, [adminUp3Access?.contract_id, adminUp3Access?.operational_up3_id, adminUp3ScopeKey, isTeamLeader, teamLeaderUnitId, teamLeaderScopeKey])
 
   useEffect(() => {
     refreshApprovalNotifications()
@@ -94,11 +116,11 @@ export default function App() {
   }, [refreshApprovalNotifications])
 
   useEffect(() => {
-    if (!adminUp3Access) return undefined
+    if (!effectiveApprovalAccess) return undefined
     const refreshOnFocus = () => refreshApprovalNotifications()
     window.addEventListener('focus', refreshOnFocus)
     return () => window.removeEventListener('focus', refreshOnFocus)
-  }, [adminUp3Access, refreshApprovalNotifications])
+  }, [effectiveApprovalAccess, refreshApprovalNotifications])
 
   useEffect(() => {
     let cancelled = false
@@ -167,9 +189,10 @@ export default function App() {
   }
 
   const openApprovalNotification = (item) => {
-    if (!adminUp3Access?.contract_code) return
+    if (!effectiveApprovalAccess) return
+    const contractCode = adminUp3Access?.contract_code ?? 'pelayanan-teknik'
     setApprovalTarget({ ...item, token: `${item.source}:${item.id}:${Date.now()}` })
-    setActiveContractId(adminUp3Access.contract_code)
+    setActiveContractId(contractCode)
     setCurrentPage(null)
   }
 
@@ -206,7 +229,7 @@ export default function App() {
   const activeContract = contracts.find((contract) =>
     contract.id === activeContractId && (isSuperAdmin || authorizedContractIds.includes(contract.id)),
   )
-  const visibleApprovalNotifications = adminUp3Access && isRealScopedUser && approvalNotifications.scopeKey === adminUp3ScopeKey
+  const visibleApprovalNotifications = (adminUp3Access && isRealScopedUser && approvalNotifications.scopeKey === adminUp3ScopeKey) || (isTeamLeader && approvalNotifications.scopeKey === teamLeaderScopeKey)
     ? approvalNotifications
     : null
 
