@@ -141,6 +141,9 @@ export default function SLAPelayananTeknikPage({
   const isUpManagement = managementAccess.some((a) => ['MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN'].includes(a.organization_role))
   // For management, Lembur is monitoring read-only but financial detail is allowed
   const isLemburManagementRead = isManagement
+  const managementScopeLabel = isManagement && orgMap?.units
+    ? `${managementAccess[0]?.internal_org_unit_name ?? 'Unit Layanan'} · ${orgMap.units.filter((u) => u.type === 'ULP').length} ULP · Monitoring read-only`
+    : null
   const canViewAdminUp3Modules = isSuperAdmin || isAdminUp3
   const canViewReadOnlyMasterLocations = isAdminUlp
   const canMutateMasterLocations = isSuperAdmin
@@ -403,7 +406,7 @@ export default function SLAPelayananTeknikPage({
     return () => { cancelled = true }
   }, [moduleId, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid, isUp3View, period, selectedVersion?.id, effectiveUnitId]) // eslint-disable-line react-hooks/exhaustive-deps
   const authorizedModules = isLemburManagementRead && !canViewAdminUp3Modules && !canViewReadOnlyMasterLocations
-    ? pelayananTeknikModules.filter((module) => module.id === 'lembur')
+    ? pelayananTeknikModules.filter((module) => ['sla','variable-cost','lembur'].includes(module.id))
     : pelayananTeknikModules.filter(
         (module) =>
           !module.adminOnly ||
@@ -565,7 +568,7 @@ export default function SLAPelayananTeknikPage({
   }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations])
 
   useEffect(() => {
-    if (isLemburManagementRead && moduleId !== 'lembur') {
+    if (isLemburManagementRead && !['sla','variable-cost','lembur'].includes(moduleId)) {
       setModuleId('lembur')
     }
   }, [isLemburManagementRead, moduleId])
@@ -773,6 +776,9 @@ export default function SLAPelayananTeknikPage({
           </button>
         ))}
       </nav>
+      {isManagement && managementScopeLabel && (
+        <div className="sla-role-banner sla-role-banner-mgmt" style={{ marginTop: 8 }}>{managementScopeLabel}</div>
+      )}
 
       {moduleId === 'pengaturan-sla' ? (
         <SLAPengaturanSLA
@@ -970,8 +976,9 @@ export default function SLAPelayananTeknikPage({
                 targets={selectedVersion.targets}
                 onTargetsChange={updateActiveTargets}
                 variableTargets={Object.fromEntries(Object.entries(variableSlaTargets).filter(([point]) => variableCostPoints.has(point)))}
+                readOnly={isManagement}
               />
-              {isAdminUp3 && !isUp3View && (
+              {isAdminUp3 && !isUp3View && !isManagement && (
                 <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button type="button" className="sla-btn sla-btn-primary" disabled={slaManualSaving} onClick={handleSaveManualSlaTargets}>{slaManualSaving ? 'Menyimpan...' : 'Simpan Target'}</button>
                   {slaManualSaveMessage && <span style={{ color: '#065f46', fontSize: 13 }}>{slaManualSaveMessage}</span>}
@@ -1026,6 +1033,7 @@ export default function SLAPelayananTeknikPage({
             approvalTarget={isAdminUp3 ? approvalTarget : null}
             onApprovalTargetHandled={onApprovalTargetHandled}
             onApprovalChange={onApprovalChange}
+            isManagementReadOnly={isManagement}
           />
         )
       ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (

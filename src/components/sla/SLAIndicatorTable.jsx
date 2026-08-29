@@ -40,6 +40,7 @@ export default function SLAIndicatorTable({
   targets,
   onTargetsChange,
   variableTargets = {},
+  readOnly = false,
 }) {
   const isUp3Role = role === 'up3'
   const isUp3View = unitId === up3Id
@@ -63,6 +64,7 @@ export default function SLAIndicatorTable({
   }
 
   const fieldMode = (isVc, field) => {
+    if (readOnly) return 'view'
     if (!isUp3Role) {
       if (field === 'target-up3' || field === 'target-ulp') return 'view'
       if (field === 'realisasi' || field === 'pencapaian') {

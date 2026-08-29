@@ -32,7 +32,7 @@ function formatApprovalStatus(status) {
   return status === 'SUBMITTED' ? 'Menunggu Persetujuan' : status === 'APPROVED' ? 'Disetujui' : status === 'REJECTED' ? 'Ditolak' : status ?? '—'
 }
 
-export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange }) {
+export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange, isManagementReadOnly = false }) {
   const isUp3Role = role === 'up3'
   const contractId = orgMap?.contractUuid
   const up3Uuid = orgMap?.up3Uuid
@@ -494,9 +494,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         <span className="sla-export-scope">VARIABLE COST — {variableCostIndicators.length} indikator · Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
-          {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan{(approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</button>}
-          {isUp3Role && <button type="button" className={`sla-btn ${activeTab === 'target' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target')}>Target</button>}
-          <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang{isUp3Role && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}</button>
+          {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan{(approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</button>}
+          {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'target' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target')}>Target</button>}
+          <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang{isUp3Role && !isManagementReadOnly && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}</button>
         </div>
       </div>
 
@@ -663,7 +663,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <p className="text-muted">Target belum diatur oleh Admin UP3.</p>
           )}
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {!isConsolidated && !isUp3Role && (
+            {!isConsolidated && !isUp3Role && !isManagementReadOnly && (
               <button type="button" className="sla-btn sla-btn-primary" onClick={openInputPicker}>+ Input Kegiatan</button>
             )}
             {isUp3Role && !isConsolidated && (
@@ -1005,6 +1005,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <button type="button" className="sla-btn" onClick={loadFeeders}>Muat Ulang</button>
           </div>
 
+          {!isManagementReadOnly && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {!isAdminUlpView && (
               <>
@@ -1019,6 +1020,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
               {proposeBusy ? 'Menyimpan…' : isAdminUlpView ? '+ Usulkan Penyulang' : '+ Tambah Penyulang'}
             </button>
           </div>
+          )}
 
           {feederError && <p className="sla-blocked-note">{feederError}</p>}
 
@@ -1035,19 +1037,19 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <td>{formatFeederStatus(f.status)}{f.status === 'REJECTED' && f.rejection_reason ? ` — ${f.rejection_reason}` : ''}</td>
                       <td>{f.proposed_at ? new Date(f.proposed_at).toLocaleDateString('id-ID') : '—'}</td>
                       <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {f.status === 'PENDING' && !isAdminUlpView && (
+                        {f.status === 'PENDING' && !isAdminUlpView && !isManagementReadOnly && (
                           <>
                             <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApprove(f.id)}>Approve</button>
                             <button type="button" className="sla-btn" onClick={() => handleReject(f.id)}>Reject</button>
                           </>
                         )}
-                        {f.status === 'ACTIVE' && !isAdminUlpView && (
+                        {f.status === 'ACTIVE' && !isAdminUlpView && !isManagementReadOnly && (
                           <button type="button" className="sla-btn" onClick={() => handleToggleActive(f)}>Nonaktifkan</button>
                         )}
-                        {f.status === 'INACTIVE' && !isAdminUlpView && (
+                        {f.status === 'INACTIVE' && !isAdminUlpView && !isManagementReadOnly && (
                           <button type="button" className="sla-btn" onClick={() => handleToggleActive(f)}>Aktifkan</button>
                         )}
-                        {!isAdminUlpView && (
+                        {!isAdminUlpView && !isManagementReadOnly && (
                           <button type="button" className="sla-btn" onClick={() => handleDelete(f)}>Hapus</button>
                         )}
                         {f.status === 'REJECTED' && isAdminUlpView && f.rejection_reason && (
