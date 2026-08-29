@@ -72,6 +72,14 @@ const ROLE_NOTES = {
   ulp: 'Admin ULP \u2014 Target read-only. Indikator Manual: Satuan, WO, Realisasi, dan Pencapaian dapat diedit. 8 indikator Variable Cost: Realisasi dan Pencapaian read-only (otomatis).',
 }
 
+const MANAGEMENT_ROLE_LABELS = {
+  TEAM_LEADER: 'Team Leader',
+  MANAGER_UNIT: 'Manager Unit',
+  MANAGER_UP: 'Manager Unit Pelaksana',
+  ASMAN_OPERASI: 'Asman Operasi',
+  ASMAN_KEUANGAN: 'Asman Keuangan',
+}
+
 function periodLabelFromMonth(periodMonth) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(periodMonth ?? '')) return null
   const [year, month] = periodMonth.split('-')
@@ -92,6 +100,9 @@ export default function SLAPelayananTeknikPage({
   isRealScopedUser = false,
   isManagementUser = false,
   organizationAccess = [],
+  managementScopes = [],
+  selectedManagementScopeKey = '',
+  onManagementScopeChange,
   approvalNotifications = { count: 0, groups: [] },
   approvalTarget = null,
   onApprovalTargetHandled,
@@ -137,23 +148,22 @@ export default function SLAPelayananTeknikPage({
   const managementRoles = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
   const isManagement = isManagementUser || (actor?.organization_access ?? []).some((a) => managementRoles.includes(a.organization_role))
   const managementAccess = (actor?.organization_access ?? organizationAccess ?? []).filter((a) => managementRoles.includes(a.organization_role))
-  const isUlManagement = managementAccess.some((a) => ['TEAM_LEADER','MANAGER_UNIT'].includes(a.organization_role))
   const isUpManagement = managementAccess.some((a) => ['MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN'].includes(a.organization_role))
-  const isTeamLeader = managementAccess.some((a) => a.organization_role === 'TEAM_LEADER')
-  // For management, Lembur is monitoring read-only but financial detail is allowed
-  const isLemburManagementRead = isManagement && !isTeamLeader
-  const canManageUp3Operations = isSuperAdmin || isAdminUp3 || isTeamLeader
-  const managementScopeLabel = isManagement && orgMap?.units
-    ? `${managementAccess[0]?.internal_org_unit_name ?? 'Unit Layanan'} · ${orgMap.units.filter((u) => u.type === 'ULP').length} ULP · Monitoring read-only`
-    : null
-  const teamLeaderScopeLabel = isTeamLeader && orgMap?.units
-    ? `Team Leader · ${managementAccess.find(a=>a.organization_role==='TEAM_LEADER')?.internal_org_unit_name ?? 'Unit Layanan Singkawang'} · ${orgMap.units.find(u=>u.type==='UP3')?.displayName ?? 'UP3 Singkawang'} · ${orgMap.units.filter(u=>u.type==='ULP').length} ULP`
+  const managementRole = managementAccess[0]?.organization_role ?? null
+  const selectedManagementScope = managementScopes.find((scope) => scope.key === selectedManagementScopeKey)
+    ?? managementScopes[0]
+    ?? null
+  const canManageUp3Operations = isSuperAdmin || isAdminUp3 || isManagement
+  const managementScopeLabel = isManagement && selectedManagementScope
+    ? isUpManagement
+      ? `${MANAGEMENT_ROLE_LABELS[managementRole]} · ${selectedManagementScope.internalUpName} · ${managementScopes.length} Unit Layanan terpetakan`
+      : `${MANAGEMENT_ROLE_LABELS[managementRole]} · ${selectedManagementScope.internalUlName} · ${selectedManagementScope.up3Name} · ${selectedManagementScope.childUlpCount} ULP`
     : null
   const canViewAdminUp3Modules = canManageUp3Operations
   const canViewReadOnlyMasterLocations = isAdminUlp
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
-  const canReadEmployeeFinancials = isSuperAdmin || canManageUp3Operations || isLemburManagementRead
+  const canReadEmployeeFinancials = isSuperAdmin || canManageUp3Operations
   const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
 
   useEffect(() => {
@@ -410,9 +420,7 @@ export default function SLAPelayananTeknikPage({
       .catch(() => {})
     return () => { cancelled = true }
   }, [moduleId, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid, isUp3View, period, selectedVersion?.id, effectiveUnitId]) // eslint-disable-line react-hooks/exhaustive-deps
-  const authorizedModules = isLemburManagementRead && !canViewAdminUp3Modules && !canViewReadOnlyMasterLocations
-    ? pelayananTeknikModules.filter((module) => ['sla','variable-cost','lembur'].includes(module.id))
-    : pelayananTeknikModules.filter(
+  const authorizedModules = pelayananTeknikModules.filter(
         (module) =>
           !module.adminOnly ||
           canViewAdminUp3Modules ||
@@ -571,12 +579,6 @@ export default function SLAPelayananTeknikPage({
       setModuleId('sla')
     }
   }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations])
-
-  useEffect(() => {
-    if (isLemburManagementRead && !['sla','variable-cost','lembur'].includes(moduleId)) {
-      setModuleId('lembur')
-    }
-  }, [isLemburManagementRead, moduleId])
 
   const updateActiveTargets = (nextTargets) => {
     const selected = selectedVersion
@@ -781,8 +783,22 @@ export default function SLAPelayananTeknikPage({
           </button>
         ))}
       </nav>
-      {isManagement && !isTeamLeader && managementScopeLabel && (
+      {isManagement && managementScopeLabel && (
         <div className="sla-role-banner sla-role-banner-mgmt" style={{ marginTop: 8 }}>{managementScopeLabel}</div>
+      )}
+      {isUpManagement && managementScopes.length > 1 && (
+        <label className="sla-context-field" style={{ marginTop: 8, maxWidth: 360 }}>
+          <span className="sla-context-label">Scope Unit Layanan</span>
+          <select
+            className="sla-context-select"
+            value={selectedManagementScope?.key ?? ''}
+            onChange={(event) => onManagementScopeChange?.(event.target.value)}
+          >
+            {managementScopes.map((scope) => (
+              <option key={scope.key} value={scope.key}>{scope.internalUlName}</option>
+            ))}
+          </select>
+        </label>
       )}
 
       {moduleId === 'pengaturan-sla' ? (
@@ -955,7 +971,7 @@ export default function SLAPelayananTeknikPage({
             onUnitChange={onUnitChange}
           />
           <div className={`sla-role-banner sla-role-banner-${role}`}>
-            {isTeamLeader ? teamLeaderScopeLabel : ROLE_NOTES[role]}
+            {isManagement ? managementScopeLabel : ROLE_NOTES[role]}
           </div>
           <div className="sla-export-bar">
             <span className="sla-export-scope">
@@ -981,7 +997,7 @@ export default function SLAPelayananTeknikPage({
                 targets={selectedVersion.targets}
                 onTargetsChange={updateActiveTargets}
                 variableTargets={Object.fromEntries(Object.entries(variableSlaTargets).filter(([point]) => variableCostPoints.has(point)))}
-                readOnly={isManagement && !isTeamLeader}
+                readOnly={isManagement && !canManageUp3Operations}
               />
               {canManageUp3Operations && !isUp3View && (
                 <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1038,7 +1054,7 @@ export default function SLAPelayananTeknikPage({
             approvalTarget={canManageUp3Operations ? approvalTarget : null}
             onApprovalTargetHandled={onApprovalTargetHandled}
             onApprovalChange={onApprovalChange}
-            isManagementReadOnly={isManagement && !isTeamLeader}
+            isManagementReadOnly={isManagement && !canManageUp3Operations}
           />
         )
       ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (
@@ -1062,7 +1078,7 @@ export default function SLAPelayananTeknikPage({
           </section>
         ) : (
           <SLALembur
-            key={`${orgMap?.contractUuid}-${orgMap?.up3Uuid}-${lemburUnitUuid ?? 'up3'}-${lemburPeriodMonth}-${isLemburManagementRead ? 'mgmt' : ''}`}
+            key={`${orgMap?.contractUuid}-${orgMap?.up3Uuid}-${lemburUnitUuid ?? 'up3'}-${lemburPeriodMonth}-${isManagement ? 'mgmt' : ''}`}
             contractScope={{ ...slaContractScope, contractId: orgMap.contractUuid }}
             up3Id={orgMap.up3Uuid}
             unitId={lemburUnitUuid}
@@ -1071,9 +1087,9 @@ export default function SLAPelayananTeknikPage({
             canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp')}
             isAdminUp3={canManageUp3Operations}
             isSuperAdmin={isSuperAdmin}
-            isManagement={isLemburManagementRead}
-            isUlManagement={isUlManagement}
-            isUpManagement={isUpManagement}
+            isManagement={false}
+            isUlManagement={false}
+            isUpManagement={false}
             loading={lemburLoadStatus === 'loading' || !employeesLoaded}
             loadError={lemburLoadError || employeeLoadError}
             orgUnits={orgMap.units}

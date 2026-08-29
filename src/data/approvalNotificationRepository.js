@@ -95,3 +95,30 @@ export async function listAdminUp3ApprovalNotifications({ contractId, up3Id, uni
   }))
   return { count: groups.reduce((total, group) => total + group.count, 0), groups }
 }
+
+export async function listManagementApprovalNotifications({ scopes, units = [] }) {
+  const results = await Promise.all(scopes.map(async (scope) => ({
+    scope,
+    result: await listAdminUp3ApprovalNotifications({
+      contractId: scope.contractId,
+      up3Id: scope.up3Uuid,
+      units,
+    }),
+  })))
+  const groups = APPROVAL_SOURCES.map((source) => {
+    const items = new Map()
+    let error = ''
+    for (const { scope, result } of results) {
+      const group = result.groups.find((entry) => entry.id === source.id)
+      if (group?.error && !error) error = group.error
+      for (const item of group?.items ?? []) {
+        items.set(item.id, { ...item, managementScopeKey: scope.key })
+      }
+    }
+    const sortedItems = [...items.values()].sort((left, right) =>
+      String(right.sortAt ?? '').localeCompare(String(left.sortAt ?? '')),
+    )
+    return { id: source.id, label: source.label, count: sortedItems.length, items: sortedItems, error }
+  })
+  return { count: groups.reduce((total, group) => total + group.count, 0), groups }
+}
