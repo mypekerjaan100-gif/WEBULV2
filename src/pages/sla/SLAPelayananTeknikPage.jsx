@@ -1056,6 +1056,7 @@ export default function SLAPelayananTeknikPage({
             onApprovalChange={onApprovalChange}
             isManagementReadOnly={isManagement && !canManageUp3Operations}
             canManageKonstruksiMonthly={canManageUp3Operations}
+            canViewVariableFinancial={canManageUp3Operations}
           />
         )
       ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry, listVariableActualRevenue } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 
@@ -33,7 +33,7 @@ function formatApprovalStatus(status) {
   return status === 'SUBMITTED' ? 'Menunggu Persetujuan' : status === 'APPROVED' ? 'Disetujui' : status === 'REJECTED' ? 'Ditolak' : status ?? '—'
 }
 
-export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange, isManagementReadOnly = false, canManageKonstruksiMonthly = false }) {
+export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange, isManagementReadOnly = false, canManageKonstruksiMonthly = false, canViewVariableFinancial = false }) {
   const isUp3Role = role === 'up3'
   const contractId = orgMap?.contractUuid
   const up3Uuid = orgMap?.up3Uuid
@@ -57,6 +57,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [up3Targets, setUp3Targets] = useState([])
   const [entries, setEntries] = useState([])
   const [konstruksiAmounts, setKonstruksiAmounts] = useState([])
+  const [financialRows, setFinancialRows] = useState([])
+  const [financialError, setFinancialError] = useState('')
   const [indicators, setIndicators] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -85,39 +87,43 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const loadMonthly = useCallback(async () => {
     const requestId = ++monthlyRequestId.current
     if (!contractId || !up3Uuid || !periodMonth) { setLoading(false); return }
-    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
+    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
     setLoading(true); setError('')
     try {
       const versionId = await fetchActiveVersion({ contractId, up3Id: up3Uuid, periodMonth })
       if (requestId !== monthlyRequestId.current) return
       setActiveVersionId(versionId)
       if (!versionId) {
-        setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
+        setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
         return
       }
       const unitUuids = activeTab === 'target' && targetUnitId
         ? [targetUnitId]
         : isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
-      const [t, e, tebang, ind, up3t, konstruksi, konstruksiTarget] = await Promise.all([
+      const [t, e, tebang, ind, up3t, konstruksi, konstruksiTarget, financial] = await Promise.all([
         unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchApprovedVariableMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, indicatorIds: TEBANG_INDICATOR_IDS, periodMonth, versionId }) : Promise.resolve([]),
         fetchIndicators({ contractId, up3Id: up3Uuid, versionId }).catch(() => []),
         isConsolidated ? fetchUp3Targets({ contractId, up3Id: up3Uuid, periodMonth, versionId }).catch(() => []) : Promise.resolve([]),
-        unitUuids.length ? fetchKonstruksiMonthlyAmounts({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
-        unitUuids.length ? fetchKonstruksiMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
+        canViewVariableFinancial && unitUuids.length ? fetchKonstruksiMonthlyAmounts({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
+        canViewVariableFinancial && unitUuids.length ? fetchKonstruksiMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
+        canViewVariableFinancial && activeTab === 'rekap'
+          ? listVariableActualRevenue({ contractId, up3Id: up3Uuid, periodMonth, unitId: isConsolidated ? null : effectiveUnitUuid }).then((rows) => ({ rows, error: '' })).catch((err) => ({ rows: [], error: err.message || 'Gagal memuat pendapatan' }))
+          : Promise.resolve({ rows: [], error: '' }),
       ])
       if (requestId !== monthlyRequestId.current) return
       setTargets(t ?? []); setEntries([...(e ?? []), ...(tebang ?? [])]); setKonstruksiAmounts(konstruksi ?? []); setKonstruksiTargets(konstruksiTarget ?? []); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
+      setFinancialRows(financial.rows ?? []); setFinancialError(financial.error ?? '')
       if (effectiveUnitUuid && !isConsolidated) {
         const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid }).catch(() => [])
         setActiveFeeders(af ?? [])
       } else if (isConsolidated) {
         setActiveFeeders([])
       } else setActiveFeeders([])
-    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setUp3Targets([]) } }
+    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUp3Targets([]) } }
     finally { if (requestId === monthlyRequestId.current) setLoading(false) }
-  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, activeTab, targetUnitId, childUlps.map((u) => u.uuid).join(',')])
+  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, activeTab, targetUnitId, canViewVariableFinancial, childUlps.map((u) => u.uuid).join(',')])
 
   useEffect(() => { loadMonthly() }, [loadMonthly])
 
@@ -566,6 +572,49 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     if (konstruksi) entryByPoint.set('3.1c', { realization: konstruksi.amount_rp })
   }
 
+  function getFinancialValues(point, scopedUnitId = null) {
+    const sourceType = point === '3.1c' ? 'KONSTRUKSI' : 'UNIT_RATE'
+    const indicatorId = pointToUuids.get(point)
+    const rows = financialRows.filter((row) =>
+      row.source_type === sourceType
+      && (!scopedUnitId || row.unit_id === scopedUnitId)
+      && (sourceType === 'KONSTRUKSI' || row.indicator_id === indicatorId),
+    )
+    return {
+      revenue: rows.reduce((sum, row) => sum + Number(row.revenue_amount ?? 0), 0),
+      missing: rows.filter((row) => row.price_missing).length,
+    }
+  }
+
+  function renderFinancialValue(point, scopedUnitId = null) {
+    if (point === '3.1a') return 'Tidak Ditagihkan'
+    if (financialError) return <span className="sla-blocked-note">Tidak tersedia</span>
+    const values = getFinancialValues(point, scopedUnitId)
+    if (values.missing > 0 && values.revenue === 0) return <span className="sla-blocked-note">Harga belum tersedia ({values.missing})</span>
+    return (
+      <div>
+        <div>{formatRp(values.revenue)}</div>
+        {values.missing > 0 && <div className="sla-blocked-note" style={{ fontSize: 11 }}>{values.missing} harga belum tersedia</div>}
+      </div>
+    )
+  }
+
+  function renderTransactionRevenue(entry, indicator = null) {
+    const point = indicator?.point_code ?? indicator?.point ?? dailyIndicator?.point
+    if (point === '3.1a') return 'Tidak Ditagihkan'
+    if (entry.status !== 'APPROVED') return <span className="text-muted">Belum termasuk</span>
+    if (financialError) return <span className="sla-blocked-note">Tidak tersedia</span>
+    const financial = financialRows.find((row) => row.entry_id === entry.id)
+    if (financial?.price_missing) return <span className="sla-blocked-note">Harga belum tersedia</span>
+    return financial?.revenue_amount == null ? EMPTY_VALUE : formatRp(financial.revenue_amount)
+  }
+
+  const pricedRevenue = financialRows.filter((row) => row.source_type === 'UNIT_RATE' && row.revenue_amount != null).reduce((sum, row) => sum + Number(row.revenue_amount), 0)
+  const konstruksiRevenue = financialRows.filter((row) => row.source_type === 'KONSTRUKSI').reduce((sum, row) => sum + Number(row.revenue_amount ?? 0), 0)
+  const missingPriceCount = financialRows.filter((row) => row.source_type === 'UNIT_RATE' && row.price_missing).length
+  const showRekapAction = isConsolidated || !isUp3Role || (canViewVariableFinancial && !isConsolidated)
+  const rekapColumnCount = 6 + (canViewVariableFinancial ? 1 : 0) + (showRekapAction ? 1 : 0)
+
   return (
     <section className="sla-module-panel">
       <div className="sla-export-bar" style={{ justifyContent: 'space-between' }}>
@@ -633,16 +682,16 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <table className="sla-table">
               <thead>
                 <tr>
-                  <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{(isConsolidated || (!isUp3Role && !isConsolidated)) ? <th>Aksi</th> : null}
+                  <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{canViewVariableFinancial && <th>Pendapatan</th>}{showRekapAction && <th>Aksi</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={isConsolidated ? 7 : 6}>Memuat data Variable Cost…</td></tr>
+                  <tr><td colSpan={rekapColumnCount}>Memuat data Variable Cost…</td></tr>
                 ) : error ? (
-                  <tr><td colSpan={isConsolidated ? 7 : 6} className="sla-blocked-note">{error} <button type="button" className="sla-btn" onClick={loadMonthly}>Coba lagi</button></td></tr>
+                  <tr><td colSpan={rekapColumnCount} className="sla-blocked-note">{error} <button type="button" className="sla-btn" onClick={loadMonthly}>Coba lagi</button></td></tr>
                 ) : variableCostIndicators.length === 0 ? (
-                  <tr><td colSpan={isConsolidated ? 7 : 6}>Belum ada data Variable Cost pada periode ini.</td></tr>
+                  <tr><td colSpan={rekapColumnCount}>Belum ada data Variable Cost pada periode ini.</td></tr>
                 ) : variableCostIndicators.map((ind) => {
                   const isKonstruksi = ind.id === 'A-3.1c'
                   if (!ind.workflowEnabled) {
@@ -654,7 +703,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         <td>0</td>
                         <td>0</td>
                         <td>{EMPTY_VALUE}</td>
-                        {(isConsolidated || (!isUp3Role && !isConsolidated)) && <td>{EMPTY_VALUE}</td>}
+                        {canViewVariableFinancial && <td>{ind.point === '3.1a' ? 'Tidak Ditagihkan' : EMPTY_VALUE}</td>}
+                        {showRekapAction && <td>{EMPTY_VALUE}</td>}
                       </tr>
                     )
                   }
@@ -673,6 +723,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                           <td>—</td>
                           <td>{hasActual ? formatRp(totalActual) : EMPTY_VALUE}</td>
                           <td>{pencapaian}</td>
+                          {canViewVariableFinancial && <td>{renderFinancialValue(ind.point)}</td>}
                           <td><button type="button" className="sla-btn" onClick={() => openKonstruksiDetail(ind)}>Detail</button></td>
                         </tr>
                       )
@@ -696,6 +747,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         <td>{formatNumber(cons.wo)}</td>
                         <td>{formatNumber(cons.realisasi)}</td>
                         <td>{ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
+                        {canViewVariableFinancial && <td>{renderFinancialValue(ind.point)}</td>}
                         <td><button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button></td>
                       </tr>
                     )
@@ -714,7 +766,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         <td>—</td>
                         <td>{kActual != null ? formatRp(kActual) : EMPTY_VALUE}</td>
                         <td>{kPencapaian}</td>
-                        <td><button type="button" className="sla-btn" onClick={() => openKonstruksiDetail(ind)}>Detail</button></td>
+                        {canViewVariableFinancial && <td>{renderFinancialValue(ind.point, effectiveUnitUuid)}</td>}
+                        {showRekapAction && <td>{canViewVariableFinancial ? <button type="button" className="sla-btn" onClick={() => openKonstruksiDetail(ind)}>Detail</button> : EMPTY_VALUE}</td>}
                       </tr>
                     )
                   }
@@ -723,7 +776,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                     return uuid ? r.indicator_id === uuid : false
                   }).length : 0
                   return (
-                    <tr key={ind.id} style={!isConsolidated && !isUp3Role ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && !isUp3Role) openDailyList(ind) }}>
+                    <tr key={ind.id} style={!isConsolidated && (!isUp3Role || canViewVariableFinancial) ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && (!isUp3Role || canViewVariableFinancial)) openDailyList(ind) }}>
                       <td>{getShortLabel(ind)}{rejectedCount > 0 && (
                         <button type="button" onClick={(e) => { e.stopPropagation(); const uuid = pointToUuids.get(ind.point); const related = rejectedList.filter((r) => r.indicator_id === uuid); if (related.length === 1) handleRepairRejected(related[0]); else openDailyList(ind, true); }} style={{ marginLeft: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 10, padding: '2px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{rejectedCount} Perlu Perbaikan</button>
                       )}</td>
@@ -732,13 +785,26 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <td>{entry?.work_order == null ? '0' : formatNumber(entry.work_order)}</td>
                       <td>{entry?.realization == null ? '0' : formatNumber(entry.realization)}</td>
                       <td>{ind.slaLinked && entry?.achievement != null ? formatPercent(entry.achievement) : EMPTY_VALUE}</td>
-                      {!isConsolidated && !isUp3Role && <td><button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openDailyList(ind) }}>Lihat Detail</button></td>}
+                      {canViewVariableFinancial && <td>{renderFinancialValue(ind.point, effectiveUnitUuid)}</td>}
+                      {showRekapAction && <td>{!isConsolidated ? <button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openDailyList(ind) }}>Lihat Detail</button> : EMPTY_VALUE}</td>}
                     </tr>
                   )
                 })}
               </tbody>
             </table>
           </div>
+          {canViewVariableFinancial && !loading && !error && (
+            <section style={{ marginTop: 12, border: '1px solid #dbe3ee', borderRadius: 8, padding: 12, maxWidth: 520 }}>
+              <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>PENDAPATAN VARIABLE — {period.toUpperCase()}</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 16px' }}>
+                <span>9 pekerjaan satuan</span><strong>{financialError ? EMPTY_VALUE : formatRp(pricedRevenue)}</strong>
+                <span>Konstruksi</span><strong>{financialError ? EMPTY_VALUE : formatRp(konstruksiRevenue)}</strong>
+                <span style={{ borderTop: '1px solid #dbe3ee', paddingTop: 6 }}>Total Pendapatan</span><strong style={{ borderTop: '1px solid #dbe3ee', paddingTop: 6 }}>{financialError ? EMPTY_VALUE : formatRp(pricedRevenue + konstruksiRevenue)}</strong>
+              </div>
+              {missingPriceCount > 0 && <p className="sla-blocked-note" style={{ margin: '10px 0 0' }}>Harga belum tersedia: {missingPriceCount} transaksi. Transaksi tersebut tidak termasuk total terkonfirmasi.</p>}
+              {financialError && <p className="sla-blocked-note" style={{ margin: '10px 0 0' }}>{financialError}</p>}
+            </section>
+          )}
           {!loading && !error && isConsolidated && entries.length === 0 && konstruksiAmounts.length === 0 && (
             <p className="text-muted" style={{ marginTop: 12 }}>Belum ada data Variable Cost pada periode ini. WO/Realisasi konsolidasi 0 (hanya APPROVED).</p>
           )}
@@ -776,7 +842,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         {drillIndicator.id === 'A-3.1c' ? (
                           <><th>Target Pendapatan</th><th>Aktual</th><th>Pencapaian</th></>
                         ) : (
-                          <><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th></>
+                          <><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{canViewVariableFinancial && <><th>Pendapatan</th><th>Aksi</th></>}</>
                         )}
                       </tr>
                     </thead>
@@ -807,7 +873,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                           const denom = Math.min(Number(tgt), wo)
                           if (denom > 0) pencapaian = formatPercent((real / denom) * 100)
                         }
-                        return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{formatNumber(wo)}</td><td>{formatNumber(real)}</td><td>{pencapaian}</td></tr>
+                        return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{formatNumber(wo)}</td><td>{formatNumber(real)}</td><td>{pencapaian}</td>{canViewVariableFinancial && <><td>{renderFinancialValue(drillIndicator.point, ulp.uuid)}</td><td><button type="button" className="sla-btn" onClick={() => { setSelectedUlpLegacy(ulp.legacyKey ?? ulp.uuid); setDrillIndicator(null) }}>Transaksi</button></td></>}</tr>
                       })}
                       {drillIndicator.id === 'A-3.1c' ? (
                         (() => {
@@ -840,7 +906,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                             const denom = Math.min(Number(up3Target), cons.wo)
                             if (denom > 0) pencapaian = formatPercent((cons.realisasi / denom) * 100)
                           }
-                          return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{up3Target == null ? 'Belum diatur' : formatNumber(up3Target)}</td><td>{formatNumber(cons.wo)}</td><td>{formatNumber(cons.realisasi)}</td><td>{pencapaian}</td></tr>
+                          return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{up3Target == null ? 'Belum diatur' : formatNumber(up3Target)}</td><td>{formatNumber(cons.wo)}</td><td>{formatNumber(cons.realisasi)}</td><td>{pencapaian}</td>{canViewVariableFinancial && <><td>{renderFinancialValue(drillIndicator.point)}</td><td>{EMPTY_VALUE}</td></>}</tr>
                         })()
                       )}
                     </tbody>
@@ -935,7 +1001,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                 <div className="modal-header"><h3>{getShortLabel(dailyIndicator)} — Harian · Periode {period} · {effectiveUnit?.displayName}</h3><button type="button" className="modal-close" onClick={() => setShowDailyList(false)}>×</button></div>
                 <div className="modal-body">
                   {dailyLoading ? <p>Memuat…</p> : dailyList.length === 0 ? <p className="text-muted">Belum ada transaksi harian untuk indikator ini.</p> : (
-                    <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+                    <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th>{canViewVariableFinancial && <th>Pendapatan</th>}<th>Status</th><th>Aksi</th></tr></thead><tbody>
                       {dailyList.map((row) => (
                         <tr key={row.id} style={row.status === 'REJECTED' ? { background: '#fef2f2' } : undefined}>
                           <td>{row.work_date?.slice(0,10)}</td>
@@ -944,6 +1010,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                           <td>{row.work_order ?? '—'}</td>
                           <td>{row.realization ?? '—'}</td>
                           <td>—</td>
+                          {canViewVariableFinancial && <td>{renderTransactionRevenue(row, dailyIndicator)}</td>}
                           <td>
                             <div>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</div>
                             {row.status === 'REJECTED' && row.rejection_reason && <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, whiteSpace: 'normal' }}>Alasan: {row.rejection_reason}</div>}
@@ -978,6 +1045,16 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>Lokasi:</strong> {detailData.entry.location_address ?? '—'}</div>
                       <div><strong>WO:</strong> {detailData.entry.work_order ?? '—'}</div>
                       <div><strong>Realisasi:</strong> {detailData.entry.realization ?? '—'}</div>
+                      {canViewVariableFinancial && (() => {
+                        const indicator = detailData.indicator ?? indicators.find((row) => row.id === detailData.entry.indicator_id) ?? dailyIndicator
+                        const point = indicator?.point_code ?? indicator?.point
+                        if (point === '3.1a') return <div><strong>Pendapatan:</strong> Tidak Ditagihkan</div>
+                        if (detailData.entry.status !== 'APPROVED') return <div><strong>Pendapatan:</strong> <span className="text-muted">Belum termasuk karena transaksi belum APPROVED</span></div>
+                        if (financialError) return <div><strong>Pendapatan:</strong> <span className="sla-blocked-note">Tidak tersedia</span></div>
+                        const financial = financialRows.find((row) => row.entry_id === detailData.entry.id)
+                        if (financial?.price_missing) return <div><strong>Pendapatan:</strong> <span className="sla-blocked-note">Harga belum tersedia</span></div>
+                        return <><div><strong>Harga Satuan:</strong> {financial?.unit_price == null ? EMPTY_VALUE : formatRp(financial.unit_price)}{financial?.price_effective_from ? ` (berlaku ${financial.price_effective_from})` : ''}</div><div><strong>Pendapatan:</strong> {financial?.revenue_amount == null ? EMPTY_VALUE : formatRp(financial.revenue_amount)}</div></>
+                      })()}
                       <div><strong>Petugas:</strong> {(detailData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
                       <div><strong>Keterangan:</strong> {detailData.entry.description ?? '—'}</div>
                       <div><strong>Status:</strong> {detailData.entry.status === 'DRAFT' ? 'Draft' : detailData.entry.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : detailData.entry.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}</div>

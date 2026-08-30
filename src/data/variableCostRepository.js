@@ -479,3 +479,12 @@ export async function listVariableUnitPrices({ contractId, up3Id, asOf }) {
 export async function setVariableUnitPrices({ contractId, up3Id, effectiveFrom, values }) {
   return rpc('set_variable_unit_prices', { p_contract_id: contractId, p_up3_id: up3Id, p_effective_from: effectiveFrom, p_values: values.map((v) => ({ indicator_id: v.indicatorId, unit_price: v.unitPrice })) })
 }
+
+export async function listVariableActualRevenue({ contractId, up3Id, periodMonth, unitId }) {
+  return rpc('list_variable_actual_revenue', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_unit_id: unitId ?? null,
+  })
+}
