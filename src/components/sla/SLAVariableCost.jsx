@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
 import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
+import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 
 const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
 const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
@@ -573,6 +574,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
           {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan{(approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</button>}
           {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'target' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target')}>Target</button>}
+          {canManageKonstruksiMonthly && <button type="button" className={`sla-btn ${activeTab === 'harga-satuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('harga-satuan')}>Harga Satuan</button>}
           <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang{isUp3Role && !isManagementReadOnly && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}</button>
         </div>
       </div>
@@ -1062,6 +1064,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             </div>
           )}
         </div>
+      ) : activeTab === 'harga-satuan' ? (
+        <MasterHargaSatuan contractId={contractId} up3Id={up3Uuid} up3Name={units.find(u=>u.uuid===up3Uuid)?.displayName ?? 'UP3'} canManage={canManageKonstruksiMonthly} />
       ) : activeTab === 'target' ? (
         <div>
           <h3 style={{ margin: '0 0 12px' }}>TARGET VARIABLE COST</h3>

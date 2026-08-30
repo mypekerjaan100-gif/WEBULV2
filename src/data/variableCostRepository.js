@@ -471,3 +471,11 @@ export function periodLabelToMonth(label) {
   if (!mm || !year) return null
   return `${year}-${mm}-01`
 }
+
+export async function listVariableUnitPrices({ contractId, up3Id, asOf }) {
+  return rpc('list_variable_unit_prices', { p_contract_id: contractId, p_up3_id: up3Id, p_as_of: asOf ?? null })
+}
+
+export async function setVariableUnitPrices({ contractId, up3Id, effectiveFrom, values }) {
+  return rpc('set_variable_unit_prices', { p_contract_id: contractId, p_up3_id: up3Id, p_effective_from: effectiveFrom, p_values: values.map((v) => ({ indicator_id: v.indicatorId, unit_price: v.unitPrice })) })
+}
