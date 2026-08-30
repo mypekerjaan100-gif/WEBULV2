@@ -316,13 +316,6 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
     if (error) { setActionError(error); return }
     await onRefresh(); onClose()
   }
-  const handleKeep = async (keepId) => {
-    setActionBusy('resolve'); setActionError('')
-    const { error } = await callUserManagement('resolve_duplicate', { targetUserId: user.id, payload: { keepMembershipId: keepId } })
-    setActionBusy('')
-    if (error) { setActionError(error); return }
-    await onRefresh(); onClose()
-  }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -355,9 +348,7 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
           </section>
           <section className="detail-section">
             <h4>AKSES SAAT INI</h4>
-            {isDuplicate ? (
-              <div className="detail-hint" style={{ color: '#b45309' }}>Pengguna memiliki lebih dari satu akses aktif. Pilih akses yang dipertahankan.</div>
-            ) : currentAccess ? (
+            {currentAccess ? (
               <dl className="detail-grid">
                 <dt>Role</dt><dd>{currentAccess.role}</dd>
                 <dt>Scope</dt><dd>{currentAccess.scope}</dd>
@@ -365,17 +356,7 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
             ) : (
               <span className="text-muted">Belum memiliki akses aktif.</span>
             )}
-            {isDuplicate && (
-              <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-                {activeContract.map((cm) => (
-                  <button key={cm.contractName + cm.role} type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={() => handleKeep(cm.membershipId ?? cm.id)}>Pertahankan {cm.role} — {cm.role === 'ADMIN_UP3' ? cm.up3Name : cm.ulpName}</button>
-                ))}
-                {activeOrg.map((om) => (
-                  <button key={om.unitName + om.role} type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={() => handleKeep(om.membershipId ?? om.id)}>Pertahankan {om.role} — {om.unitName}</button>
-                ))}
-              </div>
-            )}
-            {isSuperAdmin && !isDuplicate && (
+            {isSuperAdmin && (
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAccessForm((v) => !v)}>{showAccessForm ? 'Tutup' : 'Ubah Akses'}</button>
                 {currentAccess && <button type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={handleRevoke}>{actionBusy === 'revoke' ? 'Memproses...' : 'Cabut Akses'}</button>}
@@ -441,12 +422,12 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
               <span className="text-muted">Belum Ada</span>
             )}
           </section>
-          {!hasRole && !hasOrg && !hasContract && !isDuplicate && (
+          {!hasRole && !hasOrg && !hasContract && (
             <div className="detail-hint">
                Belum ada akses yang ditetapkan.
             </div>
           )}
-          {isSuperAdmin && !isDuplicate && (
+          {isSuperAdmin && (
             <section className="detail-section">
               <div className="detail-section-heading">
                 <h4>Atur Akses</h4>
