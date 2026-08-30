@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchIndicators, fetchActiveVersion, setVariableTarget, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry } from '../../data/variableCostRepository.js'
 import { supabase } from '../../lib/supabaseClient.js'
 
 const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
@@ -32,7 +32,7 @@ function formatApprovalStatus(status) {
   return status === 'SUBMITTED' ? 'Menunggu Persetujuan' : status === 'APPROVED' ? 'Disetujui' : status === 'REJECTED' ? 'Ditolak' : status ?? '—'
 }
 
-export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange, isManagementReadOnly = false }) {
+export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange, isManagementReadOnly = false, canManageKonstruksiMonthly = false }) {
   const isUp3Role = role === 'up3'
   const contractId = orgMap?.contractUuid
   const up3Uuid = orgMap?.up3Uuid
@@ -55,6 +55,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [targets, setTargets] = useState([])
   const [up3Targets, setUp3Targets] = useState([])
   const [entries, setEntries] = useState([])
+  const [konstruksiAmounts, setKonstruksiAmounts] = useState([])
   const [indicators, setIndicators] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -67,6 +68,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [targetBusyPoint, setTargetBusyPoint] = useState('')
   const [targetError, setTargetError] = useState('')
   const [targetMessage, setTargetMessage] = useState('')
+  const [konstruksiDrafts, setKonstruksiDrafts] = useState({})
+  const [konstruksiBusy, setKonstruksiBusy] = useState(false)
+  const [konstruksiError, setKonstruksiError] = useState('')
+  const [konstruksiMessage, setKonstruksiMessage] = useState('')
   const [rejectedList, setRejectedList] = useState([])
   const [rejectedLoading, setRejectedLoading] = useState(false)
   const [editingRejectionReason, setEditingRejectionReason] = useState('')
@@ -77,35 +82,36 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const loadMonthly = useCallback(async () => {
     const requestId = ++monthlyRequestId.current
     if (!contractId || !up3Uuid || !periodMonth) { setLoading(false); return }
-    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
+    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setKonstruksiAmounts([]); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
     setLoading(true); setError('')
     try {
       const versionId = await fetchActiveVersion({ contractId, up3Id: up3Uuid, periodMonth })
       if (requestId !== monthlyRequestId.current) return
       setActiveVersionId(versionId)
       if (!versionId) {
-        setTargets([]); setEntries([]); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
+        setTargets([]); setEntries([]); setKonstruksiAmounts([]); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
         return
       }
       const unitUuids = activeTab === 'target' && targetUnitId
         ? [targetUnitId]
         : isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
-      const [t, e, tebang, ind, up3t] = await Promise.all([
+      const [t, e, tebang, ind, up3t, konstruksi] = await Promise.all([
         unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchApprovedVariableMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, indicatorIds: TEBANG_INDICATOR_IDS, periodMonth, versionId }) : Promise.resolve([]),
         fetchIndicators({ contractId, up3Id: up3Uuid, versionId }).catch(() => []),
         isConsolidated ? fetchUp3Targets({ contractId, up3Id: up3Uuid, periodMonth, versionId }).catch(() => []) : Promise.resolve([]),
+        unitUuids.length ? fetchKonstruksiMonthlyAmounts({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
       ])
       if (requestId !== monthlyRequestId.current) return
-      setTargets(t ?? []); setEntries([...(e ?? []), ...(tebang ?? [])]); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
+      setTargets(t ?? []); setEntries([...(e ?? []), ...(tebang ?? [])]); setKonstruksiAmounts(konstruksi ?? []); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
       if (effectiveUnitUuid && !isConsolidated) {
         const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid }).catch(() => [])
         setActiveFeeders(af ?? [])
       } else if (isConsolidated) {
         setActiveFeeders([])
       } else setActiveFeeders([])
-    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setUp3Targets([]) } }
+    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setKonstruksiAmounts([]); setUp3Targets([]) } }
     finally { if (requestId === monthlyRequestId.current) setLoading(false) }
   }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, activeTab, targetUnitId, childUlps.map((u) => u.uuid).join(',')])
 
@@ -340,6 +346,46 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     finally { setTargetBusyPoint('') }
   }
 
+  const konstruksiEditorUnits = isConsolidated ? childUlps : (effectiveUnit ? [effectiveUnit] : [])
+  const openKonstruksiDetail = (indicator) => {
+    const drafts = {}
+    for (const unit of konstruksiEditorUnits) {
+      const row = konstruksiAmounts.find((entry) => entry.unit_id === unit.uuid)
+      drafts[unit.uuid] = row ? String(Math.trunc(Number(row.amount_rp))) : ''
+    }
+    setKonstruksiDrafts(drafts)
+    setKonstruksiError('')
+    setKonstruksiMessage('')
+    setDrillIndicator(indicator)
+  }
+  const handleSaveKonstruksi = async () => {
+    const canonical = indicators.find((row) => row.point_code === '3.1c' && row.variable_cost_profile === 'KONSTRUKSI')
+    if (!canonical) { setKonstruksiError('Indikator Konstruksi tidak tersedia pada periode aktif.'); return }
+    const values = konstruksiEditorUnits
+      .filter((unit) => konstruksiDrafts[unit.uuid] !== '')
+      .map((unit) => ({ unitId: unit.uuid, amountRp: Number(konstruksiDrafts[unit.uuid]) }))
+    if (!values.length || values.some((entry) => !Number.isFinite(entry.amountRp) || entry.amountRp < 0)) {
+      setKonstruksiError('Isi minimal satu nominal Rupiah yang valid.')
+      return
+    }
+    setKonstruksiBusy(true); setKonstruksiError(''); setKonstruksiMessage('')
+    try {
+      await setKonstruksiMonthlyAmounts({
+        contractId,
+        up3Id: up3Uuid,
+        periodMonth,
+        indicatorId: canonical.id,
+        values,
+      })
+      await loadMonthly()
+      setKonstruksiMessage('Pendapatan Konstruksi tersimpan.')
+    } catch (error) {
+      setKonstruksiError(error.message || 'Gagal menyimpan pendapatan Konstruksi.')
+    } finally {
+      setKonstruksiBusy(false)
+    }
+  }
+
   // V3 helpers
   const openInputPicker = () => { if (isConsolidated) return; setShowInputPicker(true) }
   const chooseIndicator = (ind) => {
@@ -449,6 +495,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   })
 
   function getConsolidatedValues(point) {
+    if (point === '3.1c') {
+      return { wo: 0, realisasi: konstruksiAmounts.reduce((sum, row) => sum + Number(row.amount_rp ?? 0), 0), achievement: null }
+    }
     // For V2 with empty indicators table, fallback to sum across all entries for display correctness
     // When indicators exist, filter by UUID matching point
     const uuid = pointToUuids.get(point)
@@ -479,6 +528,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const entryByPoint = new Map()
   if (!isConsolidated && effectiveUnitUuid) {
     WORKFLOW_INDICATORS.forEach((ind) => {
+      if (ind.point === '3.1c') return
       const uuid = pointToUuids.get(ind.point)
       if (!uuid) return
       const target = targets.find((row) => row.unit_id === effectiveUnitUuid && row.indicator_id === uuid)
@@ -486,6 +536,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       if (target) targetByPoint.set(ind.point, target.target_value)
       if (entry) entryByPoint.set(ind.point, entry)
     })
+    const konstruksi = konstruksiAmounts.find((row) => row.unit_id === effectiveUnitUuid)
+    if (konstruksi) entryByPoint.set('3.1c', { realization: konstruksi.amount_rp })
   }
 
   return (
@@ -587,10 +639,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         <tr key={ind.id}>
                           <td>{getShortLabel(ind)}</td>
                           <td>—</td>
-                          <td><span className="text-muted">Belum diatur</span></td>
-                          <td colSpan={2} style={{ textAlign: 'center' }}>{totalRevenue ? formatRp(totalRevenue) : 'Belum ada data'}</td>
+                          <td>{EMPTY_VALUE}</td>
+                          <td colSpan={2} style={{ textAlign: 'center' }}>{konstruksiAmounts.length ? formatRp(totalRevenue) : 'Belum ada data'}</td>
                           <td>—</td>
-                          <td><button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button></td>
+                          <td><button type="button" className="sla-btn" onClick={() => openKonstruksiDetail(ind)}>Detail</button></td>
                         </tr>
                       )
                     }
@@ -621,14 +673,15 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   const entry = entryByPoint.get(ind.point) ?? null
                   if (isKonstruksi) {
                     return (
-                      <tr key={ind.id} style={!isConsolidated && !isUp3Role ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && !isUp3Role) openDailyList(ind) }}>
+                      <tr key={ind.id}>
                         <td>{getShortLabel(ind)}</td>
                         <td>—</td>
-                        <td><span className="text-muted">Belum diatur</span></td>
+                        <td>{EMPTY_VALUE}</td>
                         <td colSpan={isConsolidated ? 2 : 3} style={{ textAlign: 'center' }}>
                           <span className="text-muted">Nilai/Pendapatan — {entry ? formatRp(entry.realization) : 'Belum ada data'}</span>
+                          {isUp3Role && <button type="button" className="sla-btn" style={{ marginLeft: 8 }} onClick={() => openKonstruksiDetail(ind)}>Detail</button>}
                         </td>
-                        {!isConsolidated && !isUp3Role && <td><button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openDailyList(ind) }}>Lihat Detail</button></td>}
+                        {!isConsolidated && !isUp3Role && <td><button type="button" className="sla-btn" onClick={() => openKonstruksiDetail(ind)}>Lihat Detail</button></td>}
                       </tr>
                     )
                   }
@@ -653,13 +706,13 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
               </tbody>
             </table>
           </div>
-          {!loading && !error && isConsolidated && entries.length === 0 && (
+          {!loading && !error && isConsolidated && entries.length === 0 && konstruksiAmounts.length === 0 && (
             <p className="text-muted" style={{ marginTop: 12 }}>Belum ada data Variable Cost pada periode ini. WO/Realisasi konsolidasi 0 (hanya APPROVED).</p>
           )}
-          {!loading && !error && !isConsolidated && entries.length === 0 && (
+          {!loading && !error && !isConsolidated && entries.length === 0 && konstruksiAmounts.length === 0 && (
             <p className="text-muted" style={{ marginTop: 12 }}>Belum ada data Variable Cost pada periode ini.</p>
           )}
-          {entries.length === 0 && targets.length === 0 && up3Targets.length === 0 && !loading && !error && (
+          {entries.length === 0 && konstruksiAmounts.length === 0 && targets.length === 0 && up3Targets.length === 0 && !loading && !error && (
             <p className="text-muted">Target belum diatur oleh Admin UP3.</p>
           )}
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -670,7 +723,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
               <span className="text-muted" style={{ alignSelf: 'center' }}>Monitoring ULP — input oleh ADMIN_ULP</span>
             )}
             {isConsolidated && (
-              <span className="text-muted" style={{ alignSelf: 'center' }}>{childUlps.length} ULP — konsolidasi APPROVED</span>
+              <span className="text-muted" style={{ alignSelf: 'center' }}>{childUlps.length} ULP — workflow APPROVED + Konstruksi bulanan langsung</span>
             )}
             {!isConsolidated && isUp3Role && null}
             {!isConsolidated && !isUp3Role && <span className="text-muted" style={{ alignSelf: 'center' }}>{activeFeeders.length} Penyulang aktif</span>}
@@ -679,7 +732,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <div className="modal-backdrop" onClick={() => setDrillIndicator(null)}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
                 <div className="modal-header">
-                  <h3>Detail {getShortLabel(drillIndicator)} · Periode {period}</h3>
+                  <h3>{drillIndicator.id === 'A-3.1c' ? `KONSTRUKSI — ${period.toUpperCase()}` : `Detail ${getShortLabel(drillIndicator)} · Periode ${period}`}</h3>
                   <button type="button" className="modal-close" onClick={() => setDrillIndicator(null)}>×</button>
                 </div>
                 <div className="modal-body">
@@ -695,12 +748,13 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       </tr>
                     </thead>
                     <tbody>
-                      {childUlps.map((ulp) => {
+                      {(drillIndicator.id === 'A-3.1c' ? konstruksiEditorUnits : childUlps).map((ulp) => {
                         const uuid = pointToUuids.get(drillIndicator.point)
                         const row = entries.find((e) => e.unit_id === ulp.uuid && (uuid ? e.indicator_id === uuid : false))
                         const tRow = targets.find((t) => t.unit_id === ulp.uuid && (uuid ? t.indicator_id === uuid : false))
                         if (drillIndicator.id === 'A-3.1c') {
-                          return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{row?.realization != null ? formatRp(row.realization) : '0'}</td></tr>
+                          const amount = konstruksiAmounts.find((entry) => entry.unit_id === ulp.uuid)?.amount_rp
+                          return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{canManageKonstruksiMonthly ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span>Rp</span><input className="input-number" inputMode="numeric" value={konstruksiDrafts[ulp.uuid] ?? ''} placeholder="0" onChange={(event) => setKonstruksiDrafts((current) => ({ ...current, [ulp.uuid]: event.target.value.replace(/\D/g, '') }))} /></div> : (amount != null ? formatRp(amount) : 'Belum ada data')}</td></tr>
                         }
                         const wo = row?.work_order ?? 0
                         const real = row?.realization ?? 0
@@ -713,7 +767,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{formatNumber(wo)}</td><td>{formatNumber(real)}</td><td>{pencapaian}</td></tr>
                       })}
                       {drillIndicator.id === 'A-3.1c' ? (
-                        <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{formatRp(getConsolidatedValues(drillIndicator.point).realisasi)}</td></tr>
+                        <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{formatRp(canManageKonstruksiMonthly ? konstruksiEditorUnits.reduce((sum, unit) => sum + Number(konstruksiDrafts[unit.uuid] || 0), 0) : getConsolidatedValues(drillIndicator.point).realisasi)}</td></tr>
                       ) : (
                         (() => {
                           const cons = getConsolidatedValues(drillIndicator.point)
@@ -732,6 +786,13 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       )}
                     </tbody>
                   </table>
+                  {drillIndicator.id === 'A-3.1c' && canManageKonstruksiMonthly && (
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" className="sla-btn sla-btn-primary" disabled={konstruksiBusy} onClick={handleSaveKonstruksi}>{konstruksiBusy ? 'Menyimpan...' : 'Simpan'}</button>
+                      {konstruksiMessage && <span style={{ color: '#065f46' }}>{konstruksiMessage}</span>}
+                      {konstruksiError && <span className="sla-blocked-note">{konstruksiError}</span>}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -746,7 +807,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope ?? 'Variable Cost'}</small></div>
                     </button>
                   ))}
-                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi akan tersedia pada tahap berikutnya.</div>
+                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi dikelola sebagai pendapatan bulanan langsung oleh management.</div>
                 </div>
               </div>
             </div>

@@ -118,6 +118,40 @@ export async function fetchMonthlyEntries({ contractId, up3Id, unitIds, periodMo
   return data ?? []
 }
 
+export async function fetchKonstruksiMonthlyAmounts({ contractId, up3Id, unitIds, periodMonth }) {
+  if (!unitIds?.length) return []
+  const { data, error } = await supabase
+    .from('variable_cost_konstruksi_monthly_amounts')
+    .select('id,unit_id,indicator_id,period_month,amount_rp,updated_at,updated_by')
+    .eq('contract_id', contractId)
+    .eq('up3_id', up3Id)
+    .eq('period_month', periodMonth)
+    .in('unit_id', unitIds)
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function setKonstruksiMonthlyAmount({ contractId, up3Id, unitId, periodMonth, indicatorId, amountRp }) {
+  return rpc('set_konstruksi_monthly_amount', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId,
+    p_period_month: periodMonth,
+    p_indicator_id: indicatorId,
+    p_amount_rp: amountRp,
+  }, 'KONSTRUKSI_MONTHLY_SAVE')
+}
+
+export async function setKonstruksiMonthlyAmounts({ contractId, up3Id, periodMonth, indicatorId, values }) {
+  return rpc('set_konstruksi_monthly_amounts', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_indicator_id: indicatorId,
+    p_values: values.map((value) => ({ unit_id: value.unitId, amount_rp: value.amountRp })),
+  }, 'KONSTRUKSI_MONTHLY_SAVE')
+}
+
 export async function fetchApprovedVariableMonthlyEntries({ contractId, up3Id, unitIds, indicatorIds, periodMonth, versionId }) {
   if (!unitIds?.length || !indicatorIds?.length) return []
   const end = new Date(`${periodMonth}T00:00:00Z`)
@@ -359,9 +393,11 @@ export async function listSubmittedEntries({ contractId, up3Id }) {
     // fallback without join if FK not detected
     const { data: fallback, error: fallbackError } = await supabase.from('variable_cost_entries').select('id,work_date,unit_id,indicator_id,feeder_id,location_address,work_order,realization,status,created_at, feeders(name)').eq('contract_id', contractId).eq('up3_id', up3Id).eq('status', 'SUBMITTED').order('work_date', { ascending: false })
     if (fallbackError) throw new Error(fallbackError.message)
-    return fallback ?? []
+    const { data: konstruksiIndicators } = await supabase.from('sla_indicators').select('id').eq('point_code', '3.1c').eq('variable_cost_profile', 'KONSTRUKSI')
+    const konstruksiIds = new Set((konstruksiIndicators ?? []).map((row) => row.id))
+    return (fallback ?? []).filter((row) => !konstruksiIds.has(row.indicator_id))
   }
-  return data ?? []
+  return (data ?? []).filter((row) => row.sla_indicators?.point_code !== '3.1c')
 }
 
 export async function listRejectedEntries({ contractId, up3Id, unitId, periodMonth }) {
