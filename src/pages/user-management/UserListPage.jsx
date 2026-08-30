@@ -359,7 +359,7 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
             {isSuperAdmin && (
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAccessForm((v) => !v)}>{showAccessForm ? 'Tutup' : 'Ubah Akses'}</button>
-                {currentAccess && <button type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={handleRevoke}>{actionBusy === 'revoke' ? 'Memproses...' : 'Cabut Akses'}</button>}
+                {currentAccess && <button type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={handleRevoke}>{actionBusy === 'revoke' ? 'Memproses...' : 'Hapus Akses'}</button>}
                 <button type="button" className="btn btn-sm" style={{ background: '#dc2626', color: '#fff' }} disabled={!!actionBusy} onClick={handleDeactivate}>{actionBusy === 'deactivate' ? 'Memproses...' : 'Nonaktifkan Akun'}</button>
               </div>
             )}
