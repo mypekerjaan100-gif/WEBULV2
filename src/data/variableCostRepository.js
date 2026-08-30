@@ -488,3 +488,25 @@ export async function listVariableActualRevenue({ contractId, up3Id, periodMonth
     p_unit_id: unitId ?? null,
   })
 }
+
+export async function listVariableRevenueTargets({ contractId, up3Id, periodMonth, unitId }) {
+  return rpc('list_variable_revenue_targets', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_unit_id: unitId ?? null,
+  })
+}
+
+export async function setVariableRevenueTargets({ contractId, up3Id, periodMonth, values }) {
+  return rpc('set_variable_revenue_targets', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_values: values.map((value) => ({
+      unit_id: value.unitId,
+      indicator_id: value.indicatorId,
+      target_amount: value.targetAmount,
+    })),
+  })
+}
