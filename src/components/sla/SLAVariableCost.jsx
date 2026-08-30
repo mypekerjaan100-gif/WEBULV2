@@ -4,6 +4,7 @@ import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyE
 import { supabase } from '../../lib/supabaseClient.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 import TargetPendapatanVariable from './TargetPendapatanVariable.jsx'
+import VariableFinancialDashboard from './VariableFinancialDashboard.jsx'
 
 const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
 const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
@@ -90,6 +91,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [rejectedLoading, setRejectedLoading] = useState(false)
   const [editingRejectionReason, setEditingRejectionReason] = useState('')
   const monthlyRequestId = useRef(0)
+  const dailyRequestId = useRef(0)
   const handledApprovalToken = useRef(null)
   const approvalDetailRequestId = useRef(0)
 
@@ -175,6 +177,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [dailyLoading, setDailyLoading] = useState(false)
   const [showDailyList, setShowDailyList] = useState(false)
   const [dailyIndicator, setDailyIndicator] = useState(null)
+  const [dailyUnitId, setDailyUnitId] = useState(null)
   const [detailEntry, setDetailEntry] = useState(null)
   const [detailData, setDetailData] = useState(null)
 
@@ -440,26 +443,51 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     setFormFeeder(''); setFormLocation(''); setFormWo(''); setFormRealisasi(''); setFormPetugas([]); setFormKeterangan(''); setFormFiles([]); setFormError(''); setEditingEntryId(null); setEditingRejectionReason('')
     setShowForm(true)
   }
-  const openDailyList = async (ind, rejectedOnly = false) => {
-    if (isConsolidated) return
+  const openDailyList = async (ind, rejectedOnly = false, unitOverride = null, approvedOnly = false, indicatorIdsOverride = null) => {
+    const requestId = ++dailyRequestId.current
+    const requestedUnitId = unitOverride ?? effectiveUnitUuid
+    if (!requestedUnitId || (isConsolidated && !unitOverride)) return
+    setDailyUnitId(requestedUnitId)
     setDailyIndicator(ind)
     setShowDailyList(true)
     setDailyLoading(true)
     try {
       const uuid = pointToUuids.get(ind.point) ?? ind.id
       const indicatorRow = indicators.find((r) => r.point_code === ind.point || r.legacy_key === ind.id)
-      const indicatorId = indicatorRow?.id ?? uuid
-      const list = await listDailyEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, indicatorId, periodMonth })
-      let filtered = list
-      if (rejectedOnly) filtered = list.filter((r) => r.status === 'REJECTED')
+      const indicatorIds = indicatorIdsOverride?.length ? indicatorIdsOverride : [indicatorRow?.id ?? uuid]
+      const [entryLists, revenue, unitFeeders] = await Promise.all([
+        Promise.all(indicatorIds.map((indicatorId) => listDailyEntries({ contractId, up3Id: up3Uuid, unitId: requestedUnitId, indicatorId, periodMonth }))),
+        canViewVariableFinancial
+          ? listVariableActualRevenue({ contractId, up3Id: up3Uuid, periodMonth, unitId: requestedUnitId }).then((rows) => ({ rows, error: '' })).catch((loadError) => ({ rows: [], error: loadError.message || 'Gagal memuat pendapatan' }))
+          : Promise.resolve({ rows: [], error: '' }),
+        listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: requestedUnitId }).catch(() => []),
+      ])
+      if (requestId !== dailyRequestId.current) return
+      if (canViewVariableFinancial) { setFinancialRows(revenue.rows); setFinancialError(revenue.error) }
+      setActiveFeeders(unitFeeders)
+      let filtered = entryLists.flat()
+      if (rejectedOnly) filtered = filtered.filter((r) => r.status === 'REJECTED')
+      if (approvedOnly) filtered = filtered.filter((r) => r.status === 'APPROVED')
       filtered.sort((a, b) => {
         if (a.status === 'REJECTED' && b.status !== 'REJECTED') return -1
         if (b.status === 'REJECTED' && a.status !== 'REJECTED') return 1
         return new Date(b.work_date) - new Date(a.work_date)
       })
       setDailyList(filtered)
-    } catch (e) { setDailyList([]) }
-    finally { setDailyLoading(false) }
+    } catch (e) { if (requestId === dailyRequestId.current) setDailyList([]) }
+    finally { if (requestId === dailyRequestId.current) setDailyLoading(false) }
+  }
+  const openDashboardTransactions = (indicatorCode, requestedUnitId, indicatorIds) => {
+    const indicator = variableCostIndicators.find((item) => item.point === indicatorCode || item.code === indicatorCode)
+    if (!indicator) return
+    const requestedUnit = childUlps.find((unit) => unit.uuid === requestedUnitId)
+    setSelectedUlpLegacy(requestedUnit?.legacyKey ?? requestedUnitId)
+    setActiveTab('rekap')
+    openDailyList(indicator, false, requestedUnitId, true, indicatorIds)
+  }
+  const closeDailyList = () => {
+    dailyRequestId.current += 1
+    setShowDailyList(false)
   }
   const openDetail = async (entryId) => {
     setDetailEntry(entryId)
@@ -675,6 +703,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         <span className="sla-export-scope">VARIABLE COST — {variableCostIndicators.length} indikator · Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
+          {canViewVariableFinancial && <button type="button" className={`sla-btn ${activeTab === 'dashboard-finansial' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('dashboard-finansial')}>Dashboard Finansial</button>}
           {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan{(approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</button>}
           {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'target' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target')}>Target Operasional</button>}
           {canViewVariableFinancial && <button type="button" className={`sla-btn ${activeTab === 'target-pendapatan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target-pendapatan')}>Target Pendapatan</button>}
@@ -1063,9 +1092,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             </div>
           )}
           {showDailyList && dailyIndicator && (
-            <div className="modal-backdrop" onClick={() => setShowDailyList(false)}>
+            <div className="modal-backdrop" onClick={closeDailyList}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760 }}>
-                <div className="modal-header"><h3>{getShortLabel(dailyIndicator)} — Harian · Periode {period} · {effectiveUnit?.displayName}</h3><button type="button" className="modal-close" onClick={() => setShowDailyList(false)}>×</button></div>
+                <div className="modal-header"><h3>{getShortLabel(dailyIndicator)} — Harian · Periode {period} · {childUlps.find((unit) => unit.uuid === dailyUnitId)?.displayName ?? effectiveUnit?.displayName}</h3><button type="button" className="modal-close" onClick={closeDailyList}>×</button></div>
                 <div className="modal-body">
                   {dailyLoading ? <p>Memuat…</p> : dailyList.length === 0 ? <p className="text-muted">Belum ada transaksi harian untuk indikator ini.</p> : (
                     <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th>{canViewVariableFinancial && <th>Pendapatan</th>}<th>Status</th><th>Aksi</th></tr></thead><tbody>
@@ -1107,7 +1136,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>Deskripsi SLA resmi:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.criteria ?? '—' })()}</div>
                       <div><strong>Satuan:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.measurement_unit ?? selectedIndicator?.unit ?? dailyIndicator?.unit ?? '—' })()}</div>
                       <div><strong>Tanggal:</strong> {detailData.entry.work_date?.slice(0,10)}</div>
-                      <div><strong>ULP:</strong> {effectiveUnit?.displayName}</div>
+                      <div><strong>ULP:</strong> {childUlps.find((unit) => unit.uuid === dailyUnitId)?.displayName ?? effectiveUnit?.displayName}</div>
                       <div><strong>Penyulang:</strong> {detailData.entry.feeder_id ? (activeFeeders.find((f) => f.id === detailData.entry.feeder_id)?.name ?? detailData.entry.feeder_id) : '—'}</div>
                       <div><strong>Lokasi:</strong> {detailData.entry.location_address ?? '—'}</div>
                       <div><strong>WO:</strong> {detailData.entry.work_order ?? '—'}</div>
@@ -1208,6 +1237,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             </div>
           )}
         </div>
+      ) : activeTab === 'dashboard-finansial' ? (
+        <VariableFinancialDashboard contractId={contractId} up3Id={up3Uuid} period={period} periods={periods} onPeriodChange={onPeriodChange} units={childUlps} onOpenTransactions={openDashboardTransactions} />
       ) : activeTab === 'harga-satuan' ? (
         <MasterHargaSatuan contractId={contractId} up3Id={up3Uuid} up3Name={units.find(u=>u.uuid===up3Uuid)?.displayName ?? 'UP3'} canManage={canManageKonstruksiMonthly} />
       ) : activeTab === 'target-pendapatan' ? (

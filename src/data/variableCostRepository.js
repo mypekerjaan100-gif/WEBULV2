@@ -510,3 +510,12 @@ export async function setVariableRevenueTargets({ contractId, up3Id, periodMonth
     })),
   })
 }
+
+export async function getVariableFinancialDashboard({ contractId, up3Id, periodMonth, unitId }) {
+  return rpc('get_variable_financial_dashboard', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_unit_id: unitId ?? null,
+  })
+}

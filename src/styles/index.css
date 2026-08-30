@@ -1896,6 +1896,249 @@ button {
   padding-left: 28px;
 }
 
+/* Variable Cost financial dashboard */
+.vc-fin-dashboard {
+  display: grid;
+  gap: 18px;
+}
+
+.vc-fin-dashboard-head,
+.vc-fin-section-title {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.vc-fin-dashboard-head {
+  padding: 18px 20px;
+  border: 1px solid #d9e2ec;
+  border-left: 5px solid #173f5f;
+  border-radius: 10px;
+  background: linear-gradient(115deg, #f4f8fb 0%, #ffffff 70%);
+}
+
+.vc-fin-dashboard-head h3,
+.vc-fin-section-title h4 {
+  margin: 3px 0 0;
+}
+
+.vc-fin-eyebrow,
+.vc-fin-section-title span {
+  margin: 0;
+  color: #527087;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.vc-fin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.vc-fin-filters label {
+  display: grid;
+  gap: 5px;
+  color: #52606d;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.vc-fin-warnings {
+  display: grid;
+  gap: 8px;
+}
+
+.vc-fin-warning {
+  padding: 10px 13px;
+  border: 1px solid #e8c56b;
+  border-radius: 8px;
+  background: #fff9e8;
+  color: #72520b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.vc-fin-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vc-fin-kpi {
+  min-height: 116px;
+  padding: 15px;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(23, 63, 95, 0.07);
+}
+
+.vc-fin-kpi-target {
+  border-top: 4px solid #d7a72e;
+}
+
+.vc-fin-kpi-actual {
+  border-top: 4px solid #1f7a6f;
+}
+
+.vc-fin-kpi span,
+.vc-fin-kpi small {
+  display: block;
+  color: #66788a;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.vc-fin-kpi strong {
+  display: block;
+  margin: 13px 0 8px;
+  color: #102f46;
+  font-size: clamp(18px, 2vw, 25px);
+  line-height: 1.1;
+}
+
+.vc-fin-section {
+  padding: 17px;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.vc-fin-section-title {
+  margin-bottom: 16px;
+}
+
+.vc-fin-legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #66788a;
+  font-size: 11px;
+}
+
+.vc-fin-legend i {
+  width: 14px;
+  height: 7px;
+  margin-left: 7px;
+  border-radius: 2px;
+}
+
+.vc-fin-legend .is-target,
+.vc-fin-bar.is-target {
+  background: #d7a72e;
+}
+
+.vc-fin-legend .is-actual,
+.vc-fin-bar.is-actual {
+  background: #1f7a6f;
+}
+
+.vc-fin-chart {
+  display: grid;
+  gap: 15px;
+}
+
+.vc-fin-chart-row {
+  display: grid;
+  grid-template-columns: minmax(145px, 0.7fr) minmax(320px, 3fr);
+  align-items: center;
+  gap: 15px;
+}
+
+.vc-fin-chart-row > strong {
+  color: #263f50;
+  font-size: 12px;
+}
+
+.vc-fin-bars {
+  display: grid;
+  gap: 5px;
+}
+
+.vc-fin-bar-line {
+  position: relative;
+  min-height: 20px;
+  border-radius: 4px;
+  background: #f1f4f7;
+  overflow: hidden;
+}
+
+.vc-fin-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 0;
+}
+
+.vc-fin-bar-line em {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 3px 7px;
+  color: #102f46;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.vc-fin-table-wrap .vc-fin-table {
+  min-width: 760px;
+}
+
+.vc-fin-table small {
+  display: block;
+  margin-top: 3px;
+  color: #8a6410;
+  font-size: 10px;
+}
+
+.vc-fin-indicator-link {
+  border: 0;
+  background: transparent;
+  color: #135f78;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.vc-fin-indicator-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 1050px) {
+  .vc-fin-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .vc-fin-dashboard-head,
+  .vc-fin-section-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .vc-fin-filters,
+  .vc-fin-filters label,
+  .vc-fin-filters .input-select {
+    width: 100%;
+  }
+
+  .vc-fin-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .vc-fin-chart-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
 .sla-tree-empty td {
   padding-left: 28px;
   color: var(--color-text-muted);
