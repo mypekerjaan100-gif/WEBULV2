@@ -18,23 +18,33 @@ export async function handleSessionContext(
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
-  const [{ data: profile }, { data: roleRows }, { data: organizationMemberships }, { data: contractMemberships }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] =
+  const [{ data: profile }, { data: roleRowsRaw }, { data: organizationMembershipsRaw }, { data: contractMembershipsRaw }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] =
     await Promise.all([
       adminClient.from("profiles").select("status").eq("id", user.id).maybeSingle(),
-      adminClient.from("system_role_memberships").select("authorization_roles!inner(code)").eq("user_id", user.id).eq("status", "ACTIVE"),
-      adminClient.from("organization_memberships").select("id, internal_org_unit_id, organization_role, status").eq("user_id", user.id).eq("status", "ACTIVE"),
-      adminClient.from("contract_memberships").select("id, contract_id, contract_role, operational_up3_id, operational_unit_id").eq("user_id", user.id).eq("status", "ACTIVE"),
+      adminClient.from("system_role_memberships").select("authorization_roles!inner(code), status, effective_from, effective_to").eq("user_id", user.id).eq("status", "ACTIVE"),
+      adminClient.from("organization_memberships").select("id, internal_org_unit_id, organization_role, status, effective_from, effective_to").eq("user_id", user.id).eq("status", "ACTIVE"),
+      adminClient.from("contract_memberships").select("id, contract_id, contract_role, operational_up3_id, operational_unit_id, status, effective_from, effective_to").eq("user_id", user.id).eq("status", "ACTIVE"),
       adminClient.from("contracts").select("id, code, title"),
       adminClient.from("organization_name_history").select("organization_unit_id, name, effective_from, effective_to"),
       adminClient.from("internal_organization_units").select("id, code, name, type, parent_id"),
     ]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const isActiveRow = (row: Record<string, unknown>) => {
+    const status = row.status as string;
+    const from = row.effective_from as string | null;
+    const to = row.effective_to as string | null;
+    return status === "ACTIVE" && (!from || from <= today) && (!to || to > today);
+  };
+  const roleRows = (roleRowsRaw || []).filter(isActiveRow);
+  const organizationMemberships = (organizationMembershipsRaw || []).filter(isActiveRow);
+  const contractMemberships = (contractMembershipsRaw || []).filter(isActiveRow);
 
   const roles = (roleRows || [])
     .map((row) => (row.authorization_roles as { code: string } | null)?.code)
     .filter((code): code is string => Boolean(code));
   const assigned = roles.length > 0 || (organizationMemberships || []).length > 0 || (contractMemberships || []).length > 0;
   const accountStatus = profile?.status || (user.confirmed_at ? "ACTIVE" : "INVITED");
-  const today = new Date().toISOString().slice(0, 10);
   const contractsById = new Map((contracts || []).map((contract) => [contract.id as string, contract]));
   const organizationNamesById = new Map<string, string>();
   for (const name of organizationNames || []) {

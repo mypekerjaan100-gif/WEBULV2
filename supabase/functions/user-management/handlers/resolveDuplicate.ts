@@ -22,12 +22,27 @@ export async function handleResolveDuplicate(
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
-  const { data: keepContract } = await adminClient.from("contract_memberships").select("id").eq("id", keepId).eq("user_id", targetUserId).eq("status", "ACTIVE").maybeSingle();
-  const { data: keepOrg } = await adminClient.from("organization_memberships").select("id").eq("id", keepId).eq("user_id", targetUserId).eq("status", "ACTIVE").maybeSingle();
-  if (!keepContract && !keepOrg) return { status: 404, body: { error: "keep_not_found" } };
+  const today = new Date().toISOString().slice(0, 10);
+  const isActiveByDate = (row: Record<string, unknown>) => {
+    const status = row.status as string;
+    const from = row.effective_from as string | null;
+    const to = row.effective_to as string | null;
+    return status === "ACTIVE" && (!from || from <= today) && (!to || to > today);
+  };
+  const { data: keepContractRaw } = await adminClient.from("contract_memberships").select("id, status, effective_from, effective_to").eq("id", keepId).eq("user_id", targetUserId).maybeSingle();
+  const { data: keepOrgRaw } = await adminClient.from("organization_memberships").select("id, status, effective_from, effective_to").eq("id", keepId).eq("user_id", targetUserId).maybeSingle();
+  const { data: keepSystemRaw } = await adminClient.from("system_role_memberships").select("id, status, effective_from, effective_to").eq("id", keepId).eq("user_id", targetUserId).maybeSingle();
+  const keepContract = keepContractRaw && isActiveByDate(keepContractRaw) ? keepContractRaw : null;
+  const keepOrg = keepOrgRaw && isActiveByDate(keepOrgRaw) ? keepOrgRaw : null;
+  const keepSystem = keepSystemRaw && isActiveByDate(keepSystemRaw) ? keepSystemRaw : null;
+  if (!keepContract && !keepOrg && !keepSystem) return { status: 404, body: { error: "keep_not_found" } };
   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-  await adminClient.from("contract_memberships").update({ status: "INACTIVE", effective_to: tomorrow, updated_by: actorUserId }).eq("user_id", targetUserId).eq("status", "ACTIVE").neq("id", keepId);
-  await adminClient.from("organization_memberships").update({ status: "INACTIVE", effective_to: tomorrow, updated_by: actorUserId }).eq("user_id", targetUserId).eq("status", "ACTIVE").neq("id", keepId);
-  await adminClient.from("system_role_memberships").update({ status: "INACTIVE", effective_to: tomorrow, updated_by: actorUserId }).eq("user_id", targetUserId).eq("status", "ACTIVE");
+  // Only inactivate currently active memberships, respecting effective dates
+  const { data: activeContracts } = await adminClient.from("contract_memberships").select("id, effective_from, effective_to, status").eq("user_id", targetUserId).eq("status", "ACTIVE");
+  for (const row of activeContracts || []) if (row.id !== keepId && isActiveByDate(row as Record<string, unknown>)) await adminClient.from("contract_memberships").update({ status: "INACTIVE", effective_to: tomorrow, updated_by: actorUserId }).eq("id", row.id as string);
+  const { data: activeOrgs } = await adminClient.from("organization_memberships").select("id, effective_from, effective_to, status").eq("user_id", targetUserId).eq("status", "ACTIVE");
+  for (const row of activeOrgs || []) if (row.id !== keepId && isActiveByDate(row as Record<string, unknown>)) await adminClient.from("organization_memberships").update({ status: "INACTIVE", effective_to: tomorrow, updated_by: actorUserId }).eq("id", row.id as string);
+  const { data: activeSystems } = await adminClient.from("system_role_memberships").select("id, effective_from, effective_to, status").eq("user_id", targetUserId).eq("status", "ACTIVE");
+  for (const row of activeSystems || []) if (row.id !== keepId && isActiveByDate(row as Record<string, unknown>)) await adminClient.from("system_role_memberships").update({ status: "INACTIVE", effective_to: tomorrow, updated_by: actorUserId }).eq("id", row.id as string);
   return { status: 200, body: { status: "RESOLVED", kept: keepId } };
 }

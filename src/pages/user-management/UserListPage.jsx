@@ -283,17 +283,21 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
   const [actionBusy, setActionBusy] = useState('')
   const [actionError, setActionError] = useState('')
   if (!user) return null
+  const today = new Date().toISOString().slice(0, 10)
+  const isActiveMembership = (m) => m.status === 'ACTIVE' && (!m.assignedAt || m.assignedAt <= today) && (!m.effectiveTo || m.effectiveTo > today)
+  const activeOrg = user.organizationMemberships.filter(isActiveMembership)
+  const activeContract = user.contractMemberships.filter(isActiveMembership)
   const hasOrg = user.organizationMemberships.length > 0
   const hasContract = user.contractMemberships.length > 0
   const hasRole = user.isSuperAdmin || user.roles.length > 0
-  const totalActive = (user.isSuperAdmin ? 1 : 0) + user.organizationMemberships.length + user.contractMemberships.length
+  const totalActive = (user.isSuperAdmin ? 1 : 0) + activeOrg.length + activeContract.length
   const isDuplicate = totalActive > 1
   const currentAccess = user.isSuperAdmin
     ? { role: 'SUPER_ADMIN', scope: 'System' }
-    : hasContract
-      ? { role: user.contractMemberships[0].role, scope: user.contractMemberships[0].role === 'ADMIN_UP3' ? user.contractMemberships[0].up3Name : user.contractMemberships[0].ulpName }
-      : hasOrg
-        ? { role: user.organizationMemberships[0].role, scope: user.organizationMemberships[0].unitName }
+    : activeContract.length > 0
+      ? { role: activeContract[0].role, scope: activeContract[0].role === 'ADMIN_UP3' ? activeContract[0].up3Name : activeContract[0].ulpName }
+      : activeOrg.length > 0
+        ? { role: activeOrg[0].role, scope: activeOrg[0].unitName }
         : null
 
   const handleRevoke = async () => {
@@ -363,10 +367,10 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
             )}
             {isDuplicate && (
               <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-                {user.contractMemberships.map((cm) => (
+                {activeContract.map((cm) => (
                   <button key={cm.contractName + cm.role} type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={() => handleKeep(cm.membershipId ?? cm.id)}>Pertahankan {cm.role} — {cm.role === 'ADMIN_UP3' ? cm.up3Name : cm.ulpName}</button>
                 ))}
-                {user.organizationMemberships.map((om) => (
+                {activeOrg.map((om) => (
                   <button key={om.unitName + om.role} type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={() => handleKeep(om.membershipId ?? om.id)}>Pertahankan {om.role} — {om.unitName}</button>
                 ))}
               </div>

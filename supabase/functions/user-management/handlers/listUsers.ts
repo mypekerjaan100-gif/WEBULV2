@@ -18,6 +18,7 @@ interface UserSummary {
     role: string;
     status: string;
     assignedAt: string;
+    effectiveTo: string | null;
   }[];
   contractMemberships: {
     membershipId: string;
@@ -28,6 +29,7 @@ interface UserSummary {
     up3Name: string;
     ulpId: string | null;
     ulpName: string | null;
+    effectiveTo: string | null;
   }[];
 }
 
@@ -69,24 +71,24 @@ export async function handleListUsers(): Promise<{
     };
   }
 
-  const [{ data: profiles }, { data: memberships, error: membershipsError }, { data: employees }, { data: orgMemberships }, { data: contractMemberships }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] = await Promise.all([
+  const [{ data: profiles }, { data: memberships, error: membershipsError }, { data: employees }, { data: orgMembershipsRaw }, { data: contractMembershipsRaw }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] = await Promise.all([
     adminClient
       .from("profiles")
       .select("id, display_name, status")
       .in("id", userIds),
     adminClient
       .from("system_role_memberships")
-      .select("user_id, status, authorization_roles!inner(code)")
+      .select("user_id, status, effective_from, effective_to, authorization_roles!inner(code)")
       .in("user_id", userIds)
       .eq("status", "ACTIVE"),
     adminClient.from("employees").select("user_id, contract_id, id").in("user_id", userIds),
     adminClient
       .from("organization_memberships")
-      .select("user_id, id, internal_org_unit_id, organization_role, status, effective_from")
+      .select("user_id, id, internal_org_unit_id, organization_role, status, effective_from, effective_to")
       .in("user_id", userIds),
     adminClient
       .from("contract_memberships")
-      .select("user_id, id, contract_id, contract_role, operational_up3_id, operational_unit_id, status")
+      .select("user_id, id, contract_id, contract_role, operational_up3_id, operational_unit_id, status, effective_from, effective_to")
       .in("user_id", userIds)
       .eq("status", "ACTIVE"),
     adminClient.from("contracts").select("id, title"),
@@ -113,8 +115,19 @@ export async function handleListUsers(): Promise<{
     };
   }
 
+  const todayEarly = new Date().toISOString().slice(0, 10);
+  const isActiveByDate = (row: Record<string, unknown>) => {
+    const status = row.status as string;
+    const from = row.effective_from as string | null;
+    const to = row.effective_to as string | null;
+    return status === "ACTIVE" && (!from || from <= todayEarly) && (!to || to > todayEarly);
+  };
+  const membershipsFiltered = (memberships || []).filter(isActiveByDate);
+  const orgMemberships = (orgMembershipsRaw || []).filter(isActiveByDate);
+  const contractMemberships = (contractMembershipsRaw || []).filter(isActiveByDate);
+
   const roleMap = new Map<string, string[]>();
-  for (const m of memberships || []) {
+  for (const m of membershipsFiltered || []) {
     const uid = m.user_id as string;
     const code = (m.authorization_roles as { code: string })?.code;
     if (!code) continue;
@@ -166,6 +179,7 @@ export async function handleListUsers(): Promise<{
       role: om.organization_role as string,
       status: om.status as string,
       assignedAt: om.effective_from as string,
+      effectiveTo: (om.effective_to as string | null) ?? null,
     });
   }
 
@@ -184,6 +198,7 @@ export async function handleListUsers(): Promise<{
       ulpName: cm.operational_unit_id
         ? nameMap.get(cm.operational_unit_id as string) ?? "Unknown"
         : null,
+      effectiveTo: (cm.effective_to as string | null) ?? null,
     });
   }
 
