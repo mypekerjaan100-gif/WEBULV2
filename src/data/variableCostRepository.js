@@ -131,6 +131,29 @@ export async function fetchKonstruksiMonthlyAmounts({ contractId, up3Id, unitIds
   return data ?? []
 }
 
+export async function fetchKonstruksiMonthlyTargets({ contractId, up3Id, unitIds, periodMonth }) {
+  if (!unitIds?.length) return []
+  const { data, error } = await supabase
+    .from('variable_cost_konstruksi_monthly_targets')
+    .select('id,unit_id,indicator_id,period_month,target_rp,updated_at,updated_by')
+    .eq('contract_id', contractId)
+    .eq('up3_id', up3Id)
+    .eq('period_month', periodMonth)
+    .in('unit_id', unitIds)
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function setKonstruksiMonthlyTargets({ contractId, up3Id, periodMonth, indicatorId, values }) {
+  return rpc('set_konstruksi_monthly_targets', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_indicator_id: indicatorId,
+    p_values: values.map((value) => ({ unit_id: value.unitId, target_rp: value.targetRp })),
+  }, 'KONSTRUKSI_TARGET_SAVE')
+}
+
 export async function setKonstruksiMonthlyAmount({ contractId, up3Id, unitId, periodMonth, indicatorId, amountRp }) {
   return rpc('set_konstruksi_monthly_amount', {
     p_contract_id: contractId,
