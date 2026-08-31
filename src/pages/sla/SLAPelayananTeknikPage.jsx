@@ -31,7 +31,6 @@ import {
   slaContractScope,
   slaPeriods,
   slaSignatureGroups,
-  variableCostIndicators,
   variableCostPoints,
 } from '../../data/slaPelayananTeknik.js'
 import { listRejectedEntries, setManualSlaTarget } from '../../data/variableCostRepository.js'
@@ -554,9 +553,8 @@ export default function SLAPelayananTeknikPage({
           authorizedModules.find((module) => module.id === 'master-lokasi'),
         ].filter(Boolean)
       : authorizedModules
-  const activeVcCount = flatIndicators.filter(
-    (indicator) => variableCostPoints.has(indicator.point),
-  ).length
+  const primaryModules = visibleModules.filter((module) => ['sla', 'variable-cost', 'lembur'].includes(module.id))
+  const configurationModules = visibleModules.filter((module) => !['sla', 'variable-cost', 'lembur'].includes(module.id))
 
   const refreshLembur = useCallback(async () => {
     if (!orgMap?.contractUuid || !orgMap?.up3Uuid || (role === 'ulp' && !lemburUnitUuid)) {
@@ -807,56 +805,53 @@ export default function SLAPelayananTeknikPage({
     ? `SLA UP3 ${(currentNameOf(up3Unit) ?? '').replace(/^UP3\s+/, '')}`
     : `SLA ULP ${(currentNameOf(selectedUnit) ?? '').replace(/^ULP\s+/, '')}`
 
+  const renderModuleButton = (module) => (
+    <button
+      key={module.id}
+      type="button"
+      className={`sla-module-nav-item ${moduleId === module.id ? 'sla-module-nav-item-active' : ''}`}
+      onClick={() => setModuleId(module.id)}
+    >
+      {module.name}
+      {canManageUp3Operations && module.id === 'variable-cost' && (approvalCounts.variable ?? 0) > 0 && (
+        <span className="approval-count-badge">{approvalCounts.variable}</span>
+      )}
+      {canManageUp3Operations && module.id === 'lembur' && (approvalCounts.lembur ?? 0) > 0 && (
+        <span className="approval-count-badge">{approvalCounts.lembur}</span>
+      )}
+      {module.id === 'variable-cost' && isAdminUlp && variableRejectedCount > 0 && (
+        <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>{variableRejectedCount}</span>
+      )}
+    </button>
+  )
+
   return (
     <div className="page page-sla">
-      <button type="button" className="back-button" onClick={onBack}>
-        &larr; Kembali ke Dashboard
-      </button>
-      <section className="page-hero sla-hero">
-        <h1 className="page-title">Pelayanan Teknik</h1>
-        <p className="page-description">
-          Navigasi Pelayanan Teknik: SLA (indikator A&ndash;D dalam satu tabel
-          kontinu), Variable Cost, Lembur, Master Organisasi, Database Pegawai,
-          dan Pengaturan SLA khusus Admin UP3. Data operasional bersumber dari
-          Supabase.
-        </p>
-        <div className="sla-hero-meta">
-          <span className="sla-hero-badge">
-            {flatIndicators.length} indikator SLA
-          </span>
-          <span className="sla-hero-badge">{variableCostIndicators.length} Variable Cost</span>
-          <span className="sla-hero-badge">{activeVcCount} Variable-linked SLA</span>
-          <span className="sla-hero-badge">
-            {flatIndicators.length - activeVcCount} Manual SLA
-          </span>
-          <span className="sla-hero-badge">
-            {up3Unit ? currentNameOf(up3Unit) : slaContractScope.region} &middot;{' '}
-            {ulpUnits.length} ULP
-          </span>
+      <header className="pt-page-header">
+        <div>
+          <h1 className="page-title">Pelayanan Teknik</h1>
+          <p className="page-description">Kelola pelaporan dan monitoring pekerjaan secara terintegrasi.</p>
         </div>
-      </section>
+        <button type="button" className="back-button pt-back-button" onClick={onBack}>
+          &larr; Dashboard
+        </button>
+      </header>
 
-      <nav className="sla-module-nav" aria-label="Menu Pelayanan Teknik">
-        {visibleModules.map((module) => (
-          <button
-            key={module.id}
-            type="button"
-            className={`sla-module-nav-item ${moduleId === module.id ? 'sla-module-nav-item-active' : ''}`}
-            onClick={() => setModuleId(module.id)}
-          >
-            {module.name}
-            {canManageUp3Operations && module.id === 'variable-cost' && (approvalCounts.variable ?? 0) > 0 && (
-              <span className="approval-count-badge">{approvalCounts.variable}</span>
-            )}
-            {canManageUp3Operations && module.id === 'lembur' && (approvalCounts.lembur ?? 0) > 0 && (
-              <span className="approval-count-badge">{approvalCounts.lembur}</span>
-            )}
-            {module.id === 'variable-cost' && isAdminUlp && variableRejectedCount > 0 && (
-              <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>{variableRejectedCount}</span>
-            )}
-          </button>
-        ))}
-      </nav>
+      <div className="sla-module-navigation">
+        <nav className="sla-module-nav" aria-label="Modul utama Pelayanan Teknik">
+          {primaryModules.map(renderModuleButton)}
+        </nav>
+        {configurationModules.length > 0 && (
+          <details className="sla-config-menu">
+            <summary className={configurationModules.some((module) => module.id === moduleId) ? 'sla-config-menu-active' : ''}>
+              Master &amp; Pengaturan
+            </summary>
+            <div className="sla-config-menu-panel">
+              {configurationModules.map(renderModuleButton)}
+            </div>
+          </details>
+        )}
+      </div>
       {isManagement && managementScopeLabel && (
         <div className="sla-role-banner sla-role-banner-mgmt" style={{ marginTop: 8 }}>{managementScopeLabel}</div>
       )}

@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { contracts, siteTitle } from '../data/contracts.js'
 import SlaPreviewBar from './sla/SlaPreviewBar.jsx'
 import { useAuth } from '../lib/AppAuth.jsx'
 
-const PAGE_TITLES = {
-  'pengguna-akses': 'Pengguna & Akses',
-}
-
-export default function Header({ activeContractId, currentPage, onOpenSidebar, preview, approvalNotifications, approvalNotificationError, onRefreshApprovalNotifications, onOpenApprovalNotification }) {
+export default function Header({ onOpenSidebar, preview, approvalNotifications, approvalNotificationError, onRefreshApprovalNotifications, onOpenApprovalNotification }) {
   const { authority, signOut } = useAuth()
   const [signingOut, setSigningOut] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
@@ -22,9 +17,6 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
   const scopeLabel = activeAccess?.role === 'ADMIN_ULP'
     ? activeAccess.operational_unit_name
     : activeAccess?.operational_up3_name ?? activeAccess?.operational_unit_name ?? activeAccess?.internal_org_unit_name ?? null
-  const activeContract = contracts.find(
-    (contract) => contract.id === activeContractId,
-  )
   const pendingCount = approvalNotifications?.count ?? 0
   const hasSourceError = approvalNotifications?.groups?.some((group) => group.error) ?? false
 
@@ -36,12 +28,6 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
   }, [notificationOpen])
-
-  const title = currentPage
-    ? (PAGE_TITLES[currentPage] || currentPage)
-    : activeContract
-      ? activeContract.title
-      : 'Dashboard'
 
   const handleSignOut = async () => {
     setSigningOut(true)
@@ -64,10 +50,6 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
       >
         &#9776;
       </button>
-      <div className="header-title">
-        <span className="header-title-main">{title}</span>
-        <span className="header-title-sub">{siteTitle}</span>
-      </div>
       <div className="header-right">
         {approvalNotifications && (
           <div className="approval-notification" ref={notificationRef}>
@@ -106,9 +88,9 @@ export default function Header({ activeContractId, currentPage, onOpenSidebar, p
           </div>
         )}
         <span className="header-login-status">
-          Login: {loginRole}
+          {loginRole}
         </span>
-        {scopeLabel && <span className="header-scope-status">Scope: {scopeLabel}</span>}
+        {scopeLabel && <span className="header-scope-status">{scopeLabel}</span>}
         {isSuperAdmin && preview && <SlaPreviewBar preview={preview} />}
         <button
           type="button"

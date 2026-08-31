@@ -25,10 +25,6 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <div className="sidebar-brand">
         <img src="/logo-pln-nusa-daya.png" alt="PLN Nusa Daya" className="sidebar-logo" />
-        <div className="sidebar-brand-text">
-          <div className="sidebar-brand-title">PLN NUSA DAYA</div>
-          <div className="sidebar-brand-subtitle">Enterprise Operations</div>
-        </div>
         <button type="button" className="sidebar-collapse-btn" onClick={onToggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
           {collapsed ? '\u00BB' : '\u00AB'}
         </button>

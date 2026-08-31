@@ -1,4 +1,4 @@
-import { contracts, siteTitle, siteSubtitle } from '../data/contracts.js'
+import { contracts } from '../data/contracts.js'
 import ContractCard from '../components/ContractCard.jsx'
 
 export default function DashboardPage({ onSelectContract, authorizedContractIds }) {
@@ -7,15 +7,13 @@ export default function DashboardPage({ onSelectContract, authorizedContractIds 
     : contracts.filter((contract) => authorizedContractIds.includes(contract.id))
 
   return (
-    <div className="page">
-      <section className="page-hero">
-        <h1 className="page-title">{siteTitle}</h1>
-        <p className="page-subtitle">{siteSubtitle}</p>
+    <div className="page dashboard-page">
+      <header className="dashboard-page-header">
+        <h1 className="page-title">Dashboard</h1>
         <p className="page-description">
-          Pilih salah satu kontrak di bawah untuk melihat halaman modul.
-          Modul laporan dan data akan dikembangkan pada tahap berikutnya.
+          Pilih kontrak untuk mengakses modul pelaporan dan monitoring pekerjaan.
         </p>
-      </section>
+      </header>
       <section className="contract-grid">
         {visibleContracts.map((contract) => (
           <ContractCard

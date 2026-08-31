@@ -21,28 +21,25 @@ export default function SlaPreviewBar({ preview }) {
       unit.parentUnitId === up3Id &&
       effectiveStatusOf(units, unit.id) === 'Aktif',
   )
-  const selectedUp3 = up3s.find((unit) => unit.id === up3Id)
-
   return (
     <div className="header-preview">
-      <span className="header-preview-label">View As</span>
-      <div className="sla-role-switch">
-        {slaRoles.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`sla-role-btn ${role === item.id ? 'sla-role-btn-active' : ''}`}
-            onClick={() => onRoleChange(item.id)}
-          >
-            {item.name}
-          </button>
-        ))}
-      </div>
+      <label className="header-preview-control">
+        <span className="header-preview-label">View As</span>
+        <select
+          className="header-preview-select"
+          value={role}
+          onChange={(event) => onRoleChange(event.target.value)}
+        >
+          {slaRoles.map((item) => (
+            <option key={item.id} value={item.id}>{item.name}</option>
+          ))}
+        </select>
+      </label>
       {up3s.length > 1 && (
-        <label className="sla-context-field header-preview-unit">
-          <span className="sla-context-label">UP3 Preview</span>
+        <label className="header-preview-control header-preview-unit">
+          <span className="header-preview-label">UP3</span>
           <select
-            className="sla-context-select"
+            className="header-preview-select"
             value={up3Id}
             onChange={(event) => onUp3Change(event.target.value)}
           >
@@ -55,10 +52,10 @@ export default function SlaPreviewBar({ preview }) {
         </label>
       )}
       {role === 'ulp' && (
-        <label className="sla-context-field header-preview-unit">
-          <span className="sla-context-label">Unit Preview</span>
+        <label className="header-preview-control header-preview-unit">
+          <span className="header-preview-label">Unit</span>
           <select
-            className="sla-context-select"
+            className="header-preview-select"
             value={unitId}
             onChange={(event) => onUnitChange(event.target.value)}
           >
@@ -71,13 +68,6 @@ export default function SlaPreviewBar({ preview }) {
           </select>
         </label>
       )}
-      <span className="header-preview-unit">
-        <span className="sla-context-label">Scope</span>
-        <span className="sla-context-static">
-          {selectedUp3 ? currentNameOf(selectedUp3) : ''}
-          {role === 'ulp' && unitId ? ` · ${currentNameOf(units.find((u) => u.id === unitId))}` : ''}
-        </span>
-      </span>
     </div>
   )
 }

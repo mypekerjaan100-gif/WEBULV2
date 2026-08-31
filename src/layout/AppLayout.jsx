@@ -28,8 +28,6 @@ export default function AppLayout({ activeContractId, currentPage, onNavigate, o
       />
       <div className="app-main">
         <Header
-          activeContractId={activeContractId}
-          currentPage={currentPage}
           onOpenSidebar={() => setSidebarOpen(true)}
           preview={preview}
           approvalNotifications={approvalNotifications}
