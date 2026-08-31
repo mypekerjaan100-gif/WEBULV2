@@ -2110,6 +2110,49 @@ button {
   text-decoration: underline;
 }
 
+.vc-fin-trend-section {
+  border-top: 4px solid #173f5f;
+}
+
+.vc-fin-trend-controls {
+  display: flex;
+  gap: 7px;
+}
+
+.vc-fin-trend-insight {
+  margin: 7px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.vc-fin-trend-insight.is-up {
+  color: #1f7a4d;
+}
+
+.vc-fin-trend-insight.is-down {
+  color: #a13b32;
+}
+
+.vc-fin-trend-chart {
+  padding: 14px;
+  border: 1px solid #e2e8ee;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.vc-fin-no-data {
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #f1f4f7;
+  color: #738391;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.vc-fin-trend-table-wrap {
+  margin-top: 18px;
+}
+
 @media (max-width: 1050px) {
   .vc-fin-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));

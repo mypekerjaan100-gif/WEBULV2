@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getVariableFinancialDashboard, periodLabelToMonth } from '../../data/variableCostRepository.js'
+import { getVariableFinancialDashboard, getVariableFinancialTrend, periodLabelToMonth } from '../../data/variableCostRepository.js'
 
 const ALL_UNITS = 'ALL'
 
@@ -17,14 +17,28 @@ function formatPercent(value) {
   return `${percent.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
+function formatMonth(value, compact = false) {
+  if (!value) return '-'
+  return new Date(`${value}T00:00:00Z`).toLocaleDateString('id-ID', {
+    month: compact ? 'short' : 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
 export default function VariableFinancialDashboard({ contractId, up3Id, period, periods, onPeriodChange, units, onOpenTransactions }) {
   const [unitId, setUnitId] = useState(ALL_UNITS)
   const [authorizedUnitIds, setAuthorizedUnitIds] = useState([])
   const [dashboard, setDashboard] = useState(null)
   const [selectedIndicator, setSelectedIndicator] = useState(null)
+  const [trendMonthCount, setTrendMonthCount] = useState(6)
+  const [trend, setTrend] = useState(null)
+  const [trendLoading, setTrendLoading] = useState(true)
+  const [trendError, setTrendError] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const requestId = useRef(0)
+  const trendRequestId = useRef(0)
   const periodMonth = periodLabelToMonth(period)
   const unitNames = new Map(units.map((unit) => [unit.uuid, unit.displayName]))
 
@@ -51,6 +65,28 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
     })
   }, [contractId, up3Id, periodMonth, unitId])
 
+  useEffect(() => {
+    const currentRequest = ++trendRequestId.current
+    if (!contractId || !up3Id || !periodMonth) return
+    setTrendLoading(true)
+    setTrendError('')
+    getVariableFinancialTrend({
+      contractId,
+      up3Id,
+      endPeriodMonth: periodMonth,
+      unitId: unitId === ALL_UNITS ? null : unitId,
+      monthCount: trendMonthCount,
+    }).then((result) => {
+      if (currentRequest === trendRequestId.current) setTrend(result)
+    }).catch((loadError) => {
+      if (currentRequest !== trendRequestId.current) return
+      setTrend(null)
+      setTrendError(loadError.message || 'Gagal memuat tren finansial.')
+    }).finally(() => {
+      if (currentRequest === trendRequestId.current) setTrendLoading(false)
+    })
+  }, [contractId, up3Id, periodMonth, unitId, trendMonthCount])
+
   const summary = dashboard?.summary ?? {}
   const incompleteTargets = Number(summary.missing_target_count ?? 0) > 0
   const missingPrices = Number(summary.missing_price_count ?? 0) > 0
@@ -59,6 +95,15 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
   const detailCells = selectedIndicator
     ? (dashboard?.cells ?? []).filter((cell) => cell.indicator_code === selectedIndicator.indicator_code)
     : []
+  const trendMonths = trend?.months ?? []
+  const maxTrendAmount = Math.max(1, ...trendMonths.flatMap((row) => [Number(row.target_amount ?? 0), Number(row.actual_amount ?? 0)]))
+  const currentTrendMonth = trendMonths.at(-1)
+  const previousTrendMonth = trendMonths.at(-2)
+  const previousMonthChange = currentTrendMonth?.has_data && previousTrendMonth?.has_data
+    && Number(currentTrendMonth.missing_price_count) === 0 && Number(previousTrendMonth.missing_price_count) === 0
+    && Number(previousTrendMonth.actual_amount) > 0
+      ? ((Number(currentTrendMonth.actual_amount) - Number(previousTrendMonth.actual_amount)) / Number(previousTrendMonth.actual_amount)) * 100
+      : null
   const achievementStatus = (row) => {
     if (Number(row.missing_target_count) > 0) return 'Target belum lengkap'
     if (Number(row.missing_price_count) > 0) return 'Harga belum lengkap'
@@ -160,6 +205,50 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="vc-fin-section vc-fin-trend-section">
+            <div className="vc-fin-section-title">
+              <div>
+                <span>HISTORIS</span>
+                <h4>TREN TARGET VS REALISASI - {trendMonthCount} BULAN</h4>
+                {previousMonthChange != null && <p className={`vc-fin-trend-insight ${previousMonthChange >= 0 ? 'is-up' : 'is-down'}`}>Realisasi {formatRp(currentTrendMonth.actual_amount)}: {previousMonthChange >= 0 ? '+' : ''}{previousMonthChange.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% vs {formatMonth(previousTrendMonth.period_month)}</p>}
+              </div>
+              <div className="vc-fin-trend-controls" aria-label="Rentang tren">
+                {[6,12].map((count) => <button key={count} type="button" className={`sla-btn ${trendMonthCount === count ? 'sla-btn-primary' : ''}`} disabled={trendLoading} onClick={() => setTrendMonthCount(count)}>{count} Bulan</button>)}
+              </div>
+            </div>
+
+            {trendError && <p className="sla-blocked-note">{trendError}</p>}
+            {trendLoading ? <p>Memuat tren finansial...</p> : !trendError && (
+              <>
+                <div className="vc-fin-chart vc-fin-trend-chart">
+                  {trendMonths.map((row) => (
+                    <div className="vc-fin-chart-row" key={row.period_month}>
+                      <strong>{formatMonth(row.period_month, true)}</strong>
+                      {!row.has_data ? <div className="vc-fin-no-data">Belum ada data</div> : (
+                        <div className="vc-fin-bars">
+                          <div className="vc-fin-bar-line"><span className="vc-fin-bar is-target" style={{ width: `${Number(row.target_amount ?? 0) / maxTrendAmount * 100}%` }} /><em>{formatRp(row.target_amount)}{!row.target_complete ? ' terkonfigurasi' : ''}</em></div>
+                          <div className="vc-fin-bar-line"><span className="vc-fin-bar is-actual" style={{ width: `${Number(row.actual_amount ?? 0) / maxTrendAmount * 100}%` }} /><em>{formatRp(row.actual_amount)}{Number(row.missing_price_count) > 0 ? ` - ${row.missing_price_count} harga belum tersedia` : ''}</em></div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="sla-table-wrap vc-fin-table-wrap vc-fin-trend-table-wrap">
+                  <table className="sla-table vc-fin-table">
+                    <thead><tr><th>Periode</th><th>Target</th><th>Realisasi</th><th>Selisih</th><th>Pencapaian</th><th>Status</th></tr></thead>
+                    <tbody>{trendMonths.map((row) => {
+                      const targetIncomplete = !row.target_complete
+                      const priceMissing = Number(row.missing_price_count) > 0
+                      const status = !row.has_data ? 'Belum ada data' : targetIncomplete ? 'Target Belum Lengkap' : priceMissing ? 'Harga Belum Lengkap' : row.achievement_percent == null ? 'Target Rp0' : Number(row.achievement_percent) >= 100 ? 'Tercapai' : 'Belum Tercapai'
+                      return <tr key={row.period_month}><td>{formatMonth(row.period_month)}</td><td>{row.has_data ? formatRp(row.target_amount) : '-'}{row.has_data && targetIncomplete && <small>{row.configured_target_count} / {row.required_target_count} target</small>}</td><td>{row.has_data ? formatRp(row.actual_amount) : '-'}</td><td>{row.has_data && !targetIncomplete && !priceMissing ? formatRp(row.difference_amount) : '-'}</td><td>{row.has_data && !targetIncomplete && !priceMissing ? formatPercent(row.achievement_percent) : '-'}</td><td>{status}{priceMissing && <small>Harga belum tersedia: {row.missing_price_count} transaksi</small>}</td></tr>
+                    })}</tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </section>
         </>
       )}

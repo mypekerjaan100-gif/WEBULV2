@@ -519,3 +519,13 @@ export async function getVariableFinancialDashboard({ contractId, up3Id, periodM
     p_unit_id: unitId ?? null,
   })
 }
+
+export async function getVariableFinancialTrend({ contractId, up3Id, endPeriodMonth, unitId, monthCount }) {
+  return rpc('get_variable_financial_trend', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_end_period_month: endPeriodMonth,
+    p_unit_id: unitId ?? null,
+    p_month_count: monthCount,
+  })
+}
