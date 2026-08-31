@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabaseClient.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 import TargetPendapatanVariable from './TargetPendapatanVariable.jsx'
 import VariableFinancialDashboard from './VariableFinancialDashboard.jsx'
+import { Alert, Button, DataTable, FilterBar, FilterField, StatePanel, StatusBadge, Tabs } from '../ui/Primitives.jsx'
 
 const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
 const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
@@ -696,49 +697,82 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const totalFinancialAchievement = financialTargetsComplete && totalFinancialTarget > 0 ? (totalFinancialActual / totalFinancialTarget) * 100 : null
   const showRekapAction = isConsolidated || !isUp3Role || (canViewVariableFinancial && !isConsolidated)
   const rekapColumnCount = 6 + (canViewVariableFinancial ? 1 : 0) + (showRekapAction ? 1 : 0)
+  const primaryTabs = [
+    { id: 'rekap', label: 'Rekap Bulanan' },
+    ...(canViewVariableFinancial ? [{ id: 'dashboard-finansial', label: 'Dashboard Finansial' }] : []),
+    ...(isUp3Role && !isManagementReadOnly ? [{ id: 'persetujuan', label: 'Persetujuan' }] : []),
+  ]
+  const configurationTabs = [
+    ...(isUp3Role && !isManagementReadOnly ? [{ id: 'target', label: 'Target Operasional' }] : []),
+    ...(canViewVariableFinancial ? [{ id: 'target-pendapatan', label: 'Target Pendapatan' }] : []),
+    ...(canManageKonstruksiMonthly ? [{ id: 'harga-satuan', label: 'Harga Satuan' }] : []),
+    { id: 'penyulang', label: 'Master Penyulang' },
+  ]
+  const configurationActive = configurationTabs.some((tab) => tab.id === activeTab)
+  const scopeLabel = isAdminUlpView
+    ? (effectiveUnit?.displayName ?? effectiveLegacy)
+    : isConsolidated
+      ? 'Konsolidasi UP3'
+      : (childUlps.find((unit) => (unit.legacyKey ?? unit.uuid) === selectedUlpLegacy)?.displayName ?? '—')
 
   return (
-    <section className="sla-module-panel">
-      <div className="sla-export-bar" style={{ justifyContent: 'space-between' }}>
-        <span className="sla-export-scope">VARIABLE COST — {variableCostIndicators.length} indikator · Periode {period} · {isAdminUlpView ? (effectiveUnit?.displayName ?? effectiveLegacy) : (isConsolidated ? 'Konsolidasi UP3' : (childUlps.find((u) => (u.legacyKey ?? u.uuid) === selectedUlpLegacy)?.displayName ?? '—'))}</span>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className={`sla-btn ${activeTab === 'rekap' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('rekap')}>Rekap Bulanan</button>
-          {canViewVariableFinancial && <button type="button" className={`sla-btn ${activeTab === 'dashboard-finansial' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('dashboard-finansial')}>Dashboard Finansial</button>}
-          {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'persetujuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('persetujuan')}>Persetujuan{(approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</button>}
-          {isUp3Role && !isManagementReadOnly && <button type="button" className={`sla-btn ${activeTab === 'target' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target')}>Target Operasional</button>}
-          {canViewVariableFinancial && <button type="button" className={`sla-btn ${activeTab === 'target-pendapatan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('target-pendapatan')}>Target Pendapatan</button>}
-          {canManageKonstruksiMonthly && <button type="button" className={`sla-btn ${activeTab === 'harga-satuan' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('harga-satuan')}>Harga Satuan</button>}
-          <button type="button" className={`sla-btn ${activeTab === 'penyulang' ? 'sla-btn-primary' : ''}`} onClick={() => setActiveTab('penyulang')}>Master Penyulang{isUp3Role && !isManagementReadOnly && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}</button>
-        </div>
+    <section className="sla-module-panel vc-module">
+      <nav className="vc-breadcrumb" aria-label="Breadcrumb">
+        <span>Dashboard</span><span aria-hidden="true">/</span><span>Pelayanan Teknik</span><span aria-hidden="true">/</span><strong>Variable Cost</strong>
+      </nav>
+      <div className="vc-context-line">
+        <strong>VARIABLE COST</strong>
+        <span>{variableCostIndicators.length} indikator</span>
+        <span>{period}</span>
+        <span>{scopeLabel}</span>
+      </div>
+      <div className="vc-navigation">
+        <Tabs
+          items={primaryTabs}
+          value={activeTab}
+          onChange={setActiveTab}
+          ariaLabel="Navigasi utama Variable Cost"
+          className="vc-primary-tabs"
+          renderLabel={(tab) => <>{tab.label}{tab.id === 'persetujuan' && (approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</>}
+        />
+        <details className="vc-config-menu">
+          <summary className={configurationActive ? 'vc-config-menu-active' : ''}>Pengaturan Variable</summary>
+          <div className="vc-config-menu-panel">
+            {configurationTabs.map((tab) => (
+              <Button key={tab.id} variant="ghost" className={activeTab === tab.id ? 'vc-config-item-active' : ''} onClick={() => setActiveTab(tab.id)}>
+                {tab.label}
+                {tab.id === 'penyulang' && isUp3Role && !isManagementReadOnly && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}
+              </Button>
+            ))}
+          </div>
+        </details>
       </div>
 
       {isUp3Role && !isAdminUlpView && activeTab === 'rekap' && (
-        <div style={{ margin: '12px 0', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label>ULP</label>
-          <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
-            <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
-            {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
-          </select>
-        </div>
+        <FilterBar className="vc-filter-bar">
+          <FilterField label="Unit layanan">
+            <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
+              <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
+              {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
+            </select>
+          </FilterField>
+        </FilterBar>
       )}
 
       {activeTab === 'rekap' ? (
         <>
           {isAdminUlpView && rejectedList.length > 0 && !rejectedLoading && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '12px 16px', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <strong>{rejectedList.length} transaksi perlu diperbaiki</strong>
-                <div className="text-muted" style={{ fontSize: 12 }}>Admin UP3 mengembalikan pengajuan untuk diperbaiki.</div>
-              </div>
-              <button type="button" className="sla-btn sla-btn-primary" onClick={() => {
+            <Alert tone="warning" title={`${rejectedList.length} transaksi perlu diperbaiki`} className="vc-repair-alert">
+              <span>Admin UP3 mengembalikan pengajuan untuk diperbaiki.</span>
+              <Button variant="secondary" size="small" onClick={() => {
                 if (rejectedList.length === 1) handleRepairRejected(rejectedList[0])
                 else document.getElementById('perlu-perbaikan-section')?.scrollIntoView({ behavior: 'smooth' })
-              }}>Lihat Perbaikan</button>
-            </div>
+              }}>Lihat Perbaikan</Button>
+            </Alert>
           )}
           {isAdminUlpView && rejectedList.length > 0 && (
-            <section id="perlu-perbaikan-section" style={{ marginBottom: 16, border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>PERLU PERBAIKAN</h3>
+            <section id="perlu-perbaikan-section" className="vc-repair-section">
+              <h3>PERLU PERBAIKAN</h3>
               <div className="sla-table-wrap">
                 <table className="sla-table">
                   <thead><tr><th>Tanggal</th><th>Kegiatan</th><th>Penyulang</th><th>Alasan Penolakan</th><th>Aksi</th></tr></thead>
@@ -753,7 +787,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                           <td>{short}</td>
                           <td>{feederName}</td>
                           <td style={{ maxWidth: 220, whiteSpace: 'normal' }}>{row.rejection_reason ?? '—'}</td>
-                          <td><button type="button" className="sla-btn sla-btn-primary" onClick={() => handleRepairRejected(row)}>Perbaiki Sekarang</button></td>
+                          <td><Button variant="primary" size="small" onClick={() => handleRepairRejected(row)}>Perbaiki Sekarang</Button></td>
                         </tr>
                       )
                     })}
@@ -762,8 +796,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
               </div>
             </section>
           )}
-          <div className="sla-table-wrap">
-            <table className="sla-table">
+          <div className="sla-table-wrap vc-rekap-table-wrap">
+            <table className="sla-table vc-rekap-table">
               <thead>
                 <tr>
                   <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{canViewVariableFinancial && <th>Pendapatan</th>}{showRekapAction && <th>Aksi</th>}
@@ -1108,7 +1142,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                           <td>—</td>
                           {canViewVariableFinancial && <td>{renderTransactionRevenue(row, dailyIndicator)}</td>}
                           <td>
-                            <div>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</div>
+                            <StatusBadge status={row.status}>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</StatusBadge>
                             {row.status === 'REJECTED' && row.rejection_reason && <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, whiteSpace: 'normal' }}>Alasan: {row.rejection_reason}</div>}
                           </td>
                           <td style={{ display: 'flex', gap: 6 }}>
@@ -1173,13 +1207,14 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
           )}
         </>
       ) : activeTab === 'persetujuan' ? (
-        <div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
-            <button type="button" className="sla-btn" onClick={loadPending}>Muat Ulang</button>
-            {pendingError && <span className="sla-blocked-note">{pendingError}</span>}
+        <div className="vc-subpage">
+          <div className="vc-subpage-heading">
+            <div><span className="vc-section-kicker">WORKFLOW</span><h3>Persetujuan Variable Cost</h3></div>
+            <Button variant="secondary" onClick={loadPending}>Muat Ulang</Button>
           </div>
-          {pendingLoading ? <p>Memuat persetujuan…</p> : pendingList.length === 0 ? <p className="text-muted">Tidak ada transaksi menunggu persetujuan.</p> : (
-            <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>ULP</th><th>Kegiatan</th><th>Penyulang</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+          {pendingError && <Alert tone="danger">{pendingError}</Alert>}
+          {pendingLoading ? <StatePanel state="loading" title="Memuat persetujuan" /> : pendingList.length === 0 ? <StatePanel title="Tidak ada transaksi menunggu persetujuan" /> : (
+            <div className="sla-table-wrap vc-approval-table-wrap"><table className="sla-table vc-approval-table"><thead><tr><th>Tanggal</th><th>ULP</th><th>Kegiatan</th><th>Penyulang</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
               {pendingList.map((row) => {
                 const ulp = childUlps.find((u) => u.uuid === row.unit_id)
                 const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
@@ -1194,11 +1229,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                     <td>{row.work_order ?? '—'}</td>
                     <td>{row.realization ?? '—'}</td>
                     <td>—</td>
-                    <td>Menunggu Persetujuan</td>
-                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button type="button" className="sla-btn" onClick={() => openApprovalDetail(row)}>Lihat Detail</button>
-                      <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApproveTx(row.id)}>Setujui</button>
-                      <button type="button" className="sla-btn" onClick={() => handleRejectTx(row.id)}>Tolak</button>
+                    <td><StatusBadge status="SUBMITTED" /></td>
+                    <td className="vc-table-actions">
+                      <Button variant="secondary" size="small" onClick={() => openApprovalDetail(row)}>Lihat Detail</Button>
+                      <Button variant="primary" size="small" onClick={() => handleApproveTx(row.id)}>Setujui</Button>
+                      <Button variant="danger" size="small" onClick={() => handleRejectTx(row.id)}>Tolak</Button>
                     </td>
                   </tr>
                 )
@@ -1224,13 +1259,13 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>Realisasi:</strong> {approvalData.entry.realization ?? '—'}</div>
                       <div><strong>Petugas:</strong> {(approvalData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
                       <div><strong>Keterangan:</strong> {approvalData.entry.description ?? '—'}</div>
-                      <div><strong>Status:</strong> {formatApprovalStatus(approvalData.entry.status)}</div>
+                      <div><strong>Status:</strong> <StatusBadge status={approvalData.entry.status}>{formatApprovalStatus(approvalData.entry.status)}</StatusBadge></div>
                       <div><strong>Riwayat Status:</strong>{(approvalData.history ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : <ul>{approvalData.history.map((item) => <li key={item.id}>{new Date(item.changed_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })} - {item.from_status === item.to_status ? `Data diperbarui (${formatApprovalStatus(item.to_status)})` : `${item.from_status ? formatApprovalStatus(item.from_status) : 'Baru'} ke ${formatApprovalStatus(item.to_status)}`}{item.reason ? `: ${item.reason}` : ''}</li>)}</ul>}</div>
                       <div><strong>Evidence:</strong> {(approvalData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (<ul>{(approvalData.evidences ?? []).map((ev) => (<li key={ev.id}><button type="button" className="sla-btn" onClick={async () => { const url = await getEvidencePreviewUrl(ev.storage_path); window.open(url, '_blank') }}>{ev.file_name}</button> — {ev.mime_type}</li>))}</ul>)}</div>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-                        <button type="button" className="sla-btn" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>Tutup</button>
-                        {approvalData.entry.status === 'SUBMITTED' && <button type="button" className="sla-btn" onClick={() => handleRejectTx(approvalDetail.id)}>Tolak</button>}
-                        {approvalData.entry.status === 'SUBMITTED' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApproveTx(approvalDetail.id)}>Setujui</button>}
+                      <div className="vc-page-actions">
+                        <Button variant="secondary" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>Tutup</Button>
+                        {approvalData.entry.status === 'SUBMITTED' && <Button variant="danger" onClick={() => handleRejectTx(approvalDetail.id)}>Tolak</Button>}
+                        {approvalData.entry.status === 'SUBMITTED' && <Button variant="primary" onClick={() => handleApproveTx(approvalDetail.id)}>Setujui</Button>}
                       </div>
                     </div>
                   )}
@@ -1246,25 +1281,24 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       ) : activeTab === 'target-pendapatan' ? (
         <TargetPendapatanVariable contractId={contractId} up3Id={up3Uuid} period={period} periods={periods} onPeriodChange={onPeriodChange} units={childUlps} onSaved={loadMonthly} />
       ) : activeTab === 'target' ? (
-        <div>
-          <h3 style={{ margin: '0 0 12px' }}>TARGET OPERASIONAL VARIABLE COST</h3>
-          <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            <label>Periode:{' '}
+        <div className="vc-subpage">
+          <div className="vc-subpage-heading"><div><span className="vc-section-kicker">KONFIGURASI</span><h3>Target Operasional Variable Cost</h3></div></div>
+          <FilterBar className="vc-filter-bar">
+            <FilterField label="Periode">
               <select className="input-select" value={period} disabled={!!targetBusyPoint} onChange={(event) => onPeriodChange?.(event.target.value)}>
                 {periods.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
-            </label>
-            <label>ULP:{' '}
+            </FilterField>
+            <FilterField label="Unit layanan">
               <select className="input-select" value={targetUnitId} disabled={!!targetBusyPoint} onChange={(event) => { setTargetMessage(''); setTargetError(''); setTargetUnitId(event.target.value) }}>
                 {childUlps.map((unit) => <option key={unit.uuid} value={unit.uuid}>{unit.displayName}</option>)}
               </select>
-            </label>
-          </div>
-          {targetError && <p className="sla-blocked-note">{targetError}</p>}
-          {targetMessage && <p className="text-muted">{targetMessage}</p>}
-          {!activeVersionId && <p className="sla-blocked-note">Tidak ada versi SLA aktif untuk periode ini.</p>}
-          <div className="sla-table-wrap">
-            <table className="sla-table">
+            </FilterField>
+          </FilterBar>
+          {targetError && <Alert tone="danger">{targetError}</Alert>}
+          {targetMessage && <Alert tone="success">{targetMessage}</Alert>}
+          {!activeVersionId && <Alert tone="warning">Tidak ada versi SLA aktif untuk periode ini.</Alert>}
+          <DataTable className="vc-compact-table" sticky>
               <thead><tr><th>Kegiatan</th><th>Satuan</th><th>Target</th><th>Aksi</th></tr></thead>
               <tbody>
                 {STANDARD_8.map((indicator) => {
@@ -1275,83 +1309,80 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <td>{getShortLabel(indicator)}</td>
                       <td>{canonical?.measurement_unit ?? indicator.unit ?? '—'}</td>
                       <td><input type="number" min="0" className="input-field" value={targetDrafts[indicator.point] ?? ''} disabled={!activeVersionId || !!targetBusyPoint} onChange={(event) => setTargetDrafts((current) => ({ ...current, [indicator.point]: event.target.value }))} /></td>
-                      <td><button type="button" className="sla-btn sla-btn-primary" disabled={!activeVersionId || !!targetBusyPoint} onClick={() => handleSaveTarget(indicator)}>{busy ? 'Menyimpan…' : 'Simpan'}</button></td>
+                      <td className="ui-table-actions"><Button variant="primary" size="small" disabled={!activeVersionId || !!targetBusyPoint} onClick={() => handleSaveTarget(indicator)}>{busy ? 'Menyimpan…' : 'Simpan'}</Button></td>
                     </tr>
                   )
                 })}
               </tbody>
-            </table>
-          </div>
+          </DataTable>
         </div>
       ) : (
-        <div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="vc-subpage">
+          <div className="vc-subpage-heading"><div><span className="vc-section-kicker">MASTER DATA</span><h3>Master Penyulang</h3></div></div>
+          <FilterBar className="vc-filter-bar" actions={<Button variant="secondary" onClick={loadFeeders}>Muat Ulang</Button>}>
             {!isAdminUlpView && (
-              <>
-                <label>ULP</label>
+              <FilterField label="Unit layanan">
                 <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
                   <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
                   {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
                 </select>
-              </>
+              </FilterField>
             )}
-            <label>Status</label>
-            <select className="input-select" value={feederStatusFilter} onChange={(e) => setFeederStatusFilter(e.target.value)}>
-              <option value="">Semua Status</option>
-              <option value="PENDING">Menunggu Persetujuan</option>
-              <option value="ACTIVE">Aktif</option>
-              <option value="REJECTED">Ditolak</option>
-              <option value="INACTIVE">Nonaktif</option>
-            </select>
-            <button type="button" className="sla-btn" onClick={loadFeeders}>Muat Ulang</button>
-          </div>
+            <FilterField label="Status">
+              <select className="input-select" value={feederStatusFilter} onChange={(e) => setFeederStatusFilter(e.target.value)}>
+                <option value="">Semua Status</option>
+                <option value="PENDING">Menunggu Persetujuan</option>
+                <option value="ACTIVE">Aktif</option>
+                <option value="REJECTED">Ditolak</option>
+                <option value="INACTIVE">Nonaktif</option>
+              </select>
+            </FilterField>
+          </FilterBar>
 
           {!isManagementReadOnly && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="vc-inline-form">
             {!isAdminUlpView && (
-              <>
-                <label>ULP Tujuan</label>
+              <FilterField label="ULP Tujuan">
                 <select className="input-select" value={directUlp} onChange={(e) => setDirectUlp(e.target.value)}>
                   {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
                 </select>
-              </>
+              </FilterField>
             )}
-            <input className="input-field" placeholder="Nama Penyulang" value={proposeName} onChange={(e) => setProposeName(e.target.value)} style={{ minWidth: 220 }} />
-            <button type="button" className="sla-btn sla-btn-primary" disabled={proposeBusy || !proposeName.trim()} onClick={handlePropose}>
+            <FilterField label="Nama Penyulang" className="vc-feeder-name-field"><input className="input-field" placeholder="Nama Penyulang" value={proposeName} onChange={(e) => setProposeName(e.target.value)} /></FilterField>
+            <Button variant="primary" disabled={proposeBusy || !proposeName.trim()} onClick={handlePropose}>
               {proposeBusy ? 'Menyimpan…' : isAdminUlpView ? '+ Usulkan Penyulang' : '+ Tambah Penyulang'}
-            </button>
+            </Button>
           </div>
           )}
 
-          {feederError && <p className="sla-blocked-note">{feederError}</p>}
+          {feederError && <Alert tone="danger">{feederError}</Alert>}
 
-          {feederLoading ? <p>Memuat Penyulang…</p> : feeders.length === 0 ? (
-            <p className="text-muted">Belum ada Penyulang aktif untuk ULP ini.</p>
+          {feederLoading ? <StatePanel state="loading" title="Memuat Penyulang" /> : feeders.length === 0 ? (
+            <StatePanel title="Belum ada Penyulang untuk scope ini" />
           ) : (
-            <div className="sla-table-wrap">
-              <table className="sla-table">
+            <DataTable className="vc-compact-table" sticky>
                 <thead><tr><th>Nama Penyulang</th><th>Status</th><th>Tanggal Pengajuan</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {feeders.map((f) => (
                     <tr key={f.id} id={`feeder-${f.id}`} className={focusedFeederId === f.id ? 'approval-focused-row' : ''}>
                       <td>{f.name}</td>
-                      <td>{formatFeederStatus(f.status)}{f.status === 'REJECTED' && f.rejection_reason ? ` — ${f.rejection_reason}` : ''}</td>
+                      <td><StatusBadge status={f.status}>{formatFeederStatus(f.status)}</StatusBadge>{f.status === 'REJECTED' && f.rejection_reason ? <span className="vc-rejection-reason">{f.rejection_reason}</span> : null}</td>
                       <td>{f.proposed_at ? new Date(f.proposed_at).toLocaleDateString('id-ID') : '—'}</td>
-                      <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <td className="vc-table-actions">
                         {f.status === 'PENDING' && !isAdminUlpView && !isManagementReadOnly && (
                           <>
-                            <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleApprove(f.id)}>Approve</button>
-                            <button type="button" className="sla-btn" onClick={() => handleReject(f.id)}>Reject</button>
+                            <Button variant="primary" size="small" onClick={() => handleApprove(f.id)}>Approve</Button>
+                            <Button variant="danger" size="small" onClick={() => handleReject(f.id)}>Reject</Button>
                           </>
                         )}
                         {f.status === 'ACTIVE' && !isAdminUlpView && !isManagementReadOnly && (
-                          <button type="button" className="sla-btn" onClick={() => handleToggleActive(f)}>Nonaktifkan</button>
+                          <Button variant="secondary" size="small" onClick={() => handleToggleActive(f)}>Nonaktifkan</Button>
                         )}
                         {f.status === 'INACTIVE' && !isAdminUlpView && !isManagementReadOnly && (
-                          <button type="button" className="sla-btn" onClick={() => handleToggleActive(f)}>Aktifkan</button>
+                          <Button variant="secondary" size="small" onClick={() => handleToggleActive(f)}>Aktifkan</Button>
                         )}
                         {!isAdminUlpView && !isManagementReadOnly && (
-                          <button type="button" className="sla-btn" onClick={() => handleDelete(f)}>Hapus</button>
+                          <Button variant="danger" size="small" onClick={() => handleDelete(f)}>Hapus</Button>
                         )}
                         {f.status === 'REJECTED' && isAdminUlpView && f.rejection_reason && (
                           <span className="text-muted">Alasan: {f.rejection_reason}</span>
@@ -1360,8 +1391,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
+            </DataTable>
           )}
           {isAdminUlpView && <p className="text-muted" style={{ marginTop: 8 }}>Usulan baru berstatus Menunggu Persetujuan. Approve/Reject hanya oleh Admin UP3.</p>}
         </div>

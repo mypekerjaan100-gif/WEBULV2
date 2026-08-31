@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
 import { getShortLabel, listVariableRevenueTargets, periodLabelToMonth, setVariableRevenueTargets } from '../../data/variableCostRepository.js'
+import { Alert, Button, DataTable, FilterBar, FilterField, StatePanel } from '../ui/Primitives.jsx'
 
 const PRICED_INDICATORS = variableCostIndicators.filter((indicator) => !['3.1a', '3.1c'].includes(indicator.point))
 
@@ -79,21 +80,19 @@ export default function TargetPendapatanVariable({ contractId, up3Id, period, pe
   }
 
   return (
-    <section>
-      <h3 style={{ margin: '0 0 12px' }}>TARGET PENDAPATAN</h3>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label>Periode:{' '}
+    <section className="vc-subpage vc-revenue-targets">
+      <div className="vc-subpage-heading"><div><span className="vc-section-kicker">KONFIGURASI FINANSIAL</span><h3>Target Pendapatan</h3><p>Manual Rupiah per ULP. Tidak dihitung dari Target Operasional.</p></div></div>
+      <FilterBar className="vc-filter-bar">
+        <FilterField label="Periode">
           <select className="input-select" value={period} disabled={saving} onChange={(event) => onPeriodChange?.(event.target.value)}>
             {periods.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
-        </label>
-        <span className="text-muted">Manual Rupiah per ULP. Tidak dihitung dari Target Operasional.</span>
-      </div>
-      {error && <p className="sla-blocked-note">{error}</p>}
-      {message && <p style={{ color: '#065f46' }}>{message}</p>}
-      {loading ? <p>Memuat Target Pendapatan...</p> : authorizedUnits.length === 0 ? <p className="text-muted">Tidak ada ULP dalam scope yang dapat dikelola.</p> : (
-        <div className="sla-table-wrap">
-          <table className="sla-table">
+        </FilterField>
+      </FilterBar>
+      {error && <Alert tone="danger">{error}</Alert>}
+      {message && <Alert tone="success">{message}</Alert>}
+      {loading ? <StatePanel state="loading" title="Memuat Target Pendapatan" /> : authorizedUnits.length === 0 ? <StatePanel title="Tidak ada ULP dalam scope yang dapat dikelola" /> : (
+        <DataTable className="vc-matrix-table vc-revenue-matrix" frameClassName="vc-matrix-frame" sticky>
             <thead><tr><th>Kegiatan</th>{authorizedUnits.map((unit) => <th key={unit.uuid}>{unit.displayName}</th>)}</tr></thead>
             <tbody>
               {PRICED_INDICATORS.map((indicator) => (
@@ -104,8 +103,8 @@ export default function TargetPendapatanVariable({ contractId, up3Id, period, pe
                     if (!row) return <td key={unit.uuid} className="text-muted">Tidak tersedia</td>
                     const key = keyOf(unit.uuid, row.indicator_id)
                     return (
-                      <td key={unit.uuid}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 135 }}>
+                      <td key={unit.uuid} className="ui-table-numeric">
+                        <div className="vc-currency-field">
                           <span>Rp</span>
                           <input className="input-number" inputMode="numeric" value={drafts[key] ?? ''} placeholder="Belum diatur" disabled={saving} onChange={(event) => setDrafts((current) => ({ ...current, [key]: event.target.value.replace(/\D/g, '') }))} />
                         </div>
@@ -115,13 +114,12 @@ export default function TargetPendapatanVariable({ contractId, up3Id, period, pe
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+        </DataTable>
       )}
-      <div style={{ marginTop: 12 }}>
-        <button type="button" className="sla-btn sla-btn-primary" disabled={saving || loading || rows.length === 0} onClick={handleSave}>{saving ? 'Menyimpan...' : 'Simpan Target Pendapatan'}</button>
+      <div className="vc-page-actions">
+        <Button variant="primary" disabled={saving || loading || rows.length === 0} onClick={handleSave}>{saving ? 'Menyimpan...' : 'Simpan Target Pendapatan'}</Button>
       </div>
-      <p className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Kosongkan nilai untuk menandai Target belum diatur. ROW Fix dan Konstruksi tidak dikelola pada matrix ini.</p>
+      <p className="vc-helper-text">Kosongkan nilai untuk menandai Target belum diatur. ROW Fix dan Konstruksi tidak dikelola pada matrix ini.</p>
     </section>
   )
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
 import { listVariableUnitPrices, setVariableUnitPrices, getShortLabel, fetchIndicators, fetchActiveVersion } from '../../data/variableCostRepository.js'
+import { Alert, Button, DataTable, FilterBar, FilterField, StatePanel, StatusBadge } from '../ui/Primitives.jsx'
 
 const PRICED_CODES = new Set(['2.1a','2.1b','2.1c','2.1d','3.1b','3.2a','3.2b','TEBANG_20_40_CM','TEBANG_40_60_CM'])
 
@@ -81,20 +82,17 @@ export default function MasterHargaSatuan({ contractId, up3Id, up3Name, canManag
     }catch(e){ setError(e.message||'Gagal menyimpan') }finally{ setSaving(false) }
   }
 
-  if(loading) return <div className="placeholder"><p>Memuat harga satuan...</p></div>
+  if(loading) return <StatePanel state="loading" title="Memuat Harga Satuan" />
 
   return (
-    <section className="sla-module-panel">
-      <h3>MASTER HARGA SATUAN</h3>
-      <p className="text-muted">{up3Name ? `Pelayanan Teknik · ${up3Name}` : 'Pelayanan Teknik'} — Harga sama untuk semua ULP dalam UP3</p>
-      <div style={{margin:'12px 0', display:'flex', gap:8, alignItems:'center'}}>
-        <label>Berlaku per <input type="date" value={effectiveFrom} onChange={e=>setEffectiveFrom(e.target.value)} /></label>
-        <button type="button" className="sla-btn" onClick={load}>Muat</button>
-      </div>
-      {error && <p className="sla-blocked-note">{error}</p>}
-      {msg && <p style={{color:'#065f46'}}>{msg}</p>}
-      <div className="sla-table-wrap">
-        <table className="sla-table">
+    <section className="vc-subpage vc-unit-prices">
+      <div className="vc-subpage-heading"><div><span className="vc-section-kicker">KONFIGURASI FINANSIAL</span><h3>Harga Satuan</h3><p>{up3Name ? `Pelayanan Teknik · ${up3Name}` : 'Pelayanan Teknik'} · Berlaku sama untuk seluruh ULP dalam UP3</p></div></div>
+      <FilterBar className="vc-filter-bar" actions={<Button variant="secondary" onClick={load}>Muat</Button>}>
+        <FilterField label="Berlaku per"><input className="input-field" type="date" value={effectiveFrom} onChange={e=>setEffectiveFrom(e.target.value)} /></FilterField>
+      </FilterBar>
+      {error && <Alert tone="danger">{error}</Alert>}
+      {msg && <Alert tone="success">{msg}</Alert>}
+      <DataTable className="vc-compact-table vc-price-table" sticky>
           <thead><tr><th>Kegiatan</th><th>Satuan</th><th>Harga Satuan</th></tr></thead>
           <tbody>
             {variableCostIndicators.map(ind=>{
@@ -110,19 +108,18 @@ export default function MasterHargaSatuan({ contractId, up3Id, up3Name, canManag
                 <tr key={ind.id}>
                   <td>{getShortLabel(ind)}</td>
                   <td>{ind.unit ?? '—'}</td>
-                  <td>
-                    {isRowFix ? 'Tidak Ditagihkan' : isKonstruksi ? 'Nominal Langsung' : canManage ? (
-                      <div style={{display:'flex', gap:6, alignItems:'center'}}><span>Rp</span><input className="input-number" value={drafts[ind.id]??''} placeholder={price!=null?String(price):'Belum diatur'} onChange={e=>setDrafts(s=>({...s,[ind.id]:e.target.value.replace(/\D/g,'')}))} /></div>
+                  <td className="ui-table-numeric">
+                    {isRowFix ? <StatusBadge status="INACTIVE">Tidak Ditagihkan</StatusBadge> : isKonstruksi ? <StatusBadge status="ACTIVE" tone="info">Nominal Langsung</StatusBadge> : canManage ? (
+                      <div className="vc-currency-field"><span>Rp</span><input className="input-number" value={drafts[ind.id]??''} placeholder={price!=null?String(price):'Belum diatur'} onChange={e=>setDrafts(s=>({...s,[ind.id]:e.target.value.replace(/\D/g,'')}))} /></div>
                     ) : (price!=null ? formatRp(price) : 'Belum diatur')}
                   </td>
                 </tr>
               )
             })}
           </tbody>
-        </table>
-      </div>
-      {canManage && <div style={{marginTop:12}}><button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={handleSave}>{saving?'Menyimpan...':'Simpan Harga'}</button></div>}
-      <p className="text-muted" style={{marginTop:8, fontSize:12}}>Harga berlaku per UP3, sama untuk semua ULP. Perubahan harga membuat versi baru per tanggal berlaku, histori lama tetap tersimpan.</p>
+      </DataTable>
+      {canManage && <div className="vc-page-actions"><Button variant="primary" disabled={saving} onClick={handleSave}>{saving?'Menyimpan...':'Simpan Harga'}</Button></div>}
+      <p className="vc-helper-text">Harga berlaku per UP3, sama untuk semua ULP. Perubahan harga membuat versi baru per tanggal berlaku, histori lama tetap tersimpan.</p>
     </section>
   )
 }

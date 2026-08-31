@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getVariableFinancialDashboard, getVariableFinancialTrend, periodLabelToMonth } from '../../data/variableCostRepository.js'
 import { variableCostLabelsByCode } from '../../data/slaPelayananTeknik.js'
+import { Alert, Button, DataTable, FilterBar, FilterField, KpiCard, Modal, StatePanel, StatusBadge } from '../ui/Primitives.jsx'
 
 const ALL_UNITS = 'ALL'
 
@@ -115,59 +116,45 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
     if (row.achievement_percent == null) return 'Target Rp0'
     return Number(row.achievement_percent) >= 100 ? 'Target tercapai' : 'Belum tercapai'
   }
+  const achievementTone = (status) => status === 'Target tercapai' ? 'success' : status === 'Belum tercapai' ? 'danger' : 'warning'
 
   return (
     <div className="vc-fin-dashboard">
       <div className="vc-fin-dashboard-head">
         <div>
-          <p className="vc-fin-eyebrow">CURRENT PERIOD</p>
-          <h3>DASHBOARD FINANSIAL VARIABLE COST</h3>
+          <p className="vc-fin-eyebrow">FINANCIAL PERFORMANCE</p>
+          <h3>Dashboard Finansial Variable Cost</h3>
+          <p className="vc-fin-subtitle">Target dan realisasi pendapatan terkonfirmasi per periode.</p>
         </div>
-        <div className="vc-fin-filters">
-          <label>Periode
+        <FilterBar className="vc-fin-filters">
+          <FilterField label="Periode">
             <select className="input-select" value={period} disabled={loading} onChange={(event) => onPeriodChange?.(event.target.value)}>
               {periods.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
-          </label>
-          <label>Scope / ULP
+          </FilterField>
+          <FilterField label="Scope / ULP">
             <select className="input-select" value={unitId} disabled={loading} onChange={(event) => setUnitId(event.target.value)}>
               <option value={ALL_UNITS}>Semua ULP - Konsolidasi UP3</option>
               {authorizedUnitIds.map((id) => <option key={id} value={id}>{unitNames.get(id) ?? id}</option>)}
             </select>
-          </label>
-        </div>
+          </FilterField>
+        </FilterBar>
       </div>
 
-      {error && <p className="sla-blocked-note">{error}</p>}
-      {loading && <p>Memuat Dashboard Finansial...</p>}
+      {error && <Alert tone="danger">{error}</Alert>}
+      {loading && <StatePanel state="loading" title="Memuat Dashboard Finansial" />}
       {!loading && !error && dashboard && (
         <>
           <div className="vc-fin-warnings">
-            {incompleteTargets && <div className="vc-fin-warning">Target pendapatan belum lengkap: {summary.missing_target_count} item</div>}
-            {missingPrices && <div className="vc-fin-warning">Harga belum tersedia: {summary.missing_price_count} transaksi</div>}
+            {incompleteTargets && <Alert tone="warning">Target pendapatan belum lengkap: {summary.missing_target_count} item</Alert>}
+            {missingPrices && <Alert tone="warning">Harga belum tersedia: {summary.missing_price_count} transaksi</Alert>}
           </div>
 
           <div className="vc-fin-kpis">
-            <article className="vc-fin-kpi vc-fin-kpi-target">
-              <span>{incompleteTargets ? 'TARGET TERKONFIGURASI' : 'TARGET PENDAPATAN'}</span>
-              <strong>{formatRp(summary.target_amount)}</strong>
-              <small>{summary.configured_target_count ?? 0} dari {(Number(summary.configured_target_count ?? 0) + Number(summary.missing_target_count ?? 0))} item</small>
-            </article>
-            <article className="vc-fin-kpi vc-fin-kpi-actual">
-              <span>REALISASI PENDAPATAN TERKONFIRMASI</span>
-              <strong>{formatRp(summary.actual_amount)}</strong>
-              <small>APPROVED + Konstruksi langsung</small>
-            </article>
-            <article className="vc-fin-kpi">
-              <span>SELISIH</span>
-              <strong>{financialIncomplete ? 'Belum lengkap' : formatRp(summary.difference_amount)}</strong>
-              <small>Realisasi dikurangi target</small>
-            </article>
-            <article className="vc-fin-kpi">
-              <span>PENCAPAIAN</span>
-              <strong>{financialIncomplete ? 'Belum lengkap' : formatPercent(summary.achievement_percent)}</strong>
-              <small>{achievementStatus(summary)}</small>
-            </article>
+            <KpiCard className="vc-fin-kpi vc-fin-kpi-target" label={incompleteTargets ? 'TARGET TERKONFIGURASI' : 'TARGET PENDAPATAN'} value={formatRp(summary.target_amount)} helper={`${summary.configured_target_count ?? 0} dari ${(Number(summary.configured_target_count ?? 0) + Number(summary.missing_target_count ?? 0))} item`} />
+            <KpiCard className="vc-fin-kpi vc-fin-kpi-actual" label="REALISASI PENDAPATAN TERKONFIRMASI" value={formatRp(summary.actual_amount)} helper="APPROVED + Konstruksi langsung" />
+            <KpiCard className="vc-fin-kpi" label="SELISIH" value={financialIncomplete ? 'Belum lengkap' : formatRp(summary.difference_amount)} helper="Realisasi dikurangi target" />
+            <KpiCard className="vc-fin-kpi" label="PENCAPAIAN" value={financialIncomplete ? 'Belum lengkap' : formatPercent(summary.achievement_percent)} helper={achievementStatus(summary)} />
           </div>
 
           <section className="vc-fin-section">
@@ -190,8 +177,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
 
           <section className="vc-fin-section">
             <div className="vc-fin-section-title"><div><span>RINCIAN</span><h4>PER INDIKATOR</h4></div></div>
-            <div className="sla-table-wrap vc-fin-table-wrap">
-              <table className="sla-table vc-fin-table">
+            <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
                 <thead><tr><th>Kegiatan</th><th>Target Pendapatan</th><th>Realisasi Pendapatan</th><th>Selisih</th><th>Pencapaian</th><th>Status</th></tr></thead>
                 <tbody>
                   {(dashboard.indicators ?? []).map((row) => {
@@ -203,13 +189,12 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
                         <td>{formatRp(row.actual_amount)}</td>
                         <td>{incomplete ? 'Belum lengkap' : formatRp(row.difference_amount)}</td>
                         <td>{incomplete ? 'Belum lengkap' : formatPercent(row.achievement_percent)}</td>
-                        <td>{achievementStatus(row)}</td>
+                        <td><StatusBadge status={achievementStatus(row)} tone={achievementTone(achievementStatus(row))}>{achievementStatus(row)}</StatusBadge></td>
                       </tr>
                     )
                   })}
                 </tbody>
-              </table>
-            </div>
+            </DataTable>
           </section>
 
           <section className="vc-fin-section vc-fin-trend-section">
@@ -220,12 +205,12 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
                 {previousMonthChange != null && <p className={`vc-fin-trend-insight ${previousMonthChange >= 0 ? 'is-up' : 'is-down'}`}>Realisasi {formatRp(currentTrendMonth.actual_amount)}: {previousMonthChange >= 0 ? '+' : ''}{previousMonthChange.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% vs {formatMonth(previousTrendMonth.period_month)}</p>}
               </div>
               <div className="vc-fin-trend-controls" aria-label="Rentang tren">
-                {[6,12].map((count) => <button key={count} type="button" className={`sla-btn ${trendMonthCount === count ? 'sla-btn-primary' : ''}`} disabled={trendLoading} onClick={() => setTrendMonthCount(count)}>{count} Bulan</button>)}
+                {[6,12].map((count) => <Button key={count} variant={trendMonthCount === count ? 'primary' : 'secondary'} size="small" disabled={trendLoading} onClick={() => setTrendMonthCount(count)}>{count} Bulan</Button>)}
               </div>
             </div>
 
-            {trendError && <p className="sla-blocked-note">{trendError}</p>}
-            {trendLoading ? <p>Memuat tren finansial...</p> : !trendError && (
+            {trendError && <Alert tone="danger">{trendError}</Alert>}
+            {trendLoading ? <StatePanel state="loading" title="Memuat tren finansial" /> : !trendError && (
               <>
                 <div className="vc-fin-chart vc-fin-trend-chart">
                   {trendMonths.map((row) => (
@@ -241,42 +226,33 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
                   ))}
                 </div>
 
-                <div className="sla-table-wrap vc-fin-table-wrap vc-fin-trend-table-wrap">
-                  <table className="sla-table vc-fin-table">
+                <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap vc-fin-trend-table-wrap" sticky>
                     <thead><tr><th>Periode</th><th>Target</th><th>Realisasi</th><th>Selisih</th><th>Pencapaian</th><th>Status</th></tr></thead>
                     <tbody>{trendMonths.map((row) => {
                       const targetIncomplete = !row.target_complete
                       const priceMissing = Number(row.missing_price_count) > 0
                       const status = !row.has_data ? 'Belum ada data' : targetIncomplete ? 'Target Belum Lengkap' : priceMissing ? 'Harga Belum Lengkap' : row.achievement_percent == null ? 'Target Rp0' : Number(row.achievement_percent) >= 100 ? 'Tercapai' : 'Belum Tercapai'
-                      return <tr key={row.period_month}><td>{formatMonth(row.period_month)}</td><td>{row.has_data ? formatRp(row.target_amount) : '-'}{row.has_data && targetIncomplete && <small>{row.configured_target_count} / {row.required_target_count} target</small>}</td><td>{row.has_data ? formatRp(row.actual_amount) : '-'}</td><td>{row.has_data && !targetIncomplete && !priceMissing ? formatRp(row.difference_amount) : '-'}</td><td>{row.has_data && !targetIncomplete && !priceMissing ? formatPercent(row.achievement_percent) : '-'}</td><td>{status}{priceMissing && <small>Harga belum tersedia: {row.missing_price_count} transaksi</small>}</td></tr>
+                      return <tr key={row.period_month}><td>{formatMonth(row.period_month)}</td><td>{row.has_data ? formatRp(row.target_amount) : '-'}{row.has_data && targetIncomplete && <small>{row.configured_target_count} / {row.required_target_count} target</small>}</td><td>{row.has_data ? formatRp(row.actual_amount) : '-'}</td><td>{row.has_data && !targetIncomplete && !priceMissing ? formatRp(row.difference_amount) : '-'}</td><td>{row.has_data && !targetIncomplete && !priceMissing ? formatPercent(row.achievement_percent) : '-'}</td><td><StatusBadge status={status} tone={status === 'Tercapai' ? 'success' : status === 'Belum Tercapai' ? 'danger' : 'warning'}>{status}</StatusBadge>{priceMissing && <small>Harga belum tersedia: {row.missing_price_count} transaksi</small>}</td></tr>
                     })}</tbody>
-                  </table>
-                </div>
+                </DataTable>
               </>
             )}
           </section>
         </>
       )}
 
-      {selectedIndicator && (
-        <div className="modal-backdrop" onClick={() => setSelectedIndicator(null)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 860 }}>
-            <div className="modal-header"><h3>{indicatorLabel(selectedIndicator)} - Rincian per ULP</h3><button type="button" className="modal-close" onClick={() => setSelectedIndicator(null)}>x</button></div>
-            <div className="modal-body">
-              <div className="sla-table-wrap vc-fin-table-wrap">
-                <table className="sla-table vc-fin-table">
+      <Modal open={Boolean(selectedIndicator)} onClose={() => setSelectedIndicator(null)} title={`${indicatorLabel(selectedIndicator)} - Rincian per ULP`} size="large">
+        {selectedIndicator && (
+              <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
                   <thead><tr><th>ULP</th><th>Target</th><th>Realisasi</th><th>Selisih</th><th>Pencapaian</th><th>Aksi</th></tr></thead>
                   <tbody>{detailCells.map((cell) => {
                     const incomplete = cell.target_missing || Number(cell.missing_price_count) > 0
                     const contributingIds = cell.actual_indicator_ids?.length ? cell.actual_indicator_ids : [cell.indicator_id]
-                    return <tr key={cell.unit_id}><td>{unitNames.get(cell.unit_id) ?? cell.unit_id}</td><td>{cell.target_missing ? 'Target belum diatur' : formatRp(cell.target_amount)}</td><td>{formatRp(cell.actual_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatRp(cell.difference_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatPercent(cell.achievement_percent)}</td><td>{cell.source_type === 'UNIT_RATE' ? <button type="button" className="sla-btn" onClick={() => onOpenTransactions?.(cell.indicator_code, cell.unit_id, contributingIds)}>Transaksi APPROVED</button> : '-'}</td></tr>
+                    return <tr key={cell.unit_id}><td>{unitNames.get(cell.unit_id) ?? cell.unit_id}</td><td>{cell.target_missing ? 'Target belum diatur' : formatRp(cell.target_amount)}</td><td>{formatRp(cell.actual_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatRp(cell.difference_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatPercent(cell.achievement_percent)}</td><td>{cell.source_type === 'UNIT_RATE' ? <Button variant="secondary" size="small" onClick={() => onOpenTransactions?.(cell.indicator_code, cell.unit_id, contributingIds)}>Transaksi APPROVED</Button> : '-'}</td></tr>
                   })}</tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+              </DataTable>
+        )}
+      </Modal>
     </div>
   )
 }
