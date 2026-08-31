@@ -1,4 +1,5 @@
 import { currentNameOf } from '../../data/organisasiPelayananTeknik.js'
+import { FilterBar } from '../ui/Primitives.jsx'
 
 export default function SLAContextBar({
   role,
@@ -14,7 +15,7 @@ export default function SLAContextBar({
   onUnitChange,
 }) {
   return (
-    <div className="sla-context-bar">
+    <FilterBar className="sla-context-bar">
       <label className="sla-context-field">
         <span className="sla-context-label">Periode</span>
         <select
@@ -69,6 +70,6 @@ export default function SLAContextBar({
       <span className="sla-context-note">
         Data laporan Supabase
       </span>
-    </div>
+    </FilterBar>
   )
 }

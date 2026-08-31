@@ -12,6 +12,13 @@ const ICONS = {
   'chevron-right': <><path d="m9 18 6-6-6-6" /></>,
   'arrow-left': <><path d="m12 19-7-7 7-7M5 12h14" /></>,
   'arrow-right': <><path d="m12 5 7 7-7 7M5 12h14" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
+  info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
+  'check-circle': <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></>,
+  'alert-triangle': <><path d="M10.3 3.7 2.4 17.4A2 2 0 0 0 4.1 20h15.8a2 2 0 0 0 1.7-2.6L13.7 3.7a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></>,
+  'x-circle': <><circle cx="12" cy="12" r="9" /><path d="m9 9 6 6M15 9l-6 6" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  loader: <><path d="M21 12a9 9 0 1 1-6.2-8.6" /></>,
 }
 
 export default function Icon({ name, size = 18, className = '' }) {
