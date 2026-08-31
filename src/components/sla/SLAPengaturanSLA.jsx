@@ -411,6 +411,7 @@ export default function SLAPengaturanSLA({
   onRollback,
   onDeleteVersion,
   orgMap,
+  lifecycleReadOnly = false,
 }) {
   const ulpUnits = units.filter((unit) => unit.type === 'ULP')
   const up3Unit = units.find((unit) => unit.type === 'UP3')
@@ -1039,14 +1040,20 @@ export default function SLAPengaturanSLA({
 
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Pengaturan SLA / Addendum</h2>
-        <button
-          type="button"
-          className="sla-btn sla-btn-primary"
-          onClick={() => setShowCreate((open) => !open)}
-        >
-          {showCreate ? 'Batal' : 'Buat SLA/Addendum Baru'}
-        </button>
+        {!lifecycleReadOnly && (
+          <button
+            type="button"
+            className="sla-btn sla-btn-primary"
+            onClick={() => setShowCreate((open) => !open)}
+          >
+            {showCreate ? 'Batal' : 'Buat SLA/Addendum Baru'}
+          </button>
+        )}
       </div>
+
+      {lifecycleReadOnly && (
+        <p className="sla-flat-note">Riwayat versi SLA ditampilkan read-only. Perubahan lifecycle memerlukan layanan administrasi resmi.</p>
+      )}
 
       {message && (
         <div className="sla-message" role="status">
@@ -1054,7 +1061,7 @@ export default function SLAPengaturanSLA({
         </div>
       )}
 
-      {showCreate && (
+      {!lifecycleReadOnly && showCreate && (
         <div className="sla-draft-form">
           <div className="sla-draft-form-fields">
             <div className="sla-context-field">
@@ -1181,7 +1188,19 @@ export default function SLAPengaturanSLA({
                 <td>{sourceLabel(version.source)}</td>
                 <td>
                   <div className="sla-version-actions">
-                    {version.status === 'Draft' ? (
+                    {lifecycleReadOnly ? (
+                      <button
+                        type="button"
+                        className="sla-btn"
+                        onClick={() => {
+                          setViewingId(version.id)
+                          setEditingId(null)
+                          setMetadataId(null)
+                        }}
+                      >
+                        Lihat
+                      </button>
+                    ) : version.status === 'Draft' ? (
                       <>
                         <button
                           type="button"

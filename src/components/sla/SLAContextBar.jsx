@@ -67,7 +67,7 @@ export default function SLAContextBar({
         </label>
       )}
       <span className="sla-context-note">
-        Dummy &middot; tanpa perhitungan otomatis
+        Data laporan Supabase
       </span>
     </div>
   )

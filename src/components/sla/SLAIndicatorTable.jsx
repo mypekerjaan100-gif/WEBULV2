@@ -40,9 +40,9 @@ export default function SLAIndicatorTable({
   targets,
   onTargetsChange,
   variableTargets = {},
-  readOnly = false,
+  canEditManualOperations = false,
+  canEditTarget = false,
 }) {
-  const isUp3Role = role === 'up3'
   const isUp3View = unitId === up3Id
 
   const entryOf = (indicatorId) => entries[indicatorId] ?? {}
@@ -64,24 +64,9 @@ export default function SLAIndicatorTable({
   }
 
   const fieldMode = (isVc, field) => {
-    if (readOnly) return 'view'
-    if (!isUp3Role) {
-      if (field === 'target-up3' || field === 'target-ulp') return 'view'
-      if (field === 'realisasi' || field === 'pencapaian') {
-        return isVc ? 'view' : 'edit'
-      }
-      return 'edit'
-    }
-    if (isUp3View) {
-      if (field === 'target-up3') return 'edit'
-      if (field === 'target-ulp') return 'view'
-      if (field === 'realisasi' || field === 'pencapaian') {
-        return isVc ? 'view' : 'edit'
-      }
-      return 'edit'
-    }
-    if (field === 'target-ulp') return 'edit'
-    return 'view'
+    if (isVc) return 'view'
+    if (field === 'target-up3' || field === 'target-ulp') return canEditTarget ? 'edit' : 'view'
+    return canEditManualOperations ? 'edit' : 'view'
   }
 
   const numInput = (value, disabled, onChange) => (
@@ -90,7 +75,7 @@ export default function SLAIndicatorTable({
       className="sla-input"
       value={value ?? ''}
       disabled={disabled}
-      placeholder="\u2013"
+      placeholder="-"
       onChange={(event) => onChange(parseNumber(event.target.value))}
     />
   )
@@ -141,7 +126,7 @@ export default function SLAIndicatorTable({
     if (mode === 'edit') {
       return numInput(value, false, (next) => updateEntry(indicator.id, field, next))
     }
-    if ((field === 'realisasi' || field === 'pencapaian') && isVc) {
+    if (isVc) {
       return autoCell(value)
     }
     return <span className="sla-readonly">{formatValue(value)}</span>
@@ -220,8 +205,8 @@ export default function SLAIndicatorTable({
         <td>{renderSatuanCell(indicator, isVc)}</td>
         <td>{renderTargetCell(indicator)}</td>
         <td>{renderDataCell(indicator, isVc, 'wo')}</td>
-        <td>{renderDataCell(indicator, isVc, 'realisasi')}</td>
-        <td>{renderDataCell(indicator, isVc, 'pencapaian')}</td>
+        <td>{renderDataCell(indicator, isVc, 'realization')}</td>
+        <td>{renderDataCell(indicator, isVc, 'achievement')}</td>
         <td className="sla-table-penalty">
           {renderDenda(indicator, entryOf(indicator.id))}
         </td>
