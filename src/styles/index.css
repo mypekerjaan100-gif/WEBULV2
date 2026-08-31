@@ -5752,8 +5752,104 @@ summary:focus-visible {
   letter-spacing: 0.08em;
 }
 
+.vc-approval-table-wrap {
+  overflow-x: auto;
+}
+
 .vc-approval-table {
-  min-width: 980px;
+  min-width: 1120px;
+  table-layout: fixed;
+}
+
+.vc-approval-table th,
+.vc-approval-table td {
+  vertical-align: middle;
+}
+
+.vc-approval-table th:nth-child(1),
+.vc-approval-table td:nth-child(1) {
+  width: 105px;
+  min-width: 105px;
+  white-space: nowrap;
+}
+
+.vc-approval-table th:nth-child(2),
+.vc-approval-table td:nth-child(2) {
+  width: 135px;
+  min-width: 135px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vc-approval-table th:nth-child(3),
+.vc-approval-table td:nth-child(3) {
+  width: auto;
+  min-width: 180px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.vc-approval-table th:nth-child(4),
+.vc-approval-table td:nth-child(4) {
+  width: 125px;
+  min-width: 125px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vc-approval-table th:nth-child(5),
+.vc-approval-table td:nth-child(5),
+.vc-approval-table th:nth-child(6),
+.vc-approval-table td:nth-child(6) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vc-approval-table th:nth-child(5),
+.vc-approval-table td:nth-child(5) {
+  width: 60px;
+  min-width: 60px;
+}
+
+.vc-approval-table th:nth-child(6),
+.vc-approval-table td:nth-child(6) {
+  width: 75px;
+  min-width: 75px;
+}
+
+.vc-approval-table th:nth-child(7),
+.vc-approval-table td:nth-child(7) {
+  width: 90px;
+  min-width: 90px;
+  max-width: 90px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vc-approval-table th:nth-child(8),
+.vc-approval-table td:nth-child(8) {
+  width: 155px;
+  min-width: 145px;
+  max-width: 165px;
+  white-space: nowrap;
+}
+
+.vc-approval-table th:nth-child(9),
+.vc-approval-table td:nth-child(9) {
+  width: 260px;
+  min-width: 245px;
+  max-width: 275px;
+  white-space: nowrap;
+}
+
+.vc-approval-table td:nth-child(9) .vc-table-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 
 .vc-table-actions {
