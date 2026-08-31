@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getVariableFinancialDashboard, getVariableFinancialTrend, periodLabelToMonth } from '../../data/variableCostRepository.js'
+import { variableCostLabelsByCode } from '../../data/slaPelayananTeknik.js'
 
 const ALL_UNITS = 'ALL'
 
@@ -24,6 +25,10 @@ function formatMonth(value, compact = false) {
     year: 'numeric',
     timeZone: 'UTC',
   })
+}
+
+function indicatorLabel(indicator) {
+  return variableCostLabelsByCode[indicator?.indicator_code] ?? indicator?.indicator_name ?? '-'
 }
 
 export default function VariableFinancialDashboard({ contractId, up3Id, period, periods, onPeriodChange, units, onOpenTransactions }) {
@@ -193,7 +198,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
                     const incomplete = Number(row.missing_target_count) > 0 || Number(row.missing_price_count) > 0
                     return (
                       <tr key={row.indicator_code}>
-                        <td><button type="button" className="vc-fin-indicator-link" onClick={() => setSelectedIndicator(row)}>{row.indicator_name}</button></td>
+                        <td><button type="button" className="vc-fin-indicator-link" onClick={() => setSelectedIndicator(row)}>{indicatorLabel(row)}</button></td>
                         <td>{formatRp(row.target_amount)}{Number(row.missing_target_count) > 0 && <small> Target terkonfigurasi</small>}</td>
                         <td>{formatRp(row.actual_amount)}</td>
                         <td>{incomplete ? 'Belum lengkap' : formatRp(row.difference_amount)}</td>
@@ -256,7 +261,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
       {selectedIndicator && (
         <div className="modal-backdrop" onClick={() => setSelectedIndicator(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 860 }}>
-            <div className="modal-header"><h3>{selectedIndicator.indicator_name} - Rincian per ULP</h3><button type="button" className="modal-close" onClick={() => setSelectedIndicator(null)}>x</button></div>
+            <div className="modal-header"><h3>{indicatorLabel(selectedIndicator)} - Rincian per ULP</h3><button type="button" className="modal-close" onClick={() => setSelectedIndicator(null)}>x</button></div>
             <div className="modal-body">
               <div className="sla-table-wrap vc-fin-table-wrap">
                 <table className="sla-table vc-fin-table">

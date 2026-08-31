@@ -1155,6 +1155,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>Keterangan:</strong> {detailData.entry.description ?? '—'}</div>
                       <div><strong>Status:</strong> {detailData.entry.status === 'DRAFT' ? 'Draft' : detailData.entry.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : detailData.entry.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}</div>
                       {detailData.entry.status === 'REJECTED' && detailData.entry.rejection_reason && <div><strong>Alasan Ditolak:</strong> {detailData.entry.rejection_reason}</div>}
+                      <div><strong>Riwayat Status:</strong>{(detailData.history ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : <ul>{detailData.history.map((item) => <li key={item.id}>{new Date(item.changed_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })} - {item.from_status === item.to_status ? `Data diperbarui (${formatApprovalStatus(item.to_status)})` : `${item.from_status ? formatApprovalStatus(item.from_status) : 'Baru'} ke ${formatApprovalStatus(item.to_status)}`}{item.reason ? `: ${item.reason}` : ''}</li>)}</ul>}</div>
                       <div><strong>Evidence:</strong>
                         {(detailData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (
                           <ul>
@@ -1224,6 +1225,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>Petugas:</strong> {(approvalData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
                       <div><strong>Keterangan:</strong> {approvalData.entry.description ?? '—'}</div>
                       <div><strong>Status:</strong> {formatApprovalStatus(approvalData.entry.status)}</div>
+                      <div><strong>Riwayat Status:</strong>{(approvalData.history ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : <ul>{approvalData.history.map((item) => <li key={item.id}>{new Date(item.changed_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })} - {item.from_status === item.to_status ? `Data diperbarui (${formatApprovalStatus(item.to_status)})` : `${item.from_status ? formatApprovalStatus(item.from_status) : 'Baru'} ke ${formatApprovalStatus(item.to_status)}`}{item.reason ? `: ${item.reason}` : ''}</li>)}</ul>}</div>
                       <div><strong>Evidence:</strong> {(approvalData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (<ul>{(approvalData.evidences ?? []).map((ev) => (<li key={ev.id}><button type="button" className="sla-btn" onClick={async () => { const url = await getEvidencePreviewUrl(ev.storage_path); window.open(url, '_blank') }}>{ev.file_name}</button> — {ev.mime_type}</li>))}</ul>)}</div>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
                         <button type="button" className="sla-btn" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>Tutup</button>
