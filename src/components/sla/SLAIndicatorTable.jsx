@@ -202,11 +202,11 @@ export default function SLAIndicatorTable({
         <td className="sla-table-eviden">{indicator.evidence}</td>
         <td className="sla-table-weight-type">{indicator.weightType}</td>
         <td className="sla-table-weight">{indicator.weight}</td>
-        <td>{renderSatuanCell(indicator, isVc)}</td>
-        <td>{renderTargetCell(indicator)}</td>
-        <td>{renderDataCell(indicator, isVc, 'wo')}</td>
-        <td>{renderDataCell(indicator, isVc, 'realization')}</td>
-        <td>{renderDataCell(indicator, isVc, 'achievement')}</td>
+        <td className="sla-table-unit">{renderSatuanCell(indicator, isVc)}</td>
+        <td className="sla-table-numeric">{renderTargetCell(indicator)}</td>
+        <td className="sla-table-numeric">{renderDataCell(indicator, isVc, 'wo')}</td>
+        <td className="sla-table-numeric">{renderDataCell(indicator, isVc, 'realization')}</td>
+        <td className="sla-table-numeric">{renderDataCell(indicator, isVc, 'achievement')}</td>
         <td className="sla-table-penalty">
           {renderDenda(indicator, entryOf(indicator.id))}
         </td>

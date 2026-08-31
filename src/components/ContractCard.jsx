@@ -1,3 +1,5 @@
+import Icon from './Icon.jsx'
+
 export default function ContractCard({ contract, onSelect }) {
   return (
     <button
@@ -5,27 +7,29 @@ export default function ContractCard({ contract, onSelect }) {
       className="contract-card"
       onClick={() => onSelect(contract.id)}
     >
-      <span className="contract-card-icon" aria-hidden="true">
-        {iconMark(contract.icon)}
+      <span className="contract-card-heading">
+        <span className={`contract-card-icon contract-card-icon-${contract.icon}`}>
+          <Icon name={iconName(contract.icon)} size={22} />
+        </span>
+        <span className="contract-card-title">{contract.title}</span>
       </span>
-      <span className="contract-card-title">{contract.title}</span>
       <span className="contract-card-description">{contract.description}</span>
-      <span className="contract-card-action">Buka halaman &rarr;</span>
+      <span className="contract-card-action">Buka halaman <Icon name="arrow-right" size={14} /></span>
     </button>
   )
 }
 
-function iconMark(icon) {
+function iconName(icon) {
   switch (icon) {
     case 'wrench':
-      return '\u2692'
+      return 'operations'
     case 'receipt':
-      return '\u2740'
+      return 'billing'
     case 'substation':
-      return '\u26A1'
+      return 'substation'
     case 'binoculars':
-      return '\u231A'
+      return 'patrol'
     default:
-      return '\u2022'
+      return 'dashboard'
   }
 }

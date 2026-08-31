@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import SlaPreviewBar from './sla/SlaPreviewBar.jsx'
 import { useAuth } from '../lib/AppAuth.jsx'
+import Icon from './Icon.jsx'
 
 export default function Header({ onOpenSidebar, preview, approvalNotifications, approvalNotificationError, onRefreshApprovalNotifications, onOpenApprovalNotification }) {
   const { authority, signOut } = useAuth()
@@ -48,7 +49,7 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
         onClick={onOpenSidebar}
         aria-label="Buka menu"
       >
-        &#9776;
+        <Icon name="menu" />
       </button>
       <div className="header-right">
         {approvalNotifications && (
@@ -60,7 +61,7 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
               aria-expanded={notificationOpen}
               onClick={toggleNotifications}
             >
-              <span aria-hidden="true">&#128276;</span>
+              <Icon name="bell" />
               {pendingCount > 0 && <span className="approval-notification-badge">{pendingCount}</span>}
             </button>
             {notificationOpen && (

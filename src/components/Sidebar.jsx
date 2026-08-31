@@ -1,4 +1,5 @@
 import { useAuth } from '../lib/AppAuth.jsx'
+import Icon from './Icon.jsx'
 
 export default function Sidebar({ open, collapsed, onToggleCollapse, activeContractId, currentPage, onNavigate, onNavigatePage, onClose }) {
   const { authority } = useAuth()
@@ -11,11 +12,11 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
   const isManagementUser = organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
   if (isManagementUser) allowedContractCodes.add('pelayanan-teknik')
 
-  const pelayananTeknik = { id: 'pelayanan-teknik', title: 'Pelayanan Teknik', icon: '\u2699' }
+  const pelayananTeknik = { id: 'pelayanan-teknik', title: 'Pelayanan Teknik', icon: 'operations' }
   const kontrakLain = [
-    { id: 'billing-management', title: 'Billing Management', icon: '\u25A3' },
-    { id: 'operator-gardu-induk', title: 'Operator Gardu Induk', icon: '\u26A1' },
-    { id: 'ground-patrol', title: 'Ground Patrol', icon: '\u2316' },
+    { id: 'billing-management', title: 'Billing Management', icon: 'billing' },
+    { id: 'operator-gardu-induk', title: 'Operator Gardu Induk', icon: 'substation' },
+    { id: 'ground-patrol', title: 'Ground Patrol', icon: 'patrol' },
   ]
 
   const showPelayananTeknik = isSuperAdmin || allowedContractCodes.has(pelayananTeknik.id)
@@ -24,11 +25,13 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
   return (
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <div className="sidebar-brand">
-        <img src="/logo-pln-nusa-daya.png" alt="PLN Nusa Daya" className="sidebar-logo" />
+        <span className="sidebar-logo-frame">
+          <img src="/logo-pln-nusa-daya.png" alt="PLN Nusa Daya" className="sidebar-logo" />
+        </span>
         <button type="button" className="sidebar-collapse-btn" onClick={onToggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
-          {collapsed ? '\u00BB' : '\u00AB'}
+          <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} size={16} />
         </button>
-        <button type="button" className="sidebar-close" onClick={onClose} aria-label="Tutup menu">&times;</button>
+        <button type="button" className="sidebar-close" onClick={onClose} aria-label="Tutup menu"><Icon name="close" size={20} /></button>
       </div>
       <nav className="sidebar-nav">
         <button
@@ -36,7 +39,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
           className={`nav-item ${activeContractId === null && currentPage === null ? 'nav-item-active' : ''}`}
           onClick={() => onNavigate(null)}
         >
-          <span className="nav-icon" aria-hidden="true">&#9632;</span>
+          <span className="nav-icon"><Icon name="dashboard" /></span>
           <span className="nav-item-label">Dashboard</span>
         </button>
 
@@ -48,7 +51,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
               className={`nav-item ${activeContractId === pelayananTeknik.id ? 'nav-item-active' : ''}`}
               onClick={() => onNavigate(pelayananTeknik.id)}
             >
-              <span className="nav-icon" aria-hidden="true">{pelayananTeknik.icon}</span>
+              <span className="nav-icon"><Icon name={pelayananTeknik.icon} /></span>
               <span className="nav-item-label">{pelayananTeknik.title}</span>
             </button>
           </>
@@ -64,7 +67,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
                 className={`nav-item ${activeContractId === contract.id ? 'nav-item-active' : ''}`}
                 onClick={() => onNavigate(contract.id)}
               >
-                <span className="nav-icon" aria-hidden="true">{contract.icon}</span>
+                <span className="nav-icon"><Icon name={contract.icon} /></span>
                 <span className="nav-item-label">{contract.title}</span>
               </button>
             ))}
@@ -79,7 +82,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
               className={`nav-item ${currentPage === 'pengguna-akses' ? 'nav-item-active' : ''}`}
               onClick={() => onNavigatePage('pengguna-akses')}
             >
-              <span className="nav-icon" aria-hidden="true">&#9823;</span>
+              <span className="nav-icon"><Icon name="users" /></span>
               <span className="nav-item-label">Pengguna &amp; Akses</span>
             </button>
           </>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from '../../lib/AppAuth.jsx'
+import Icon from '../../components/Icon.jsx'
 import {
   fetchEmployeesFromSupabase,
   fetchPositionsFromSupabase,
@@ -833,7 +834,7 @@ export default function SLAPelayananTeknikPage({
           <p className="page-description">Kelola pelaporan dan monitoring pekerjaan secara terintegrasi.</p>
         </div>
         <button type="button" className="back-button pt-back-button" onClick={onBack}>
-          &larr; Dashboard
+          <Icon name="arrow-left" size={16} /> Dashboard
         </button>
       </header>
 

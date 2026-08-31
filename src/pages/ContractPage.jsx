@@ -1,8 +1,10 @@
+import Icon from '../components/Icon.jsx'
+
 export default function ContractPage({ contract, onBack }) {
   return (
     <div className="page">
       <button type="button" className="back-button" onClick={onBack}>
-        &larr; Kembali ke Dashboard
+        <Icon name="arrow-left" size={16} /> Kembali ke Dashboard
       </button>
       <section className="page-hero">
         <h1 className="page-title">{contract.title}</h1>
@@ -10,7 +12,7 @@ export default function ContractPage({ contract, onBack }) {
       </section>
       <section className="placeholder">
         <div className="placeholder-icon" aria-hidden="true">
-          {iconMark(contract.icon)}
+          <Icon name={iconName(contract.icon)} size={32} />
         </div>
         <h2 className="placeholder-title">Halaman placeholder</h2>
         <p className="placeholder-text">
@@ -27,17 +29,17 @@ export default function ContractPage({ contract, onBack }) {
   )
 }
 
-function iconMark(icon) {
+function iconName(icon) {
   switch (icon) {
     case 'wrench':
-      return '\u2692'
+      return 'operations'
     case 'receipt':
-      return '\u2740'
+      return 'billing'
     case 'substation':
-      return '\u26A1'
+      return 'substation'
     case 'binoculars':
-      return '\u231A'
+      return 'patrol'
     default:
-      return '\u2022'
+      return 'dashboard'
   }
 }
