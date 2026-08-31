@@ -328,8 +328,17 @@ summary:focus-visible {
   padding: 0 14px 0 18px;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 30;
   box-shadow: 0 1px 0 rgba(15,32,67,0.04);
+}
+
+html {
+  scroll-padding-top: calc(var(--header-height) + 16px);
+}
+
+#perlu-perbaikan-section,
+[id^='feeder-'] {
+  scroll-margin-top: calc(var(--header-height) + 16px);
 }
 
 .header-menu-button {
