@@ -8,6 +8,18 @@ import {
   REPLACEMENT_TYPES,
 } from '../../data/overtimeReplacementL2.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
+import Icon from '../Icon.jsx'
+import {
+  Alert,
+  Button,
+  FilterBar,
+  FilterField,
+  IconButton,
+  SearchInput,
+  Select,
+  StatePanel,
+  StatusBadge,
+} from '../ui/Primitives.jsx'
 
 const formatRp = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -71,6 +83,21 @@ function displayStatus(record){
   if (record.status==='CLOSED' && record.closureReason==='FINAL_REJECTED') return 'Ditolak Final'
   if (record.status==='CLOSED' && record.closureReason==='EXPIRED') return 'Kedaluwarsa'
   if (record.status==='CLOSED') return 'Ditutup'
+  return record.status
+}
+
+function statusTone(record) {
+  if (recordIsExpired(record)) return 'neutral'
+  if (record.status === 'APPROVED') return 'success'
+  if (record.status === 'SUBMITTED') return 'info'
+  if (record.status === 'CORRECTION_REQUIRED') return 'warning'
+  if (record.status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'danger'
+  return 'neutral'
+}
+
+function statusBadgeKey(record) {
+  if (recordIsExpired(record)) return 'EXPIRED'
+  if (record.status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'REJECTED'
   return record.status
 }
 
@@ -717,71 +744,77 @@ export default function SLALembur({
     : REPLACEMENT_TYPES[draft.lemburType]?.label
   const activeDetailEvidence = detailEvidence.filter((entry) => entry.status === 'ACTIVE')
   const photoDetailEvidence = activeDetailEvidence.filter(isImageEvidence)
+  const ulpCount = (orgUnits ?? []).filter((unit) => unit.type === 'ULP').length
+  const up3ScopeName = (orgUnits ?? []).find((unit) => unit.uuid === up3Id || unit.legacyKey === up3Id)?.displayName
 
   return (
     <section className="sla-module-panel lembur-l2">
       <div className="lembur-landing-header">
         <div>
-          <h1>Lembur Pelayanan Teknik</h1>
-          <p>Pengajuan dan rekap lembur pegawai</p>
+          <span className="lembur-kicker">Workspace Operasional</span>
+          <h1>LEMBUR</h1>
+          <p>Pengajuan dan monitoring lembur pegawai</p>
         </div>
-        {canMutate && <button type="button" className="sla-btn sla-btn-primary" onClick={openNewForm}>+ Tambah Lembur</button>}
+        <div className="lembur-landing-actions">
+          {(up3ScopeName || contractScope.region || ulpCount > 0) && <span className="lembur-scope-badge">{up3ScopeName ?? contractScope.region ?? 'Scope UP3'} · {ulpCount} ULP</span>}
+          {canMutate && <Button variant="primary" onClick={openNewForm}>+ Tambah Lembur</Button>}
+        </div>
       </div>
       {loadError ? (
-        <div className="placeholder"><h2 className="placeholder-title">Data lembur gagal dimuat</h2><p className="placeholder-text">{loadError}</p><button type="button" className="sla-btn" onClick={onRetry}>Coba Lagi</button></div>
+        <StatePanel state="error" title="Data lembur gagal dimuat" action={<Button variant="secondary" onClick={onRetry}>Coba Lagi</Button>}>{loadError}</StatePanel>
       ) : loading ? (
-        <div className="placeholder"><h2 className="placeholder-title">Memuat data lembur...</h2></div>
+        <StatePanel state="loading" title="Memuat data lembur" />
       ) : (
         <>
-          {!formOpen && message && <p className="lembur-message lembur-landing-message">{message}</p>}
+          {!formOpen && message && <Alert tone="info" className="lembur-landing-message">{message}</Alert>}
           {canMutate && formOpen && (
             <div className="rekap-detail-overlay lembur-form-overlay" onMouseDown={(event)=>{ if(event.target===event.currentTarget) closeForm() }}>
             <div className={`lembur-form-card ${formStep === 'form' ? 'lembur-form-modal-wide' : 'lembur-picker-modal'}`} onMouseDown={(event)=>event.stopPropagation()}>
               {formStep === 'main' ? (
                 <>
-                  <div className="lembur-modal-header">
-                    <div><h2>Tambah Lembur</h2><p>Pilih jenis lembur yang akan diajukan</p></div>
-                    <button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={closeForm}>×</button>
-                  </div>
-                  <div className="lembur-type-grid">
-                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_LEAVE')}><strong>Pengganti Cuti</strong><span>Pegawai menggantikan petugas yang cuti</span></button>
-                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_SICK')}><strong>Pengganti Sakit</strong><span>Pegawai menggantikan petugas yang sakit</span></button>
-                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_PERMISSION')}><strong>Pengganti Izin</strong><span>Pegawai menggantikan petugas yang izin</span></button>
-                    <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('WORK')}><strong>Lembur Pekerjaan</strong><span>Lembur untuk pelaksanaan pekerjaan tertentu</span></button>
-                  </div>
+                   <div className="lembur-modal-header">
+                     <div><h2>Tambah Lembur</h2><p>Pilih jenis lembur yang akan diajukan</p></div>
+                     <IconButton label="Tutup" className="lembur-icon-button" onClick={closeForm}><Icon name="close" size={17} /></IconButton>
+                   </div>
+                   <div className="lembur-type-grid">
+                     <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_LEAVE')}><Icon name="clock" size={18} /><strong>Pengganti Cuti</strong><span>Pegawai menggantikan petugas yang cuti</span></button>
+                     <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_SICK')}><Icon name="clock" size={18} /><strong>Pengganti Sakit</strong><span>Pegawai menggantikan petugas yang sakit</span></button>
+                     <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('REPLACEMENT_PERMISSION')}><Icon name="clock" size={18} /><strong>Pengganti Izin</strong><span>Pegawai menggantikan petugas yang izin</span></button>
+                     <button type="button" className="lembur-type-card" onClick={()=>chooseMainType('WORK')}><Icon name="operations" size={18} /><strong>Lembur Pekerjaan</strong><span>Lembur untuk pelaksanaan pekerjaan tertentu</span></button>
+                   </div>
                 </>
               ) : formStep === 'work' ? (
                 <>
-                  <div className="lembur-modal-header">
-                    <div><h2>Pilih Jenis Pekerjaan</h2><p>Tentukan kategori pekerjaan lembur</p></div>
-                    <button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={closeForm}>×</button>
-                  </div>
-                  <div className="lembur-type-grid lembur-work-type-grid">
-                    {Object.entries(WORK_CATEGORIES).map(([category, config])=><button type="button" className="lembur-type-card" key={category} onClick={()=>chooseWorkType(category)}><strong>{config.label}</strong><span>Lembur pekerjaan {config.label.toLowerCase()}</span></button>)}
-                  </div>
-                  <button type="button" className="sla-btn lembur-back-button" onClick={()=>setFormStep('main')}>← Kembali</button>
+                   <div className="lembur-modal-header">
+                     <div><h2>Pilih Jenis Pekerjaan</h2><p>Tentukan kategori pekerjaan lembur</p></div>
+                     <IconButton label="Tutup" className="lembur-icon-button" onClick={closeForm}><Icon name="close" size={17} /></IconButton>
+                   </div>
+                   <div className="lembur-type-grid lembur-work-type-grid">
+                     {Object.entries(WORK_CATEGORIES).map(([category, config])=><button type="button" className="lembur-type-card" key={category} onClick={()=>chooseWorkType(category)}><Icon name="operations" size={18} /><strong>{config.label}</strong><span>Lembur pekerjaan {config.label.toLowerCase()}</span></button>)}
+                   </div>
+                   <Button variant="ghost" className="lembur-back-button" onClick={()=>setFormStep('main')}>← Kembali</Button>
                 </>
               ) : (
               <>
               <div className="lembur-form-heading">
-                <div><span className="lembur-kicker">{activeActivityId ? 'Lanjutkan Draft' : 'Tambah Lembur'}</span><h2>{currentTypeLabel}</h2></div>
-                <div className="lembur-heading-actions">
-                  {!activeActivityId && <button type="button" className="sla-btn" disabled={submitting} onClick={()=>setFormStep(isWork ? 'work' : 'main')}>← Ubah Jenis</button>}
-                  {activeActivityId && <button type="button" className="sla-btn" disabled={submitting} onClick={openNewForm}>Draft Baru</button>}
-                  <button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={closeForm}>×</button>
-                </div>
+                 <div><span className="lembur-kicker">{activeActivityId ? 'Lanjutkan Draft' : 'Tambah Lembur'}</span><h2>{currentTypeLabel}</h2></div>
+                 <div className="lembur-heading-actions">
+                   {!activeActivityId && <Button variant="ghost" size="small" disabled={submitting} onClick={()=>setFormStep(isWork ? 'work' : 'main')}>← Ubah Jenis</Button>}
+                   {activeActivityId && <Button variant="secondary" size="small" disabled={submitting} onClick={openNewForm}>Draft Baru</Button>}
+                   <IconButton label="Tutup" className="lembur-icon-button" onClick={closeForm}><Icon name="close" size={17} /></IconButton>
+                 </div>
               </div>
 
               <fieldset disabled={formReadOnly} className="lembur-form-fieldset">
                 <section className="lembur-form-section">
                   <div className="lembur-section-heading"><span>A</span><div><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
                   <div className="lembur-form-grid">
-                    <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
-                    <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} /></label>
-                    {draft.date && !isRevision && (initialDeadlinePassed ? (
-                      <div className="lembur-deadline-card lembur-deadline-expired"><strong>Batas pengajuan telah lewat.</strong><span>{initialDeadlineMessage(draft.date)}</span><span>Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.</span></div>
-                    ) : <div className="lembur-deadline-helper">Batas pengajuan: {formatPontianakDate(initialDeadline)}, 23:59</div>)}
-                    {activeRevisionExpired && <div className="lembur-deadline-card lembur-deadline-expired"><strong>Batas revisi telah lewat.</strong><span>Transaksi Lembur sudah kedaluwarsa.</span></div>}
+                     <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
+                     <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                     {draft.date && !isRevision && (initialDeadlinePassed ? (
+                       <Alert tone="danger" title="Batas pengajuan telah lewat" className="lembur-deadline-card">{initialDeadlineMessage(draft.date)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.</Alert>
+                     ) : <Alert tone="info" className="lembur-deadline-helper">Batas pengajuan: {formatPontianakDate(initialDeadline)}, 23:59</Alert>)}
+                     {activeRevisionExpired && <Alert tone="danger" title="Batas revisi telah lewat" className="lembur-deadline-card">Transaksi Lembur sudah kedaluwarsa.</Alert>}
                     {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder="Contoh: JTM — Tiang Tumbang" /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
                     {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea className="sla-context-select" value={draft.description} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={3} /></label>}
                     {replacementDescription && <div className="lembur-description-preview lembur-grid-full"><span>Keterangan otomatis</span>{replacementDescription}</div>}
@@ -798,7 +831,7 @@ export default function SLALembur({
                     <div className="lembur-duration-compact"><span>Durasi</span><strong>{range ? formatDurationMinutes(range.durationMinutes) : '–'}</strong>{draft.endTime <= draft.startTime && <small>+1 hari</small>}</div>
                   </div>}
                   {isAdministrasi && (()=>{ const participant=draft.participants[0]; const participantRange=buildPontianakRange(draft.date, participant?.startTime||draft.startTime, participant?.endTime||draft.endTime); return <div className="lembur-time-grid"><label className="sla-context-field"><span className="sla-context-label">Pegawai Lembur *</span><select className="sla-context-select" value={participant?.employeeId || ''} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat pegawai...':'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label><label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={participant?.startTime||draft.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /></label><label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={participant?.endTime||draft.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /></label><div className="lembur-duration-compact"><span>Durasi</span><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{participant?.endTime<=participant?.startTime&&<small>+1 hari</small>}</div></div>})()}
-                  {isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur</strong><button type="button" className="sla-btn" onClick={addParticipant}>+ Tambah Pegawai</button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<button type="button" className="lembur-row-remove" aria-label="Hapus peserta" onClick={()=>removeParticipant(participant.tempId)}>×</button>:<span />}</div>})}</div>}
+                   {isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur</strong><Button variant="secondary" size="small" onClick={addParticipant}>+ Tambah Pegawai</Button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<IconButton label="Hapus peserta" className="lembur-row-remove" onClick={()=>removeParticipant(participant.tempId)}><Icon name="close" size={15} /></IconButton>:<span />}</div>})}</div>}
                 </section>
 
                 <section className="lembur-form-section">
@@ -806,8 +839,8 @@ export default function SLALembur({
                   <div className="lembur-upload-grid">{evidenceRequirements.map((requirement)=>{ const existingList=(evidenceByType[requirement.type]||[]).filter(entry=>entry.status==='ACTIVE'); const stagedList=files[requirement.type]??[]; const hasTimeMark=requirement.helpers?.[0]==='TimeMark Wajib'; return <div className="lembur-upload-card" key={requirement.type}><div className="lembur-upload-card-heading"><strong>{requirement.label} *</strong>{hasTimeMark&&<span className="lembur-timemark-badge">TimeMark Wajib</span>}</div>{requirement.helpers?.slice(hasTimeMark?1:0).map((helper)=><small key={helper}>{helper}</small>)}<label className="lembur-dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();stageEvidence(requirement,e.dataTransfer.files?.[0])}}><input key={`${requirement.type}-${stagedList.length}-${existingList.length}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx" disabled={submitting||initialDeadlinePassed||formReadOnly} onChange={e=>stageEvidence(requirement,e.target.files?.[0])} /><span className="lembur-upload-icon">↑</span><strong>Pilih atau tarik {isImageEvidence({evidenceType:requirement.type})?'foto':'dokumen'} ke sini</strong><small>Maksimal 1 MB</small></label><div className="lembur-selected-files">{stagedList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{entry.previewUrl?<img src={entry.previewUrl} alt="" />:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.processed.original.filename}</strong><small>{Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</small></div><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeStagedEvidence(requirement.type,entry.id)}>Hapus</button></div>)}{existingList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{isImageEvidence(entry)&&evidenceUrls[entry.id]?<button type="button" className="lembur-thumb-button" onClick={()=>previewEvidence(entry,existingList)}><img src={evidenceUrls[entry.id]} alt={entry.originalFilename} /></button>:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.originalFilename}</strong><small>{(entry.storedSizeBytes/1024).toFixed(0)} KB · tersimpan</small></div><button type="button" className="sla-btn" onClick={()=>previewEvidence(entry,existingList)}>Preview</button><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button></div>)}</div></div>})}</div>
                 </section>
 
-                {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <p className="lembur-message">{message}</p>}
-                <div className="lembur-form-actions"><button type="button" className="sla-btn" disabled={submitting||initialDeadlinePassed||formReadOnly} onClick={saveDraft}>{submitting?'Memproses...':'Simpan Draft'}</button><button type="button" className="sla-btn sla-btn-primary" disabled={submitting||initialDeadlinePassed||formReadOnly||!evidenceComplete} onClick={submitDraft}>Ajukan Lembur</button></div>
+                 {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <Alert tone="info" className="lembur-message">{message}</Alert>}
+                 <div className="lembur-form-actions"><Button variant="ghost" onClick={closeForm}>Batal</Button><Button variant="secondary" disabled={submitting||initialDeadlinePassed||formReadOnly} onClick={saveDraft}>{submitting?'Memproses...':'Simpan Draft'}</Button><Button variant="primary" disabled={submitting||initialDeadlinePassed||formReadOnly||!evidenceComplete} onClick={submitDraft}>Ajukan Lembur</Button></div>
               </fieldset>
               </>
               )}
@@ -815,38 +848,38 @@ export default function SLALembur({
             </div>
           )}
 
-          {!canMutate && !isManagement && <p className="sla-blocked-note">Akses ini menampilkan Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia pada tahap ini.</p>}
-          {isUlManagement && <p className="sla-blocked-note">Unit Layanan Singkawang · 6 ULP — monitoring read-only (Total Rp, Tarif/Jam, dan rincian 1.5x/2x tersedia di Detail)</p>}
-          {isUpManagement && <p className="sla-blocked-note">Unit Pelaksana Kalimantan 1 · 1 Unit Layanan terhubung (Singkawang) · monitoring read-only</p>}
+          {!canMutate && !isManagement && <Alert tone="info" className="lembur-readonly-notice">Monitoring read-only · Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia.</Alert>}
+          {isUlManagement && <Alert tone="info" className="lembur-readonly-notice">Unit Layanan Singkawang · 6 ULP · monitoring read-only. Total Rp, Tarif/Jam, dan rincian 1.5x/2x tersedia di Detail.</Alert>}
+          {isUpManagement && <Alert tone="info" className="lembur-readonly-notice">Unit Pelaksana Kalimantan 1 · 1 Unit Layanan terhubung (Singkawang) · monitoring read-only.</Alert>}
           {isManagement && !records.length && !loading && !loadError && (
-            <p className="sla-blocked-note">Belum ada Unit Layanan yang terhubung dengan scope Pelayanan Teknik untuk akun ini.</p>
+            <Alert tone="warning">Belum ada Unit Layanan yang terhubung dengan scope Pelayanan Teknik untuk akun ini.</Alert>
           )}
 
-          <div className="rekap-filters">
-            <label className="sla-context-field">Periode
-              <select className="sla-context-select" value={filters.periode} onChange={e=> setFilters(f=>({ ...f, periode: e.target.value }))}>
+          <FilterBar className="lembur-filter-bar">
+            <FilterField label="Periode" className="lembur-filter-field">
+              <Select value={filters.periode} onChange={e=> setFilters(f=>({ ...f, periode: e.target.value }))}>
                 <option value="">Semua</option>
                 {uniquePeriods.map(p=> <option key={p} value={p.slice(0,7)}>{p}</option>)}
-              </select>
-            </label>
+              </Select>
+            </FilterField>
             {isUpManagement && (
-              <label className="sla-context-field">Unit Layanan
-                <select className="sla-context-select" value={filters.unitLayanan} onChange={e=> setFilters(f=>({ ...f, unitLayanan: e.target.value }))}>
+              <FilterField label="Unit Layanan" className="lembur-filter-field">
+                <Select value={filters.unitLayanan} onChange={e=> setFilters(f=>({ ...f, unitLayanan: e.target.value }))}>
                   <option value="">Semua</option>
                   {unitLayananOptions.map(u=> <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-              </label>
+                </Select>
+              </FilterField>
             )}
             {(isManagement || !canMutate) && (
-              <label className="sla-context-field">ULP
-                <select className="sla-context-select" value={filters.ulp} onChange={e=> setFilters(f=>({ ...f, ulp: e.target.value }))}>
+              <FilterField label="ULP" className="lembur-filter-field">
+                <Select value={filters.ulp} onChange={e=> setFilters(f=>({ ...f, ulp: e.target.value }))}>
                   <option value="">Semua</option>
                   {(orgUnits||[]).filter(u=>u.type==='ULP' || u.type==='ULP').map(u=> <option key={u.uuid} value={u.uuid}>{u.displayName}</option>)}
-                </select>
-              </label>
+                </Select>
+              </FilterField>
             )}
-            <label className="sla-context-field">Jenis
-              <select className="sla-context-select" value={filters.jenis} onChange={e=> setFilters(f=>({ ...f, jenis: e.target.value }))}>
+            <FilterField label="Jenis" className="lembur-filter-field">
+              <Select value={filters.jenis} onChange={e=> setFilters(f=>({ ...f, jenis: e.target.value }))}>
                 <option value="Semua">Semua</option>
                 <option value="Pengganti Cuti">Pengganti Cuti</option>
                 <option value="Pengganti Sakit">Pengganti Sakit</option>
@@ -855,23 +888,23 @@ export default function SLALembur({
                 <option value="Gardu">Gardu</option>
                 <option value="JTM">JTM</option>
                 <option value="JTR">JTR</option>
-              </select>
-            </label>
-            <label className="sla-context-field">Pegawai
-              <input className="sla-context-select" value={filters.pegawai} onChange={e=> setFilters(f=>({ ...f, pegawai: e.target.value }))} placeholder="Cari pegawai" />
-            </label>
-            <label className="sla-context-field">Status
-              <select className="sla-context-select" value={filters.status} onChange={e=> setFilters(f=>({ ...f, status: e.target.value }))}>
+              </Select>
+            </FilterField>
+            <FilterField label="Pegawai" className="lembur-filter-field lembur-filter-search">
+              <SearchInput value={filters.pegawai} onChange={e=> setFilters(f=>({ ...f, pegawai: e.target.value }))} placeholder="Cari pegawai" />
+            </FilterField>
+            <FilterField label="Status" className="lembur-filter-field">
+              <Select value={filters.status} onChange={e=> setFilters(f=>({ ...f, status: e.target.value }))}>
                 <option value="Semua">Semua</option>
                 {uniqueStatuses.map(s=> <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
-          </div>
+              </Select>
+            </FilterField>
+          </FilterBar>
 
           <div className="lembur-rekap-heading"><span className="lembur-kicker">Rekap Lembur</span><strong>{filtered.length} baris pegawai</strong></div>
 
-          <div className="sla-table-wrap">
-            <table className="sla-table">
+          <div className="sla-table-wrap lembur-table-wrap">
+            <table className="sla-table lembur-table">
               <thead>
                 <tr>
                   <th>Tanggal</th>
@@ -894,14 +927,14 @@ export default function SLALembur({
                       {!canMutate && <td>{ulpName}</td>}
                       <td>{jenis}</td>
                       <td>{record.participantName}</td>
-                      <td>{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''} · {formatDurationMinutes(record.durationHours*60)}</td>
-                      <td>Rp {formatRp(record.total)}</td>
+                      <td className="lembur-table-time">{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''} · {formatDurationMinutes(record.durationHours*60)}</td>
+                      <td className="lembur-table-money">Rp {formatRp(record.total)}</td>
                       <td><span className="rekap-keterangan">{record.description}</span></td>
-                      <td><span className={`status-badge status-${record.status}`}>{display}</span>{record.status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <><br/><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <small style={{display:'block', color:'#842029', fontWeight:700}}>REVISI TERAKHIR</small>}</>}</td>
-                      <td>
-                        <div style={{display:'flex', gap:'6px', flexWrap:'wrap'}}>
-                          {canMutate && canEdit && !isExpired && <button type="button" className="sla-btn" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</button>}
-                          <button type="button" className="sla-btn" onClick={()=>setDetailActivityId(record.id)}>Lihat Detail</button>
+                      <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(record)} tone={statusTone(record)}>{display}</StatusBadge>{record.status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <div className="lembur-revision-meta"><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <strong>REVISI TERAKHIR</strong>}</div>}</td>
+                      <td className="lembur-table-actions-cell">
+                        <div className="lembur-table-actions">
+                          {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
+                          <Button variant="secondary" size="small" onClick={()=>setDetailActivityId(record.id)}>Lihat Detail</Button>
                         </div>
                       </td>
                     </tr>
@@ -912,11 +945,11 @@ export default function SLALembur({
           </div>
           <div className="rekap-pagination">
             <span>{filtered.length} data · Halaman {currentPage} dari {totalPages}</span>
-            <div style={{display:'flex', gap:'8px', alignItems:'center'}}>
-              <button type="button" className="sla-btn" disabled={currentPage<=1} onClick={()=>setCurrentPage(p=>Math.max(1,p-1))}>Prev</button>
-              <button type="button" className="sla-btn" disabled={currentPage>=totalPages} onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))}>Next</button>
+            <div className="lembur-pagination-actions">
+              <Button variant="secondary" size="small" disabled={currentPage<=1} onClick={()=>setCurrentPage(p=>Math.max(1,p-1))}>Prev</Button>
+              <Button variant="secondary" size="small" disabled={currentPage>=totalPages} onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))}>Next</Button>
               <label>Baris per halaman
-                <select className="sla-context-select" value={rowsPerPage} onChange={e=>setRowsPerPage(Number(e.target.value))} style={{marginLeft:'6px'}}>
+                <select className="sla-context-select lembur-page-size" value={rowsPerPage} onChange={e=>setRowsPerPage(Number(e.target.value))}>
                   <option value={10}>10</option>
                   <option value={30}>30</option>
                   <option value={50}>50</option>
@@ -929,11 +962,11 @@ export default function SLALembur({
               <div className="rekap-detail-modal lembur-detail-modal" onClick={e=>e.stopPropagation()}>
                 {detailActivity && (
                   <>
-                    <div className="lembur-detail-header">
-                      <div><span className="lembur-kicker">Detail Lembur</span><h2>{jenisLabel(detailActivity)}</h2><p>{!canMutate ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}</p></div>
-                      <div className="lembur-detail-header-actions"><span className={`status-badge status-${detailActivity.status}`}>{displayStatus(detailActivity)}</span><button type="button" className="lembur-icon-button" aria-label="Tutup" onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}>×</button></div>
-                    </div>
-                    {detailActivity.revisionDeadlineAt && detailActivity.status==='CORRECTION_REQUIRED' && <div className="lembur-detail-alert"><strong>Batas Revisi</strong><span>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · sisa {Math.max(0,Math.ceil((new Date(detailActivity.revisionDeadlineAt)-new Date())/3600000))} jam</span>{detailActivity.rejectionCount===2&&<small>Revisi terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</small>}</div>}
+                     <div className="lembur-detail-header">
+                       <div><span className="lembur-kicker">Detail Lembur</span><h2>{jenisLabel(detailActivity)}</h2><p>{!canMutate ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}</p></div>
+                       <div className="lembur-detail-header-actions"><StatusBadge status={statusBadgeKey(detailActivity)} tone={statusTone(detailActivity)}>{displayStatus(detailActivity)}</StatusBadge><IconButton label="Tutup" className="lembur-icon-button" onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}><Icon name="close" size={17} /></IconButton></div>
+                     </div>
+                     {detailActivity.revisionDeadlineAt && detailActivity.status==='CORRECTION_REQUIRED' && <Alert tone="warning" title="Batas Revisi" className="lembur-detail-alert"><span>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · sisa {Math.max(0,Math.ceil((new Date(detailActivity.revisionDeadlineAt)-new Date())/3600000))} jam</span>{detailActivity.rejectionCount===2&&<small>Revisi terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</small>}</Alert>}
                     <section className="lembur-detail-section">
                       <h3>Pegawai & Waktu</h3>
                       <div className="lembur-detail-table-wrap"><table className="sla-table">
@@ -960,15 +993,15 @@ export default function SLALembur({
                         </div>
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
-                    {(isAdminUp3||isSuperAdmin) && detailActivity.status==='SUBMITTED' && (
-                      <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><button type="button" className="sla-btn" onClick={()=>{setShowReject(null);setRejectReason('')}}>Batal</button><button type="button" className="sla-btn" disabled={submitting||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>Kirim Penolakan</button></div></div>}<div className="lembur-approval-actions"><button type="button" className="sla-btn" disabled={submitting} onClick={()=>setShowReject(detailActivity.id)}>Tolak Pengajuan</button><button type="button" className="sla-btn sla-btn-primary" disabled={submitting} onClick={()=>handleApprove(detailActivity.id)}>Setujui</button></div></section>
-                    )}
+                     {(isAdminUp3||isSuperAdmin) && detailActivity.status==='SUBMITTED' && (
+                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" onClick={()=>{setShowReject(null);setRejectReason('')}}>Batal</Button><Button variant="danger" disabled={submitting||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>Kirim Penolakan</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={submitting} onClick={()=>setShowReject(detailActivity.id)}>Tolak</Button><Button variant="primary" disabled={submitting} onClick={()=>handleApprove(detailActivity.id)}>Setujui</Button></div></section>
+                     )}
                   </>
                 )}
               </div>
             </div>
           )}
-          {evidencePreview && <div className="lembur-preview-overlay" onClick={()=>setEvidencePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>{evidenceLabel(evidencePreview.entry.evidenceType)}</strong><span>{evidencePreview.entry.originalFilename}</span></div><button type="button" className="lembur-icon-button" aria-label="Tutup preview" onClick={()=>setEvidencePreview(null)}>×</button></div><div className="lembur-preview-body">{evidencePreview.loading?<div className="lembur-detail-empty">Menyiapkan preview aman...</div>:isImageEvidence(evidencePreview.entry)?<img src={evidencePreview.url} alt={evidencePreview.entry.originalFilename} />:isPdfEvidence(evidencePreview.entry)?<iframe src={evidencePreview.url} title={evidencePreview.entry.originalFilename} />:<div className="lembur-document-fallback"><span className="lembur-doc-icon">DOC</span><strong>Pratinjau dokumen tidak didukung browser.</strong><p>Dokumen tetap tersimpan aman. Tutup viewer untuk kembali ke Detail Lembur.</p></div>}</div>{isImageEvidence(evidencePreview.entry)&&evidencePreview.entries.length>1&&<div className="lembur-preview-nav"><button type="button" className="sla-btn" onClick={()=>moveEvidencePreview(-1)}>← Sebelumnya</button><span>{evidencePreview.index+1} / {evidencePreview.entries.length}</span><button type="button" className="sla-btn" onClick={()=>moveEvidencePreview(1)}>Berikutnya →</button></div>}</div></div>}
+          {evidencePreview && <div className="lembur-preview-overlay" onClick={()=>setEvidencePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>{evidenceLabel(evidencePreview.entry.evidenceType)}</strong><span>{evidencePreview.entry.originalFilename}</span></div><IconButton label="Tutup preview" className="lembur-icon-button" onClick={()=>setEvidencePreview(null)}><Icon name="close" size={17} /></IconButton></div><div className="lembur-preview-body">{evidencePreview.loading?<div className="lembur-detail-empty">Menyiapkan preview aman...</div>:isImageEvidence(evidencePreview.entry)?<img src={evidencePreview.url} alt={evidencePreview.entry.originalFilename} />:isPdfEvidence(evidencePreview.entry)?<iframe src={evidencePreview.url} title={evidencePreview.entry.originalFilename} />:<div className="lembur-document-fallback"><span className="lembur-doc-icon">DOC</span><strong>Pratinjau dokumen tidak didukung browser.</strong><p>Dokumen tetap tersimpan aman. Tutup viewer untuk kembali ke Detail Lembur.</p></div>}</div>{isImageEvidence(evidencePreview.entry)&&evidencePreview.entries.length>1&&<div className="lembur-preview-nav"><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(-1)}>← Sebelumnya</Button><span>{evidencePreview.index+1} / {evidencePreview.entries.length}</span><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(1)}>Berikutnya →</Button></div>}</div></div>}
         </>
       )}
     </section>
