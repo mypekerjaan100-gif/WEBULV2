@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import SlaPreviewBar from './sla/SlaPreviewBar.jsx'
 import { useAuth } from '../lib/AppAuth.jsx'
+import { useTheme } from '../context/ThemeContext.jsx'
 import Icon from './Icon.jsx'
 
 export default function Header({ onOpenSidebar, preview, approvalNotifications, approvalNotificationError, onRefreshApprovalNotifications, onOpenApprovalNotification }) {
   const { authority, signOut } = useAuth()
+  const { preference, setPreference } = useTheme()
   const [signingOut, setSigningOut] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const notificationRef = useRef(null)
@@ -52,6 +54,15 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
         <Icon name="menu" />
       </button>
       <div className="header-right">
+        <label className="theme-control" title="Tema tampilan">
+          <Icon name={preference === 'light' ? 'sun' : preference === 'dark' ? 'moon' : 'monitor'} size={15} />
+          <span className="sr-only">Tema tampilan</span>
+          <select value={preference} onChange={(event) => setPreference(event.target.value)} aria-label="Tema tampilan">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="system">System</option>
+          </select>
+        </label>
         {approvalNotifications && (
           <div className="approval-notification" ref={notificationRef}>
             <button

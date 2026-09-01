@@ -897,7 +897,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   return (
                     <tr key={ind.id} style={!isConsolidated && (!isUp3Role || canViewVariableFinancial) ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && (!isUp3Role || canViewVariableFinancial)) openDailyList(ind) }}>
                       <td>{getShortLabel(ind)}{rejectedCount > 0 && (
-                        <button type="button" onClick={(e) => { e.stopPropagation(); const uuid = pointToUuids.get(ind.point); const related = rejectedList.filter((r) => r.indicator_id === uuid); if (related.length === 1) handleRepairRejected(related[0]); else openDailyList(ind, true); }} style={{ marginLeft: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 10, padding: '2px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{rejectedCount} Perlu Perbaikan</button>
+                        <button type="button" className="vc-inline-danger-badge" onClick={(e) => { e.stopPropagation(); const uuid = pointToUuids.get(ind.point); const related = rejectedList.filter((r) => r.indicator_id === uuid); if (related.length === 1) handleRepairRejected(related[0]); else openDailyList(ind, true); }}>{rejectedCount} Perlu Perbaikan</button>
                       )}</td>
                       <td>{ind.unit ?? '—'}</td>
                       <td>{ind.slaLinked ? (target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)) : EMPTY_VALUE}</td>
@@ -913,7 +913,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             </table>
           </div>
           {canViewVariableFinancial && !loading && !error && (
-            <section style={{ marginTop: 12, border: '1px solid #dbe3ee', borderRadius: 8, padding: 12, maxWidth: 520 }}>
+            <section className="vc-inline-summary" style={{ marginTop: 12, borderRadius: 8, padding: 12, maxWidth: 520 }}>
               <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>PENDAPATAN VARIABLE — {period.toUpperCase()}</h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 16px' }}>
                 <span>Target Pendapatan</span><strong>{financialTargetError ? EMPTY_VALUE : (configuredFinancialTargetCount === 0 ? 'Target belum diatur' : formatRp(totalFinancialTarget))}</strong>
@@ -1044,7 +1044,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   {drillIndicator.id === 'A-3.1c' && canManageKonstruksiMonthly && (
                     <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <button type="button" className="sla-btn sla-btn-primary" disabled={konstruksiBusy} onClick={handleSaveKonstruksi}>{konstruksiBusy ? 'Menyimpan...' : 'Simpan'}</button>
-                      {konstruksiMessage && <span style={{ color: '#065f46' }}>{konstruksiMessage}</span>}
+                      {konstruksiMessage && <span className="vc-inline-success">{konstruksiMessage}</span>}
                       {konstruksiError && <span className="sla-blocked-note">{konstruksiError}</span>}
                     </div>
                   )}
@@ -1074,7 +1074,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                 <div className="modal-body" style={{ display: 'grid', gap: 16 }}>
                   {formError && <div className="sla-blocked-note">{formError}</div>}
                   {editingRejectionReason && (
-                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: 10, borderRadius: 6 }}>
+                    <div className="vc-inline-rejection" style={{ padding: 10, borderRadius: 6 }}>
                       <strong>Alasan penolakan dari Admin UP3</strong>
                       <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{editingRejectionReason}</div>
                     </div>
@@ -1133,7 +1133,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                   {dailyLoading ? <p>Memuat…</p> : dailyList.length === 0 ? <p className="text-muted">Belum ada transaksi harian untuk indikator ini.</p> : (
                     <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th>{canViewVariableFinancial && <th>Pendapatan</th>}<th>Status</th><th>Aksi</th></tr></thead><tbody>
                       {dailyList.map((row) => (
-                        <tr key={row.id} style={row.status === 'REJECTED' ? { background: '#fef2f2' } : undefined}>
+                        <tr key={row.id} className={row.status === 'REJECTED' ? 'vc-row-rejected' : undefined}>
                           <td>{row.work_date?.slice(0,10)}</td>
                           <td>{row.feeder_id ? (activeFeeders.find((f) => f.id === row.feeder_id)?.name ?? row.feeder_id.slice(0,8)) : '—'}</td>
                           <td>{row.location_address ?? '—'}</td>
@@ -1143,7 +1143,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                           {canViewVariableFinancial && <td>{renderTransactionRevenue(row, dailyIndicator)}</td>}
                           <td>
                             <StatusBadge status={row.status}>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</StatusBadge>
-                            {row.status === 'REJECTED' && row.rejection_reason && <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, whiteSpace: 'normal' }}>Alasan: {row.rejection_reason}</div>}
+                            {row.status === 'REJECTED' && row.rejection_reason && <div className="vc-rejection-reason" style={{ marginTop: 4 }}>Alasan: {row.rejection_reason}</div>}
                           </td>
                           <td style={{ display: 'flex', gap: 6 }}>
                             <button type="button" className="sla-btn" onClick={() => openDetail(row.id)}>Lihat Detail</button>

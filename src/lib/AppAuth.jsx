@@ -128,15 +128,7 @@ export default function AppAuth({ children }) {
 
   if (view === 'loading') {
     return (
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '100vh',
-          fontFamily: 'sans-serif',
-        }}
-      >
+      <div className="auth-page auth-state-page">
         <p>Memuat sesi...</p>
       </div>
     )
@@ -225,20 +217,10 @@ export default function AppAuth({ children }) {
 
 function AuthState({ message, actionLabel, onAction, secondaryActionLabel, onSecondaryAction }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 12,
-        height: '100vh',
-        fontFamily: 'sans-serif',
-      }}
-    >
+    <div className="auth-page auth-state-page">
       <p>{message}</p>
-      {actionLabel && <button type="button" onClick={onAction}>{actionLabel}</button>}
-      {secondaryActionLabel && <button type="button" onClick={onSecondaryAction}>{secondaryActionLabel}</button>}
+      {actionLabel && <button type="button" className="ui-button ui-button-primary" onClick={onAction}>{actionLabel}</button>}
+      {secondaryActionLabel && <button type="button" className="ui-button ui-button-secondary" onClick={onSecondaryAction}>{secondaryActionLabel}</button>}
     </div>
   )
 }
@@ -286,36 +268,23 @@ function UpdatePasswordForm() {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        fontFamily: 'sans-serif',
-      }}
-    >
+    <div className="auth-page">
       <form
         onSubmit={handleSubmit}
-        style={{
-          minWidth: 320,
-          padding: 24,
-          border: '1px solid #ddd',
-          borderRadius: 8,
-        }}
+        className="auth-card"
       >
-        <h2 style={{ marginTop: 0 }}>Buat Password Baru</h2>
-        <p style={{ fontSize: 14, color: '#555', marginTop: 0 }}>
+        <h2 className="auth-title">Buat Password Baru</h2>
+        <p className="auth-help">
           Masukkan password baru Anda di bawah ini.
         </p>
         {error && (
-          <p style={{ color: '#d32f2f', fontSize: 14 }}>{error}</p>
+          <p className="auth-message auth-message-danger">{error}</p>
         )}
         {success && (
-          <p style={{ color: '#2e7d32', fontSize: 14 }}>{success}</p>
+          <p className="auth-message auth-message-success">{success}</p>
         )}
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>
+        <div className="auth-field">
+          <label>
             Password Baru
           </label>
           <input
@@ -324,11 +293,11 @@ function UpdatePasswordForm() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
-            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+            className="ui-control"
           />
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>
+        <div className="auth-field">
+          <label>
             Konfirmasi Password
           </label>
           <input
@@ -337,22 +306,13 @@ function UpdatePasswordForm() {
             onChange={(e) => setConfirm(e.target.value)}
             required
             minLength={6}
-            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+            className="ui-control"
           />
         </div>
         <button
           type="submit"
           disabled={submitting || !!success}
-          style={{
-            width: '100%',
-            padding: '10px',
-            backgroundColor: '#1976d2',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            fontSize: 14,
-          }}
+          className="ui-button ui-button-primary auth-submit"
         >
           {submitting ? 'Menyimpan...' : 'Simpan Password'}
         </button>
@@ -384,53 +344,45 @@ function ForgotPasswordForm({ initialEmail, onBack }) {
 
   return (
     <AuthFormShell title="Reset Password">
-      <p style={{ fontSize: 14, color: '#555', marginTop: 0 }}>
+      <p className="auth-help">
         Masukkan email untuk menerima tautan reset password.
       </p>
-      {error && <p style={{ color: '#d32f2f', fontSize: 14 }}>{error}</p>}
+      {error && <p className="auth-message auth-message-danger">{error}</p>}
       {success ? (
-        <p style={{ color: '#2e7d32', fontSize: 14 }}>
+        <p className="auth-message auth-message-success">
           Jika email terdaftar, tautan reset password telah dikirim.
         </p>
       ) : (
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>Email</label>
+          <div className="auth-field">
+            <label>Email</label>
             <input
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+              className="ui-control"
             />
           </div>
-          <button type="submit" disabled={submitting} style={primaryButtonStyle}>
+          <button type="submit" disabled={submitting} className="ui-button ui-button-primary auth-submit">
             {submitting ? 'Mengirim...' : 'Kirim Tautan Reset Password'}
           </button>
         </form>
       )}
-      <button type="button" onClick={onBack} style={linkButtonStyle}>Kembali ke Login</button>
+      <button type="button" className="ui-button ui-button-ghost auth-link" onClick={onBack}>Kembali ke Login</button>
     </AuthFormShell>
   )
 }
 
 function AuthFormShell({ title, children }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
-      <div style={{ minWidth: 320, padding: 24, border: '1px solid #ddd', borderRadius: 8 }}>
-        <h2 style={{ marginTop: 0 }}>{title}</h2>
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2 className="auth-title">{title}</h2>
         {children}
       </div>
     </div>
   )
-}
-
-const primaryButtonStyle = {
-  width: '100%', padding: '10px', backgroundColor: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 14,
-}
-
-const linkButtonStyle = {
-  marginTop: 12, padding: 0, background: 'none', border: 'none', color: '#1976d2', cursor: 'pointer', fontSize: 14,
 }
 
 function SignInForm({ onSignIn, onForgotPassword, error }) {
@@ -446,30 +398,17 @@ function SignInForm({ onSignIn, onForgotPassword, error }) {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        fontFamily: 'sans-serif',
-      }}
-    >
+    <div className="auth-page">
       <form
         onSubmit={handleSubmit}
-        style={{
-          minWidth: 320,
-          padding: 24,
-          border: '1px solid #ddd',
-          borderRadius: 8,
-        }}
+        className="auth-card"
       >
-        <h2 style={{ marginTop: 0 }}>Login SLA</h2>
+        <h2 className="auth-title">Login SLA</h2>
         {error && (
-          <p style={{ color: '#d32f2f', fontSize: 14 }}>{error}</p>
+          <p className="auth-message auth-message-danger">{error}</p>
         )}
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>
+        <div className="auth-field">
+          <label>
             Email
           </label>
           <input
@@ -477,11 +416,11 @@ function SignInForm({ onSignIn, onForgotPassword, error }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+            className="ui-control"
           />
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 14, marginBottom: 4 }}>
+        <div className="auth-field">
+          <label>
             Password
           </label>
           <input
@@ -489,29 +428,20 @@ function SignInForm({ onSignIn, onForgotPassword, error }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+            className="ui-control"
           />
         </div>
         <button
           type="submit"
           disabled={submitting}
-          style={{
-            width: '100%',
-            padding: '10px',
-            backgroundColor: '#1976d2',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            fontSize: 14,
-          }}
+          className="ui-button ui-button-primary auth-submit"
         >
           {submitting ? 'Masuk...' : 'Masuk'}
         </button>
         <button
           type="button"
           onClick={() => onForgotPassword(email)}
-          style={linkButtonStyle}
+          className="ui-button ui-button-ghost auth-link"
         >
           Lupa Password?
         </button>
