@@ -65,7 +65,7 @@ export default function SLAContextBar({
         </FilterField>
       )}
       <span className="sla-context-note">
-        Data laporan Supabase
+        Data tersinkron
       </span>
     </FilterBar>
   )
