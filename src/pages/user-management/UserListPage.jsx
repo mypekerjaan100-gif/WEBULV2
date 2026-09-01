@@ -319,16 +319,16 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>Detail Pengguna</h3>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Tutup">
             &times;
           </button>
         </div>
-        <div className="modal-body">
+        <div className="modal-body modal-body-sections">
           <section className="detail-section">
-            <h4>Identitas</h4>
+            <h4>A. Identitas</h4>
             <dl className="detail-grid">
               <dt>Nama</dt>
               <dd>{user.displayName}</dd>
@@ -346,96 +346,30 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
               )}
             </dl>
           </section>
+
           <section className="detail-section">
-            <h4>AKSES SAAT INI</h4>
+            <h4>B. Akses Aktif Saat Ini</h4>
             {currentAccess ? (
-              <dl className="detail-grid">
-                <dt>Role</dt><dd>{currentAccess.role}</dd>
-                <dt>Scope</dt><dd>{currentAccess.scope}</dd>
-              </dl>
+              <>
+                <dl className="detail-grid">
+                  <dt>Role</dt><dd><span className={`badge ${user.isSuperAdmin ? 'badge-super' : 'badge-role'}`}>{currentAccess.role}</span></dd>
+                  <dt>Scope</dt><dd>{currentAccess.scope}</dd>
+                </dl>
+                {isDuplicate && <p className="detail-hint detail-warning">Terdeteksi lebih dari satu akses aktif — sistem tetap memberlakukan satu akses aktif (single-role).</p>}
+              </>
             ) : (
-              <span className="text-muted">Belum memiliki akses aktif.</span>
-            )}
-            {isSuperAdmin && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAccessForm((v) => !v)}>{showAccessForm ? 'Tutup' : 'Ubah Akses'}</button>
-                {currentAccess && <button type="button" className="btn btn-sm btn-outline" disabled={!!actionBusy} onClick={handleRevoke}>{actionBusy === 'revoke' ? 'Memproses...' : 'Hapus Akses'}</button>}
-                <button type="button" className="btn btn-sm" style={{ background: '#dc2626', color: '#fff' }} disabled={!!actionBusy} onClick={handleDeactivate}>{actionBusy === 'deactivate' ? 'Memproses...' : 'Nonaktifkan Akun'}</button>
-              </div>
-            )}
-            {actionError && <p style={{ color: '#dc2626', fontSize: 13 }}>{actionError}</p>}
-          </section>
-          <section className="detail-section">
-            <h4>System Role</h4>
-            {user.isSuperAdmin ? (
-              <span className="badge badge-super">SUPER_ADMIN</span>
-            ) : user.roles.length > 0 ? (
-              <div className="badge-group">
-                {user.roles.map((r) => (
-                  <span key={r} className="badge badge-role">{r}</span>
-                ))}
-              </div>
-            ) : (
-              <span className="text-muted">Belum Ada</span>
+              <span className="text-muted">Belum memiliki akses aktif — satu akun = satu akses aktif.</span>
             )}
           </section>
-          <section className="detail-section">
-            <h4>Keanggotaan Organisasi</h4>
-            {hasOrg ? (
-              <table className="detail-table">
-                <thead>
-                  <tr><th>Unit</th><th>Role</th><th>Status</th></tr>
-                </thead>
-                <tbody>
-                  {user.organizationMemberships.map((om, i) => (
-                    <tr key={i}>
-                      <td>{om.unitName}</td>
-                      <td>{MANAGEMENT_ROLE_LABEL[om.role] ?? om.role}</td>
-                      <td><StatusBadge status={om.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <span className="text-muted">Belum Ada</span>
-            )}
-          </section>
-          <section className="detail-section">
-            <h4>Keanggotaan Kontrak</h4>
-            {hasContract ? (
-              <table className="detail-table">
-                <thead>
-                  <tr><th>Kontrak</th><th>Role</th><th>UP3</th><th>ULP</th></tr>
-                </thead>
-                <tbody>
-                  {user.contractMemberships.map((cm, i) => (
-                    <tr key={i}>
-                      <td>{cm.contractName}</td>
-                      <td>{cm.role}</td>
-                       <td>{cm.up3Name}</td>
-                       <td>{cm.ulpName || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <span className="text-muted">Belum Ada</span>
-            )}
-          </section>
-          {!hasRole && !hasOrg && !hasContract && (
-            <div className="detail-hint">
-               Belum ada akses yang ditetapkan.
-            </div>
-          )}
+
           {isSuperAdmin && (
             <section className="detail-section">
               <div className="detail-section-heading">
-                <h4>Atur Akses</h4>
-                <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAccessForm((visible) => !visible)}>
-                  {showAccessForm ? 'Tutup' : 'Atur Akses'}
-                </button>
+                <h4>C. Pengaturan Akses</h4>
+                <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAccessForm((v) => !v)}>{showAccessForm ? 'Tutup' : 'Ubah Akses'}</button>
               </div>
-              {showAccessForm && (
+              <p className="text-muted" style={{ margin: '6px 0 10px', fontSize: 12 }}>Mengganti akses akan menggantikan akses aktif saat ini (single-active-access).</p>
+              {showAccessForm ? (
                 <>
                   <div className="form-group">
                     <label htmlFor="access-type">Jenis Akses</label>
@@ -462,9 +396,56 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
                     />
                   )}
                 </>
+              ) : (
+                <span className="text-muted" style={{ fontSize: 13 }}>Pilih Ubah Akses untuk mengganti Jenis Akses, Role, dan Unit/Scope. Tombol utama pada form adalah Simpan Akses.</span>
               )}
             </section>
           )}
+
+          <section className="detail-section">
+            <h4>D. Status Akun</h4>
+            <dl className="detail-grid">
+              <dt>Status Akun</dt><dd><StatusBadge status={user.status} /></dd>
+              <dt>Validasi</dt><dd>{isDuplicate ? <span className="badge badge-disabled">Perlu penyesuaian — akses ganda</span> : <span className="text-muted">Akses tunggal valid</span>}</dd>
+            </dl>
+            {!hasRole && !hasOrg && !hasContract && <div className="detail-hint">Belum ada akses yang ditetapkan.</div>}
+            {isSuperAdmin && (
+              <div className="detail-actions">
+                {currentAccess && <button type="button" className="btn btn-sm btn-outline btn-danger" disabled={!!actionBusy} onClick={handleRevoke}>{actionBusy === 'revoke' ? 'Memproses...' : 'Hapus Akses'}</button>}
+                <button type="button" className="btn btn-sm btn-danger" disabled={!!actionBusy} onClick={handleDeactivate}>{actionBusy === 'deactivate' ? 'Memproses...' : 'Nonaktifkan Akun'}</button>
+              </div>
+            )}
+            {actionError && <p className="detail-error">{actionError}</p>}
+            <p className="text-muted" style={{ fontSize: 11, marginTop: 8 }}>Hapus Akses = cabut role/scope aktif. Nonaktifkan Akun = akun tidak dapat login operasional. Keduanya bersifat destruktif.</p>
+          </section>
+
+          <details className="detail-history">
+            <summary>Riwayat Akses (secondary — tidak dominan)</summary>
+            <div className="detail-history-inner">
+              <h5>Keanggotaan Organisasi</h5>
+              {hasOrg ? (
+                <table className="detail-table">
+                  <thead><tr><th>Unit</th><th>Role</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {user.organizationMemberships.map((om, i) => (
+                      <tr key={i}><td>{om.unitName}</td><td>{MANAGEMENT_ROLE_LABEL[om.role] ?? om.role}</td><td><StatusBadge status={om.status} /></td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (<span className="text-muted">Belum Ada</span>)}
+              <h5 style={{ marginTop: 12 }}>Keanggotaan Kontrak</h5>
+              {hasContract ? (
+                <table className="detail-table">
+                  <thead><tr><th>Kontrak</th><th>Role</th><th>UP3</th><th>ULP</th></tr></thead>
+                  <tbody>
+                    {user.contractMemberships.map((cm, i) => (
+                      <tr key={i}><td>{cm.contractName}</td><td>{cm.role}</td><td>{cm.up3Name}</td><td>{cm.ulpName || '-'}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (<span className="text-muted">Belum Ada</span>)}
+            </div>
+          </details>
         </div>
       </div>
     </div>
