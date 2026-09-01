@@ -233,7 +233,7 @@ export default function SLAPelayananTeknikPage({
       setLocationLoadStatus('ready')
       return locationRows
     } catch (error) {
-      setLocationLoadError(error.message || 'Gagal memuat lokasi Supabase.')
+      setLocationLoadError(error.message || 'Gagal memuat lokasi. Data tersinkron tidak tersedia.')
       if (!preserveOnError) {
         setEmployeeLocations([])
         setLocationLoadStatus('error')
@@ -272,7 +272,7 @@ export default function SLAPelayananTeknikPage({
       })
       .catch((error) => {
         if (!cancelled) {
-          setEmployeeLoadError(error.message || 'Gagal memuat pegawai Supabase.')
+          setEmployeeLoadError(error.message || 'Gagal memuat pegawai. Data tersinkron tidak tersedia.')
           setEmployeesLoaded(true)
         }
       })
@@ -310,7 +310,7 @@ export default function SLAPelayananTeknikPage({
       })
       .catch((error) => {
         if (cancelled) return
-        setOrgMapError(error.message || 'Gagal memuat organisasi Supabase.')
+        setOrgMapError(error.message || 'Gagal memuat organisasi. Data tersinkron tidak tersedia.')
         setOrgMapStatus('error')
       })
     return () => { cancelled = true }
@@ -436,7 +436,7 @@ export default function SLAPelayananTeknikPage({
         if (cancelled) return
         setVersions([])
         setVersionId('')
-        setSlaLoadError(error.message || 'Gagal memuat versi SLA Supabase.')
+        setSlaLoadError(error.message || 'Gagal memuat versi SLA. Data tersinkron tidak tersedia.')
         setSlaLoadStatus('error')
       })
     return () => { cancelled = true }
@@ -541,7 +541,7 @@ export default function SLAPelayananTeknikPage({
         setEntriesByUnit({})
         setTargets({})
         setVariableSlaTargets({})
-        setSlaLoadError(error.message || 'Gagal memuat snapshot SLA Supabase.')
+        setSlaLoadError(error.message || 'Gagal memuat snapshot SLA. Data tersinkron tidak tersedia.')
         setSlaLoadStatus('error')
       })
     return () => { cancelled = true }
@@ -597,7 +597,7 @@ export default function SLAPelayananTeknikPage({
       setLemburLoadStatus('ready')
     } catch (error) {
       if (requestId !== lemburRequestId.current) return
-      setLemburLoadError(error.message || 'Gagal memuat data lembur Supabase.')
+      setLemburLoadError(error.message || 'Gagal memuat data lembur. Data tersinkron tidak tersedia.')
       setLemburLoadStatus('error')
     }
   }, [orgMap?.contractUuid, orgMap?.up3Uuid, role, lemburUnitUuid, lemburPeriodMonth])
@@ -625,10 +625,10 @@ export default function SLAPelayananTeknikPage({
       return {
         ok: true,
         activityId,
-        message: id ? 'Draft diperbarui di Supabase.' : 'Draft disimpan di Supabase. Lengkapi evidence sebelum mengajukan.',
+        message: id ? 'Draft diperbarui — Data tersinkron.' : 'Draft disimpan — Data tersinkron. Lengkapi evidence sebelum mengajukan.',
       }
     } catch (error) {
-      return { ok: false, message: error.message || 'Gagal menyimpan Draft ke Supabase.' }
+      return { ok: false, message: error.message || 'Gagal menyimpan Draft. Data tersinkron tidak tersedia.' }
     }
   }
 
@@ -644,10 +644,10 @@ export default function SLAPelayananTeknikPage({
       return {
         ok: true,
         activityId,
-        message: id ? 'Draft diperbarui di Supabase.' : 'Draft disimpan di Supabase. Lengkapi evidence sebelum mengajukan.',
+        message: id ? 'Draft diperbarui — Data tersinkron.' : 'Draft disimpan — Data tersinkron. Lengkapi evidence sebelum mengajukan.',
       }
     } catch (error) {
-      return { ok: false, message: error.message || 'Gagal menyimpan Draft ke Supabase.' }
+      return { ok: false, message: error.message || 'Gagal menyimpan Draft. Data tersinkron tidak tersedia.' }
     }
   }
 
@@ -907,7 +907,7 @@ export default function SLAPelayananTeknikPage({
       ) : moduleId === 'master-lokasi' && orgMapStatus === 'loading' ? (
         <section className="placeholder">
           <h2 className="placeholder-title">Memuat organisasi</h2>
-          <p className="placeholder-text">Menyiapkan hierarki Master Lokasi dari Supabase.</p>
+          <p className="placeholder-text">Menyiapkan hierarki Master Lokasi — Data tersinkron.</p>
         </section>
       ) : moduleId === 'master-lokasi' && orgMapStatus === 'error' ? (
         <section className="placeholder">
@@ -917,7 +917,7 @@ export default function SLAPelayananTeknikPage({
       ) : moduleId === 'master-lokasi' && locationLoadStatus === 'loading' ? (
         <section className="placeholder">
           <h2 className="placeholder-title">Memuat lokasi</h2>
-          <p className="placeholder-text">Menyiapkan Master Lokasi dari Supabase.</p>
+          <p className="placeholder-text">Menyiapkan Master Lokasi — Data tersinkron.</p>
         </section>
       ) : moduleId === 'master-lokasi' && locationLoadStatus === 'error' ? (
         <section className="placeholder">
@@ -985,7 +985,7 @@ export default function SLAPelayananTeknikPage({
       ) : moduleId === 'database-pegawai' && orgMapStatus === 'loading' ? (
         <section className="placeholder">
           <h2 className="placeholder-title">Memuat organisasi</h2>
-          <p className="placeholder-text">Menyiapkan unit dan lokasi Master Pegawai dari Supabase.</p>
+          <p className="placeholder-text">Menyiapkan unit dan lokasi Master Pegawai — Data tersinkron.</p>
         </section>
       ) : moduleId === 'database-pegawai' && orgMapStatus === 'error' ? (
         <section className="placeholder">
@@ -995,7 +995,7 @@ export default function SLAPelayananTeknikPage({
       ) : moduleId === 'database-pegawai' && locationLoadStatus === 'loading' ? (
         <section className="placeholder">
           <h2 className="placeholder-title">Memuat lokasi</h2>
-          <p className="placeholder-text">Menyiapkan lokasi penempatan dari Supabase.</p>
+          <p className="placeholder-text">Menyiapkan lokasi penempatan — Data tersinkron.</p>
         </section>
       ) : moduleId === 'database-pegawai' && locationLoadStatus === 'error' ? (
         <section className="placeholder">
@@ -1072,7 +1072,7 @@ export default function SLAPelayananTeknikPage({
           </div>
           {slaLoadStatus === 'loading' ? (
             <StatePanel state="loading" title="Memuat snapshot SLA">
-              Menyiapkan versi, target, dan data laporan dari Supabase.
+              Menyiapkan versi, target, dan data laporan — Data tersinkron.
             </StatePanel>
           ) : slaLoadStatus === 'error' ? (
             <StatePanel state="error" title="Snapshot SLA tidak dapat dimuat">
@@ -1131,7 +1131,7 @@ export default function SLAPelayananTeknikPage({
         ) : orgMapStatus === 'loading' ? (
           <section className="placeholder">
             <h2 className="placeholder-title">Memuat organisasi</h2>
-            <p className="placeholder-text">Menyiapkan Variable Cost dari Supabase.</p>
+            <p className="placeholder-text">Menyiapkan Variable Cost — Data tersinkron.</p>
           </section>
         ) : orgMapStatus === 'error' || !orgMap ? (
           <section className="placeholder">
@@ -1160,12 +1160,12 @@ export default function SLAPelayananTeknikPage({
       ) : moduleId === 'lembur' && orgMapStatus === 'loading' ? (
         <section className="placeholder">
           <h2 className="placeholder-title">Memuat organisasi</h2>
-          <p className="placeholder-text">Menyiapkan scope Lembur dari Supabase.</p>
+          <p className="placeholder-text">Menyiapkan scope Lembur — Data tersinkron.</p>
         </section>
       ) : moduleId === 'lembur' && (orgMapStatus === 'error' || !orgMap) ? (
         <section className="placeholder">
           <h2 className="placeholder-title">Scope Lembur tidak tersedia</h2>
-          <p className="sla-blocked-note">{orgMapError || 'Organisasi Supabase tidak tersedia.'}</p>
+            <p className="sla-blocked-note">{orgMapError || 'Organisasi tidak tersedia — Data tersinkron.'}</p>
         </section>
       ) : moduleId === 'lembur' ? (
         role === 'ulp' && !effectiveUnitId ? (

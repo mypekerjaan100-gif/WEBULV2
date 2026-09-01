@@ -8,7 +8,9 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
   const { authority, signOut } = useAuth()
   const { preference, setPreference } = useTheme()
   const [signingOut, setSigningOut] = useState(false)
+  const [themeOpen, setThemeOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const themeRef = useRef(null)
   const notificationRef = useRef(null)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access?.[0] ?? null
@@ -24,13 +26,23 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
   const hasSourceError = approvalNotifications?.groups?.some((group) => group.error) ?? false
 
   useEffect(() => {
-    if (!notificationOpen) return undefined
+    if (!themeOpen && !notificationOpen) return undefined
     const close = (event) => {
-      if (!notificationRef.current?.contains(event.target)) setNotificationOpen(false)
+      if (themeOpen && !themeRef.current?.contains(event.target)) setThemeOpen(false)
+      if (notificationOpen && !notificationRef.current?.contains(event.target)) setNotificationOpen(false)
     }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
-  }, [notificationOpen])
+  }, [themeOpen, notificationOpen])
+
+  useEffect(() => {
+    if (!themeOpen) return undefined
+    const onKey = (event) => {
+      if (event.key === 'Escape') setThemeOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [themeOpen])
 
   const handleSignOut = async () => {
     setSigningOut(true)
@@ -54,15 +66,46 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
         <Icon name="menu" />
       </button>
       <div className="header-right">
-        <label className="theme-control" title="Tema tampilan">
-          <Icon name={preference === 'light' ? 'sun' : preference === 'dark' ? 'moon' : 'monitor'} size={15} />
-          <span className="sr-only">Tema tampilan</span>
-          <select value={preference} onChange={(event) => setPreference(event.target.value)} aria-label="Tema tampilan">
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-            <option value="system">System</option>
-          </select>
-        </label>
+        <div className="theme-control-wrap" ref={themeRef}>
+          <button
+            type="button"
+            className="theme-control"
+            aria-label="Tema tampilan"
+            aria-haspopup="menu"
+            aria-expanded={themeOpen}
+            onClick={() => setThemeOpen((open) => !open)}
+            title="Tema tampilan"
+          >
+            <Icon name={preference === 'light' ? 'sun' : preference === 'dark' ? 'moon' : 'monitor'} size={15} />
+            <span className="theme-control-label">{preference === 'light' ? 'Light' : preference === 'dark' ? 'Dark' : 'System'}</span>
+            <Icon name="chevron-right" size={12} className="theme-control-chevron" />
+          </button>
+          {themeOpen && (
+            <div className="theme-menu" role="menu" aria-label="Pilih tema">
+              {[
+                { value: 'light', label: 'Light', icon: 'sun' },
+                { value: 'dark', label: 'Dark', icon: 'moon' },
+                { value: 'system', label: 'System', icon: 'monitor' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={preference === option.value}
+                  className={`theme-menu-item${preference === option.value ? ' theme-menu-item-active' : ''}`}
+                  onClick={() => {
+                    setPreference(option.value)
+                    setThemeOpen(false)
+                  }}
+                >
+                  <Icon name={option.icon} size={14} />
+                  <span>{option.label}</span>
+                  {preference === option.value && <Icon name="check" size={14} className="theme-menu-check" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {approvalNotifications && (
           <div className="approval-notification" ref={notificationRef}>
             <button

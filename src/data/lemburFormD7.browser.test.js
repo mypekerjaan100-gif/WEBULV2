@@ -233,7 +233,7 @@ try {
 
   await completeValidForm('08:00', '10:00', 'form-cuti-draft.pdf', 'application/pdf', pdf)
   await page.getByRole('button', { name: 'Simpan Draft', exact: true }).click()
-  await page.getByText('Draft dan evidence berhasil disimpan di Supabase.', { exact: true }).waitFor()
+  await page.getByText('Draft dan evidence berhasil disimpan — Data tersinkron.', { exact: true }).waitFor()
   const pageCountBeforePreview = page.context().pages().length
   await page.locator('.lembur-selected-file').getByRole('button', { name: 'Preview', exact: true }).click()
   await page.locator('.lembur-preview-body iframe').waitFor()

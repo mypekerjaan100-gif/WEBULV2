@@ -22,7 +22,7 @@ async function loadOrgMap() {
     .then(([unitResult, nameResult]) => {
       if (unitResult.error) throw unitResult.error
       if (!unitResult.data?.length) {
-        throw new Error('Data organisasi Supabase tidak tersedia untuk sesi ini.')
+        throw new Error('Data organisasi tidak tersedia — Data tersinkron untuk sesi ini.')
       }
 
       const nameByUnit = {}
@@ -131,7 +131,7 @@ export async function loadContractMap() {
     .then(({ data, error }) => {
       if (error) throw error
       if (!data?.length) {
-        throw new Error('Data kontrak Supabase tidak tersedia untuk sesi ini.')
+        throw new Error('Data kontrak tidak tersedia — Data tersinkron untuk sesi ini.')
       }
       _contractMap = {}
       for (const contract of data) {
@@ -170,7 +170,7 @@ export async function getOrganizationScope({
   ])
   const up3 = map.unitsByUuid[up3Id] ?? map.unitsByKey[up3Id]
   if (!up3 || up3.type !== 'UP3') {
-    throw new Error(`UP3 "${up3Id}" tidak ditemukan pada organisasi Supabase.`)
+    throw new Error(`UP3 "${up3Id}" tidak ditemukan pada organisasi — Data tersinkron.`)
   }
   if (up3.status !== 'Aktif') {
     throw new Error(`UP3 "${up3Id}" tidak aktif.`)

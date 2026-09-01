@@ -1100,11 +1100,11 @@ export default function SLADatabasePegawai({
           <button type="button" className="sla-btn sla-btn-primary" onClick={openAdd}>
             + Tambah Pegawai
           </button>
-          <span className="sla-status-badge sla-status-active">Supabase</span>
+          <span className="sla-status-badge sla-status-active">Data tersinkron</span>
         </div>
       </div>
       <p className="sla-flat-note">
-        Data TAD Pelayanan Teknik (Supabase, NIP sebagai kunci stabil) untuk kontrak{' '}
+        Data TAD Pelayanan Teknik (Data tersinkron, NIP sebagai kunci stabil) untuk kontrak{' '}
         {contractScope.contractName}. Unit/jabatan di-resolve dari Master
         Organisasi/Master Jabatan via unitId/positionId. Tarif Lembur/Jam
         disimpan sebagai histori. Admin ULP hanya mengelola unit sendiri dan
@@ -1113,7 +1113,7 @@ export default function SLADatabasePegawai({
       </p>
       {orgMap?.warning && (
         <p className="sla-blocked-note">
-          Nama organisasi Supabase tidak dapat dimuat: {orgMap.warning}
+          Nama organisasi tidak dapat dimuat — Data tersinkron: {orgMap.warning}
         </p>
       )}
 

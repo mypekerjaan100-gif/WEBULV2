@@ -551,7 +551,7 @@ export default function SLALembur({
       const activityId = await persistDraft()
       await uploadStagedEvidence(activityId)
       setDirty(false)
-      setMessage('Draft dan evidence berhasil disimpan di Supabase.')
+      setMessage('Draft dan evidence berhasil disimpan — Data tersinkron.')
       if(onRefresh) await onRefresh()
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})

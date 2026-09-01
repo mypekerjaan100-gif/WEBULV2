@@ -510,7 +510,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     const indicatorRow = indicators.find((r) => r.point_code === selectedIndicator.point || r.legacy_key === selectedIndicator.id)
     const indicatorId = selectedIndicator.slaLinked ? indicatorRow?.id : selectedIndicator.id
     const versionId = indicatorRow?.sla_version_id ?? activeVersionId
-    if (!indicatorId || !versionId) { setFormError('Indikator belum tersedia di Supabase. Hubungi Admin.'); return }
+    if (!indicatorId || !versionId) { setFormError('Indikator belum tersedia — Data tersinkron. Hubungi Admin.'); return }
     setFormBusy(true)
     try {
       const saved = await saveVariableEntry({

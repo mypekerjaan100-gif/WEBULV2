@@ -101,7 +101,7 @@ export default function SLAMasterLokasi({
           await onRefreshUnits()
           setPendingOrder(null)
         } catch {
-          setMutationError('Urutan tersimpan di Supabase, tetapi data organisasi terbaru gagal dimuat.')
+          setMutationError('Urutan tersimpan — Data tersinkron, tetapi data organisasi terbaru gagal dimuat.')
         }
       } else if (type === 'location') {
         await onReorderLocations(newList)
@@ -109,7 +109,7 @@ export default function SLAMasterLokasi({
           await onRefreshLocations()
           setPendingOrder(null)
         } catch {
-          setMutationError('Urutan tersimpan di Supabase, tetapi data lokasi terbaru gagal dimuat.')
+          setMutationError('Urutan tersimpan — Data tersinkron, tetapi data lokasi terbaru gagal dimuat.')
         }
       }
     } catch (error) {
@@ -700,7 +700,7 @@ export default function SLAMasterLokasi({
     <section className="sla-settings">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Master Lokasi</h2>
-        <span className="sla-status-badge sla-status-active">Supabase</span>
+        <span className="sla-status-badge sla-status-active">Data tersinkron</span>
       </div>
       <p className="sla-flat-note">
         Lokasi penempatan kerja pegawai ({contractScope.contractName}). UNIT_OFFICE
