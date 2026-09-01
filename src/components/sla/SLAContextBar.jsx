@@ -1,5 +1,5 @@
 import { currentNameOf } from '../../data/organisasiPelayananTeknik.js'
-import { FilterBar } from '../ui/Primitives.jsx'
+import { FilterBar, FilterField, Select } from '../ui/Primitives.jsx'
 
 export default function SLAContextBar({
   role,
@@ -16,9 +16,8 @@ export default function SLAContextBar({
 }) {
   return (
     <FilterBar className="sla-context-bar">
-      <label className="sla-context-field">
-        <span className="sla-context-label">Periode</span>
-        <select
+      <FilterField label="Periode" className="sla-context-field">
+        <Select
           className="sla-context-select"
           value={period}
           onChange={(event) => onPeriodChange(event.target.value)}
@@ -28,17 +27,16 @@ export default function SLAContextBar({
               {item}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </FilterField>
       {role === 'ulp' ? (
-        <div className="sla-context-field">
-          <span className="sla-context-label">SLA Berlaku</span>
+        <div className="ui-field sla-context-field">
+          <span className="ui-field-label">SLA Berlaku</span>
           <span className="sla-context-static">{versionName ?? '\u2014'}</span>
         </div>
       ) : (
-        <label className="sla-context-field">
-          <span className="sla-context-label">Versi SLA</span>
-          <select
+        <FilterField label="Versi SLA" className="sla-context-field">
+          <Select
             className="sla-context-select"
             value={version}
             onChange={(event) => onVersionChange(event.target.value)}
@@ -48,13 +46,12 @@ export default function SLAContextBar({
                 {item.name} &middot; {item.status}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </FilterField>
       )}
       {role === 'up3' && (
-        <label className="sla-context-field">
-          <span className="sla-context-label">Unit</span>
-          <select
+        <FilterField label="Unit" className="sla-context-field">
+          <Select
             className="sla-context-select"
             value={unitId}
             onChange={(event) => onUnitChange(event.target.value)}
@@ -64,8 +61,8 @@ export default function SLAContextBar({
                 {currentNameOf(item)} ({item.type})
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </FilterField>
       )}
       <span className="sla-context-note">
         Data laporan Supabase

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from '../../lib/AppAuth.jsx'
 import Icon from '../../components/Icon.jsx'
+import { Alert, Button, StatePanel } from '../../components/ui/Primitives.jsx'
 import {
   fetchEmployeesFromSupabase,
   fetchPositionsFromSupabase,
@@ -30,6 +31,7 @@ import {
   flattenVersionIndicators,
   pelayananTeknikModules,
   slaContractScope,
+  slaIndicators,
   slaPeriods,
   slaSignatureGroups,
   variableCostPoints,
@@ -67,6 +69,9 @@ const ROLE_NOTES = {
   up3: 'Admin UP3 - konsolidasi operasional UP3 read-only. Target Manual dapat dikelola untuk UP3 atau ULP; target Variable Cost otomatis.',
   ulp: 'Admin ULP - Target read-only. Indikator Manual dapat diedit pada ULP sendiri. Seluruh field 8 indikator Variable Cost read-only otomatis.',
 }
+
+const SLA_VARIABLE_COUNT = slaIndicators.filter((indicator) => indicator.inputMode === 'variable-cost').length
+const SLA_MANUAL_COUNT = slaIndicators.length - SLA_VARIABLE_COUNT
 
 const MANAGEMENT_ROLE_LABELS = {
   TEAM_LEADER: 'Team Leader',
@@ -805,6 +810,9 @@ export default function SLAPelayananTeknikPage({
   const exportScopeLabel = isUp3View
     ? `SLA UP3 ${(currentNameOf(up3Unit) ?? '').replace(/^UP3\s+/, '')}`
     : `SLA ULP ${(currentNameOf(selectedUnit) ?? '').replace(/^ULP\s+/, '')}`
+  const slaScopeLabel = isUp3View
+    ? 'Konsolidasi UP3'
+    : currentNameOf(selectedUnit) ?? effectiveUnitId
 
   const renderModuleButton = (module) => (
     <button
@@ -853,7 +861,7 @@ export default function SLAPelayananTeknikPage({
           </details>
         )}
       </div>
-      {isManagement && managementScopeLabel && (
+      {isManagement && managementScopeLabel && moduleId !== 'sla' && (
         <div className="sla-role-banner sla-role-banner-mgmt" style={{ marginTop: 8 }}>{managementScopeLabel}</div>
       )}
       {isUpManagement && managementScopes.length > 1 && (
@@ -1013,16 +1021,23 @@ export default function SLAPelayananTeknikPage({
         />
       ) : moduleId === 'sla' ? (
         role === 'ulp' && !effectiveUnitId ? (
-          <section className="placeholder">
-            <h2 className="placeholder-title">Unit tidak tersedia</h2>
-            <p className="placeholder-text">
+          <StatePanel state="empty" title="Unit tidak tersedia">
+            <p>
               Tidak ada ULP aktif pada UP3{' '}
               <strong>{up3Unit ? currentNameOf(up3Unit) : up3Id}</strong>.
               Pilih UP3 lain atau aktifkan ULP melalui Master Organisasi.
             </p>
-          </section>
+          </StatePanel>
         ) : (
-        <>
+        <section className="sla-workspace">
+          <div className="sla-workspace-heading">
+            <div>
+              <span className="sla-workspace-kicker">Workspace Kinerja</span>
+              <h2>SLA</h2>
+              <p>{slaIndicators.length} indikator · {SLA_VARIABLE_COUNT} Variable-linked · {SLA_MANUAL_COUNT} Manual</p>
+            </div>
+            <span className="sla-workspace-scope">{slaScopeLabel}</span>
+          </div>
           <SLAContextBar
             role={role}
             periods={slaPeriods}
@@ -1036,34 +1051,33 @@ export default function SLAPelayananTeknikPage({
             onVersionChange={setVersionId}
             onUnitChange={onUnitChange}
           />
-          <div className={`sla-role-banner sla-role-banner-${role}`}>
+          <Alert tone="info" className={`sla-workspace-notice sla-role-banner-${role}`}>
             {isManagement ? managementScopeLabel : ROLE_NOTES[role]}
-          </div>
-          <div className="sla-export-bar">
-            <span className="sla-export-scope">
-              Export berlaku untuk {exportScopeLabel}
-            </span>
-            <button
-              type="button"
-              className="sla-btn sla-btn-primary"
+          </Alert>
+          <div className="sla-workspace-table-toolbar">
+            <div>
+              <span className="sla-workspace-table-label">Daftar Indikator SLA</span>
+              <span className="sla-export-scope">Export berlaku untuk {exportScopeLabel}</span>
+            </div>
+            <Button
+              variant="secondary"
+              size="small"
               disabled={!selectedVersion || slaLoadStatus !== 'ready'}
               onClick={() => {
                 if (selectedVersion && versionCoversMonth(selectedVersion, periodMonth)) setExportOpen(true)
               }}
             >
               Export
-            </button>
+            </Button>
           </div>
           {slaLoadStatus === 'loading' ? (
-            <section className="placeholder">
-              <h2 className="placeholder-title">Memuat snapshot SLA</h2>
-              <p className="placeholder-text">Menyiapkan versi, target, dan data laporan dari Supabase.</p>
-            </section>
+            <StatePanel state="loading" title="Memuat snapshot SLA">
+              Menyiapkan versi, target, dan data laporan dari Supabase.
+            </StatePanel>
           ) : slaLoadStatus === 'error' ? (
-            <section className="placeholder">
-              <h2 className="placeholder-title">Snapshot SLA tidak dapat dimuat</h2>
-              <p className="sla-blocked-note">{slaLoadError}</p>
-            </section>
+            <StatePanel state="error" title="Snapshot SLA tidak dapat dimuat">
+              {slaLoadError}
+            </StatePanel>
           ) : selectedVersion ? (
             <>
               <SLAIndicatorTable
@@ -1080,31 +1094,30 @@ export default function SLAPelayananTeknikPage({
                 canEditTarget={canEditTarget}
               />
               {(canEditManualOperations || canEditTarget) && (
-                <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="sla-workspace-actions">
                   {canEditManualOperations && (
-                    <button type="button" className="sla-btn sla-btn-primary" disabled={slaManualSaving} onClick={handleSaveManualSlaEntries}>{slaManualSaving ? 'Menyimpan...' : 'Simpan Data SLA'}</button>
+                    <Button variant="primary" disabled={slaManualSaving} onClick={handleSaveManualSlaEntries}>{slaManualSaving ? 'Menyimpan...' : 'Simpan Data SLA'}</Button>
                   )}
                   {canEditTarget && (
-                    <button type="button" className="sla-btn sla-btn-primary" disabled={slaManualSaving} onClick={handleSaveManualSlaTargets}>{slaManualSaving ? 'Menyimpan...' : 'Simpan Target'}</button>
+                    <Button variant="primary" disabled={slaManualSaving} onClick={handleSaveManualSlaTargets}>{slaManualSaving ? 'Menyimpan...' : 'Simpan Target'}</Button>
                   )}
-                  {slaManualSaveMessage && <span style={{ color: '#065f46', fontSize: 13 }}>{slaManualSaveMessage}</span>}
-                  {slaManualSaveError && <span className="sla-blocked-note">{slaManualSaveError}</span>}
-                  <span className="text-muted" style={{ fontSize: 12 }}>Target dari Variable Cost read-only.</span>
+                  {slaManualSaveMessage && <Alert tone="success" className="sla-workspace-action-alert">{slaManualSaveMessage}</Alert>}
+                  {slaManualSaveError && <Alert tone="danger" className="sla-workspace-action-alert">{slaManualSaveError}</Alert>}
+                  <span className="sla-workspace-helper">Target dari Variable Cost read-only.</span>
                 </div>
               )}
             </>
           ) : (
-            <section className="placeholder">
-              <h2 className="placeholder-title">Belum ada SLA untuk UP3 ini</h2>
-              <p className="placeholder-text">
+            <StatePanel state="empty" title="Belum ada SLA untuk UP3 ini">
+              <p>
                 Belum ada versi SLA untuk kontrak{' '}
                 <strong>{slaContractScope.contractName}</strong> pada UP3{' '}
                 <strong>{up3Unit ? currentNameOf(up3Unit) : up3Id}</strong>.
                 Riwayat versi dapat dilihat melalui modul Pengaturan SLA.
               </p>
-            </section>
+            </StatePanel>
           )}
-        </>
+        </section>
         )
       ) : moduleId === 'variable-cost' ? (
         role === 'ulp' && !effectiveUnitId ? (

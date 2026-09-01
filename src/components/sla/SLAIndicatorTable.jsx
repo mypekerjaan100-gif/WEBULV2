@@ -93,7 +93,7 @@ export default function SLAIndicatorTable({
     }
     const isVariableLinked = indicator.category === 'A' && indicator.inputMode === 'variable-cost' && variableCostPoints.has(indicator.point)
     if (isVariableLinked) {
-      return <span className="sla-readonly" title="Target dikelola melalui Variable Cost oleh Admin UP3.">{formatValue(variableTargets[indicator.point])} <span style={{ fontSize: 10, color: '#6b7280' }}>• Dari Variable Cost</span></span>
+      return <span className="sla-readonly" title="Target dikelola melalui Variable Cost oleh Admin UP3.">{formatValue(variableTargets[indicator.point])} <span className="sla-variable-source">• Dari Variable Cost</span></span>
     }
     const target = targetOf(indicator.id)
     const isUlpField = !isUp3View
@@ -188,7 +188,7 @@ export default function SLAIndicatorTable({
     }
 
     rows.push(
-      <tr key={indicator.id}>
+      <tr key={indicator.id} className={`sla-indicator-row sla-indicator-row-${isVc ? 'variable' : 'manual'}`}>
         <td className="sla-table-number">{indicator.category}</td>
         <td className="sla-table-scope-cell">{indicator.scope}</td>
         <td className="sla-table-point">
@@ -203,7 +203,7 @@ export default function SLAIndicatorTable({
         <td className="sla-table-weight-type">{indicator.weightType}</td>
         <td className="sla-table-weight">{indicator.weight}</td>
         <td className="sla-table-unit">{renderSatuanCell(indicator, isVc)}</td>
-        <td className="sla-table-numeric">{renderTargetCell(indicator)}</td>
+        <td className="sla-table-numeric sla-table-target-value">{renderTargetCell(indicator)}</td>
         <td className="sla-table-numeric">{renderDataCell(indicator, isVc, 'wo')}</td>
         <td className="sla-table-numeric">{renderDataCell(indicator, isVc, 'realization')}</td>
         <td className="sla-table-numeric">{renderDataCell(indicator, isVc, 'achievement')}</td>
@@ -238,8 +238,8 @@ export default function SLAIndicatorTable({
   }
 
   return (
-    <div className="sla-table-wrap">
-      <table className="sla-table">
+    <div className="sla-table-wrap sla-indicator-table-wrap">
+      <table className="sla-table sla-indicator-table">
         <thead>
           <tr>
             <th className="sla-th-number">No</th>
