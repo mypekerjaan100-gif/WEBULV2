@@ -7615,6 +7615,38 @@ summary:focus-visible {
   }
 }
 
+/* D1 Financial Comparison Dashboard */
+.fincomp-dashboard { gap: 16px; }
+.fincomp-selectors { display: grid; gap: 12px; padding: 14px 16px; }
+.fincomp-selector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.fincomp-selector-head h4 { margin: 0; color: var(--heading); font-size: 14px; line-height: 20px; }
+.fincomp-selector-head small { color: var(--text-muted); font-size: 11px; line-height: 16px; }
+.fincomp-selector-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.fincomp-chip-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.fincomp-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-secondary); font-size: 12px; font-weight: 600; line-height: 16px;
+  cursor: pointer; user-select: none;
+}
+.fincomp-chip input { accent-color: var(--primary); }
+.fincomp-chip small { color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+.fincomp-chip.is-selected { border-color: var(--primary); background: var(--primary-subtle); color: var(--heading); }
+.fincomp-note { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 16px; }
+.fincomp-kpis { grid-template-columns: repeat(4, 1fr); }
+.fincomp-chart .vc-fin-bar.is-margin-positive { background: var(--success); }
+.fincomp-chart .vc-fin-bar.is-margin-negative { background: var(--danger); }
+.vc-fin-legend .is-margin { background: var(--success); }
+.fincomp-insight { margin: 8px 0 0; color: var(--text-muted); font-size: 12px; line-height: 18px; }
+.dashboard-fincomp-wrap { max-width: 100%; }
+@media (max-width: 900px) {
+  .fincomp-selector-head { flex-direction: column; align-items: stretch; }
+  .fincomp-kpis { grid-template-columns: 1fr; }
+}
+:root[data-theme='dark'] .fincomp-chip { border-color: var(--border); background: var(--surface-subtle); color: var(--text-secondary); }
+:root[data-theme='dark'] .fincomp-chip.is-selected { border-color: var(--primary); background: #14314a; color: var(--text-primary); }
+:root[data-theme='dark'] .fincomp-selectors { border-color: var(--border); }
+
 @media (max-width: 600px) {
   .theme-control {
     position: relative;

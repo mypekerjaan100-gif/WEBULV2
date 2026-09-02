@@ -529,3 +529,12 @@ export async function getVariableFinancialTrend({ contractId, up3Id, endPeriodMo
     p_month_count: monthCount,
   })
 }
+
+export async function getFinancialComparisonDashboard({ contractId, up3Id, periodMonth, unitId }) {
+  return rpc('get_financial_comparison_dashboard', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_unit_id: unitId ?? null,
+  }, 'FINANCIAL_COMPARISON')
+}
