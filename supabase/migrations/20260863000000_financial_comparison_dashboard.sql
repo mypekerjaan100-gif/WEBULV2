@@ -166,9 +166,9 @@ begin
   select jsonb_build_object(
     'period_month', v_month,
     'summary', (select to_jsonb(s) from summary s),
-    'revenue_components', coalesce((select jsonb_agg(to_jsonb(r order by r.sort_order) ) from revenue_mapped r), '[]'::jsonb),
-    'revenue_eligible_components', coalesce((select jsonb_agg(to_jsonb(r order by r.sort_order) ) from revenue_eligible r), '[]'::jsonb),
-    'cost_components', coalesce((select jsonb_agg(to_jsonb(c order by c.sort_order) ) from cost_mapped c), '[]'::jsonb),
+    'revenue_components', coalesce((select jsonb_agg(to_jsonb(r) order by r.sort_order) from revenue_mapped r), '[]'::jsonb),
+    'revenue_eligible_components', coalesce((select jsonb_agg(to_jsonb(r) order by r.sort_order) from revenue_eligible r), '[]'::jsonb),
+    'cost_components', coalesce((select jsonb_agg(to_jsonb(c) order by c.sort_order) from cost_mapped c), '[]'::jsonb),
     'has_data', ((select total from revenue_total) > 0 or (select total from cost_total) > 0)
   ) into v_result;
   return v_result;
