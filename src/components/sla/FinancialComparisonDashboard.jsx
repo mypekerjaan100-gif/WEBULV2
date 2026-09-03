@@ -32,6 +32,12 @@ function formatPercent(value) {
   return `${n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
+function formatCompactRp(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return 'Rp 0'
+  return `Rp ${amount.toLocaleString('id-ID', { notation: 'compact', maximumFractionDigits: 1 })}`
+}
+
 export default function FinancialComparisonDashboard({ contractId, up3Id, period, periods, onPeriodChange, units, orgMap }) {
   const [unitId, setUnitId] = useState(ALL_UNITS)
   const [selectedRevenueCodes, setSelectedRevenueCodes] = useState(() => REVENUE_ELIGIBLE.map((i) => i.code))
@@ -89,7 +95,9 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const marginPercent = revenueSelectedTotal > 0 ? (margin / revenueSelectedTotal) * 100 : null
   const costRatio = revenueSelectedTotal > 0 ? (costSelectedTotal / revenueSelectedTotal) * 100 : null
 
-  const maxChart = Math.max(1, revenueSelectedTotal, costSelectedTotal, Math.abs(margin))
+  const comparisonMax = Math.max(1, revenueSelectedTotal, costSelectedTotal)
+  const chartTicks = [1, 0.75, 0.5, 0.25, 0]
+  const marginGaugePercent = marginPercent == null ? 0 : Math.min(100, Math.abs(marginPercent))
   const hasSelection = selectedRevenueCodes.length > 0 && selectedCostCodes.length > 0
 
   const toggleRevenue = (code) => {
@@ -192,34 +200,91 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
             <KpiCard className="vc-fin-kpi" label="PERSENTASE MARGIN" value={marginPercent == null ? '-' : formatPercent(marginPercent)} helper={costRatio == null ? 'Biaya / Pendapatan' : `Efisiensi: ${formatPercent(costRatio)} biaya`} />
           </div>
 
-          <section className="vc-fin-section">
+          <section className="vc-fin-section fincomp-chart-section">
             <div className="vc-fin-section-title">
-              <div><span>AGREGASI</span><h4>PENDAPATAN TERPILIH VS BIAYA TERPILIH</h4></div>
-              <div className="vc-fin-legend"><i className="is-target" /> Pendapatan <i className="is-actual" /> Biaya <i className="is-margin" /> Margin</div>
-            </div>
-            <div className="vc-fin-chart fincomp-chart">
-              <div className="vc-fin-chart-row">
-                <strong>Pendapatan Terpilih</strong>
-                <div className="vc-fin-bars">
-                  <div className="vc-fin-bar-line"><span className="vc-fin-bar is-target" style={{ width: `${(revenueSelectedTotal / maxChart) * 100}%` }} /><em>{formatRp(revenueSelectedTotal)}</em></div>
-                </div>
+              <div>
+                <span>AGREGASI</span>
+                <h4>PENDAPATAN TERPILIH VS BIAYA TERPILIH</h4>
+                <p className="fincomp-chart-subtitle">Nilai aktual periode berjalan dalam Rupiah</p>
               </div>
-              <div className="vc-fin-chart-row">
-                <strong>Biaya Terpilih</strong>
-                <div className="vc-fin-bars">
-                  <div className="vc-fin-bar-line"><span className="vc-fin-bar is-actual" style={{ width: `${(costSelectedTotal / maxChart) * 100}%` }} /><em>{formatRp(costSelectedTotal)}</em></div>
-                </div>
-              </div>
-              <div className="vc-fin-chart-row">
-                <strong>Margin</strong>
-                <div className="vc-fin-bars">
-                  <div className="vc-fin-bar-line"><span className={`vc-fin-bar ${margin >= 0 ? 'is-margin-positive' : 'is-margin-negative'}`} style={{ width: `${(Math.abs(margin) / maxChart) * 100}%` }} /><em>{formatRp(margin)} {marginPercent != null && `(${formatPercent(marginPercent)})`}</em></div>
-                </div>
+              <div className="vc-fin-legend fincomp-chart-legend" aria-label="Legenda diagram">
+                <span><i className="is-target" /> Pendapatan</span>
+                <span><i className="is-actual" /> Biaya Operasional</span>
               </div>
             </div>
-            {marginPercent != null && (Number.isFinite(Number(costRatio)) && (
-              <p className="fincomp-insight">Rasio biaya {formatPercent(costRatio)} dari pendapatan terpilih.</p>
-            ))}
+
+            <div className="fincomp-chart-layout">
+              <div className="fincomp-plot-card">
+                <div className="fincomp-axis" aria-hidden="true">
+                  {chartTicks.map((tick) => <span key={tick}>{formatCompactRp(comparisonMax * tick)}</span>)}
+                </div>
+                <div
+                  className="fincomp-plot"
+                  role="img"
+                  aria-label={`Perbandingan Pendapatan ${formatRp(revenueSelectedTotal)} dan Biaya Operasional ${formatRp(costSelectedTotal)}`}
+                >
+                  <div className="fincomp-grid" aria-hidden="true">
+                    {chartTicks.map((tick) => <i key={tick} />)}
+                  </div>
+
+                  <div className="fincomp-metric" tabIndex={0} aria-label={`Pendapatan Terpilih ${formatRp(revenueSelectedTotal)}`}>
+                    <div className="fincomp-tooltip" role="tooltip">
+                      <strong>Pendapatan Terpilih</strong>
+                      <span>{formatRp(revenueSelectedTotal)}</span>
+                      <small>Akumulasi {selectedRevenueCodes.length} komponen pendapatan</small>
+                    </div>
+                    <strong className="fincomp-column-value">{formatCompactRp(revenueSelectedTotal)}</strong>
+                    <div className="fincomp-column-track">
+                      <span className="fincomp-column is-revenue" style={{ height: `${(revenueSelectedTotal / comparisonMax) * 100}%` }} />
+                    </div>
+                    <div className="fincomp-column-label"><span>Pendapatan</span><small>Terpilih</small></div>
+                  </div>
+
+                  <div className="fincomp-metric" tabIndex={0} aria-label={`Biaya Operasional Terpilih ${formatRp(costSelectedTotal)}`}>
+                    <div className="fincomp-tooltip" role="tooltip">
+                      <strong>Biaya Operasional Terpilih</strong>
+                      <span>{formatRp(costSelectedTotal)}</span>
+                      <small>Akumulasi {selectedCostCodes.length} komponen Lembur APPROVED</small>
+                    </div>
+                    <strong className="fincomp-column-value">{formatCompactRp(costSelectedTotal)}</strong>
+                    <div className="fincomp-column-track">
+                      <span className="fincomp-column is-cost" style={{ height: `${(costSelectedTotal / comparisonMax) * 100}%` }} />
+                    </div>
+                    <div className="fincomp-column-label"><span>Biaya Operasional</span><small>Terpilih</small></div>
+                  </div>
+                </div>
+              </div>
+
+              <aside
+                className={`fincomp-margin-panel ${margin >= 0 ? 'is-positive' : 'is-negative'}`}
+                tabIndex={0}
+                aria-label={`${margin >= 0 ? 'Surplus' : 'Defisit'} ${formatRp(margin)}, persentase margin ${formatPercent(marginPercent)}`}
+              >
+                <div className="fincomp-margin-head">
+                  <span>Margin / Selisih</span>
+                  <strong>{margin >= 0 ? 'Surplus' : 'Defisit'}</strong>
+                </div>
+                <div className="fincomp-margin-gauge" style={{ '--gauge-value': `${marginGaugePercent * 3.6}deg` }}>
+                  <div className="fincomp-tooltip fincomp-margin-tooltip" role="tooltip">
+                    <strong>Margin / Selisih</strong>
+                    <span>{formatRp(margin)}</span>
+                    <small>Pendapatan dikurangi Biaya Operasional</small>
+                  </div>
+                  <div className="fincomp-margin-center"><strong>{formatPercent(marginPercent)}</strong><span>Margin</span></div>
+                </div>
+                <strong className="fincomp-margin-value">{formatRp(margin)}</strong>
+                <p>{marginPercent == null ? 'Persentase belum tersedia karena pendapatan bernilai nol.' : `${formatPercent(costRatio)} dari pendapatan digunakan untuk biaya operasional.`}</p>
+                <div className="fincomp-margin-formula">
+                  <span>Pendapatan</span><strong>{formatCompactRp(revenueSelectedTotal)}</strong>
+                  <span>Biaya</span><strong>{formatCompactRp(costSelectedTotal)}</strong>
+                </div>
+              </aside>
+            </div>
+
+            <div className={`fincomp-insight ${margin >= 0 ? 'is-positive' : 'is-negative'}`}>
+              <strong>{margin >= 0 ? 'Pendapatan masih berada di atas biaya operasional.' : 'Biaya operasional melampaui pendapatan terpilih.'}</strong>
+              <span>{marginPercent == null ? 'Margin tidak dihitung ketika pendapatan bernilai nol.' : `Margin periode ini ${formatPercent(marginPercent)} dari pendapatan terpilih.`}</span>
+            </div>
           </section>
 
           <section className="vc-fin-section">
