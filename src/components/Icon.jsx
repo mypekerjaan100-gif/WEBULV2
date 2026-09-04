@@ -23,6 +23,15 @@ const ICONS = {
   moon: <><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z" /></>,
   monitor: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></>,
   check: <><path d="M5 12.5 9.5 17 19 7" /></>,
+  'chart-bar': <><path d="M4 20V10" /><path d="M10 20V6" /><path d="M16 20v-8" /><path d="M4 20h16" /></>,
+  wallet: <><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><path d="M15 13h4v3h-4z" /></>,
+  'trend-up': <><path d="M3 17 9 11l4 4 5-8" /><path d="M14 7h5v5" /></>,
+  'pie-chart': <><path d="M12 3a9 9 0 1 0 9 9H12z" /><path d="M12 12 21 12A9 9 0 0 0 12 3z" /></>,
+  filter: <><path d="M3 6h18l-7 7v5l-4 2v-7L3 6z" /></>,
+  calendar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M8 2v4M16 2v4M3 10h18" /></>,
+  download: <><path d="M12 3v13" /><path d="m7 10 5 5 5-5" /><path d="M3 17h18" /></>,
+  layers: <><path d="M12 2 3 7l9 5 9-5-9-5z" /><path d="M3 12l9 5 9-5" /><path d="M3 17l9 5 9-5" /></>,
+  shield: <><path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5L12 2z" /><path d="m9 12 2 2 4-4" /></>,
 }
 
 export default function Icon({ name, size = 18, className = '' }) {

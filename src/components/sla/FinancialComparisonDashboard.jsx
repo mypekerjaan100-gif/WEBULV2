@@ -3,7 +3,8 @@ import { getFinancialComparisonDashboard, periodLabelToMonth } from '../../data/
 import { variableCostIndicators, slaPeriods } from '../../data/slaPelayananTeknik.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { REPLACEMENT_TYPES } from '../../data/overtimeReplacementL2.js'
-import { Alert, KpiCard, StatePanel, DataTable, FilterBar, FilterField, Button } from '../ui/Primitives.jsx'
+import Icon from '../Icon.jsx'
+import { Alert, StatePanel, DataTable, Button } from '../ui/Primitives.jsx'
 
 const ALL_UNITS = 'ALL'
 
@@ -18,6 +19,8 @@ const COST_DEFINITIONS = [
 ]
 
 const REVENUE_ELIGIBLE = variableCostIndicators.filter((i) => i.revenueEligible !== false)
+const REVENUE_LABEL = new Map(REVENUE_ELIGIBLE.map((i) => [i.code, i.label ?? i.code]))
+const COST_LABEL = new Map(COST_DEFINITIONS.map((c) => [c.code, c.label]))
 
 function formatRp(value) {
   if (value == null || value === '') return '-'
@@ -47,11 +50,6 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const [error, setError] = useState('')
   const requestId = useRef(0)
   const periodMonth = periodLabelToMonth(period)
-  const unitNames = new Map((units ?? []).map((u) => [u.uuid ?? u.id, u.displayName ?? u.name ?? u.uuid ?? u.id]))
-  const authorizedUnitIds = (dashboard?.revenue_components ? [] : []) // will derive from units prop
-  const displayUnits = (units ?? []).filter((u) => u.type === 'ULP' && u.parentUuid === (orgMap?.up3Uuid ?? up3Id) || u.type === 'ULP')
-  // fallback: if orgMap missing, use units as passed
-  const unitIdOptions = (units ?? []).filter((u) => u.type === 'ULP').map((u) => u.uuid ?? u.id)
 
   useEffect(() => {
     const cur = ++requestId.current
@@ -60,7 +58,6 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
         setLoading(false)
         return
       }
-      // wait for orgMap
       setLoading(true)
       return
     }
@@ -77,7 +74,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
       .catch((e) => {
         if (cur !== requestId.current) return
         setDashboard(null)
-        const msg = e?.message || 'Gagal memuat Dashboard Financial Comparison.'
+        const msg = e?.message || 'Gagal memuat Dashboard Finansial.'
         if (/Not authorized|42501/i.test(msg)) setError('Akses finansial tidak tersedia untuk peran ini.')
         else setError(msg)
       })
@@ -111,110 +108,177 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const clearRevenue = () => setSelectedRevenueCodes([])
   const selectAllCost = () => setSelectedCostCodes(COST_DEFINITIONS.map((c) => c.code))
   const clearCost = () => setSelectedCostCodes([])
+  const resetFilters = () => {
+    selectAllRevenue()
+    selectAllCost()
+    setUnitId(ALL_UNITS)
+  }
 
   const revenueComponentsForDisplay = (dashboard?.revenue_eligible_components ?? []).filter((r) => selectedRevenueCodes.includes(r.indicator_code))
   const costComponentsForDisplay = (dashboard?.cost_components ?? []).filter((c) => selectedCostCodes.includes(c.cost_code))
 
   return (
-    <div className="vc-fin-dashboard fincomp-dashboard">
-      <div className="vc-fin-dashboard-head">
-        <div>
-          <p className="vc-fin-eyebrow">FINANCIAL COMPARISON</p>
-          <h3>Dashboard Financial Comparison</h3>
-          <p className="vc-fin-subtitle">Perbandingan agregat Pendapatan Terpilih (Variable) vs Biaya Operasional Terpilih (Lembur — APPROVED) per periode.</p>
-        </div>
-        <FilterBar className="vc-fin-filters">
-          <FilterField label="Periode">
-            <select className="input-select" value={period} onChange={(e) => onPeriodChange?.(e.target.value)}>
-              {(periods ?? slaPeriods).map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </FilterField>
-          <FilterField label="Scope / ULP">
-            <select className="input-select" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-              <option value={ALL_UNITS}>Semua ULP - Konsolidasi UP3</option>
-              {(units ?? []).filter((u) => u.type === 'ULP').map((u) => {
-                const id = u.uuid ?? u.id
-                return <option key={id} value={id}>{u.displayName ?? u.name ?? id}</option>
-              })}
-            </select>
-          </FilterField>
-        </FilterBar>
-      </div>
+    <div className="vc-fin-dashboard fincomp-dashboard fin-ref-dashboard">
+      {/* Top filter card - matches reference layout */}
+      <section className="fin-ref-filter-card">
+        <div className="fin-ref-filter-grid">
+          <label className="fin-ref-field">
+            <span className="fin-ref-field-label">Periode</span>
+            <span className="fin-ref-select-wrap">
+              <Icon name="calendar" size={14} />
+              <select className="fin-ref-select" value={period} onChange={(e) => onPeriodChange?.(e.target.value)}>
+                {(periods ?? slaPeriods).map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <Icon name="chevron-right" size={12} className="fin-ref-chevron" />
+            </span>
+          </label>
 
-      <section className="vc-fin-section fincomp-selectors">
-        <div className="fincomp-selector-head">
-          <div>
-            <h4>Komponen Pendapatan</h4>
-            <small>{selectedRevenueCodes.length} dari {REVENUE_ELIGIBLE.length} terpilih - akan dijumlahkan menjadi <strong>satu total pendapatan</strong></small>
-          </div>
-          <div className="fincomp-selector-actions">
-            <Button variant="secondary" size="small" onClick={selectAllRevenue}>Pilih Semua</Button>
-            <Button variant="ghost" size="small" onClick={clearRevenue}>Kosongkan</Button>
-          </div>
-        </div>
-        <div className="fincomp-chip-grid">
-          {REVENUE_ELIGIBLE.map((ind) => (
-            <label key={ind.code} className={`fincomp-chip ${selectedRevenueCodes.includes(ind.code) ? 'is-selected' : ''}`}>
-              <input type="checkbox" checked={selectedRevenueCodes.includes(ind.code)} onChange={() => toggleRevenue(ind.code)} />
-              <span>{ind.label ?? ind.code}</span>
-              <small>{ind.code}</small>
-            </label>
-          ))}
-        </div>
-        <p className="fincomp-note">ROW Fix (3.1a) tidak termasuk pendapatan - disesuaikan dengan Variable Cost eligible.</p>
-      </section>
+          <label className="fin-ref-field">
+            <span className="fin-ref-field-label">Unit / ULP</span>
+            <span className="fin-ref-select-wrap">
+              <Icon name="layers" size={14} />
+              <select className="fin-ref-select" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+                <option value={ALL_UNITS}>Semua ULP - Konsolidasi UP3</option>
+                {(units ?? []).filter((u) => u.type === 'ULP').map((u) => {
+                  const id = u.uuid ?? u.id
+                  return <option key={id} value={id}>{u.displayName ?? u.name ?? id}</option>
+                })}
+              </select>
+              <Icon name="chevron-right" size={12} className="fin-ref-chevron" />
+            </span>
+          </label>
 
-      <section className="vc-fin-section fincomp-selectors">
-        <div className="fincomp-selector-head">
-          <div>
-            <h4>Komponen Biaya Operasional</h4>
-            <small>{selectedCostCodes.length} dari {COST_DEFINITIONS.length} terpilih - akan dijumlahkan menjadi <strong>satu total biaya</strong></small>
+          <label className="fin-ref-field">
+            <span className="fin-ref-field-label">Mode Perbandingan</span>
+            <span className="fin-ref-select-wrap is-disabled">
+              <Icon name="chart-bar" size={14} />
+              <select className="fin-ref-select" value="Akumulasi" disabled>
+                <option>Akumulasi</option>
+              </select>
+              <Icon name="chevron-right" size={12} className="fin-ref-chevron" />
+            </span>
+          </label>
+
+          <div className="fin-ref-field fin-ref-field-span">
+            <span className="fin-ref-field-label">Komponen Pendapatan</span>
+            <div className="fin-ref-multi">
+              <div className="fin-ref-chips">
+                {selectedRevenueCodes.map((code) => (
+                  <span key={code} className="fin-ref-chip is-revenue">
+                    <span>{REVENUE_LABEL.get(code) ?? code}</span>
+                    <button type="button" aria-label={`Hapus ${code}`} onClick={() => toggleRevenue(code)}>×</button>
+                  </span>
+                ))}
+                {selectedRevenueCodes.length === 0 && <span className="fin-ref-empty">Belum ada komponen terpilih</span>}
+              </div>
+              <Icon name="chevron-right" size={12} className="fin-ref-multi-chevron" />
+            </div>
+            <div className="fin-ref-chip-options">
+              {REVENUE_ELIGIBLE.map((ind) => (
+                <button key={ind.code} type="button" className={`fin-ref-option ${selectedRevenueCodes.includes(ind.code) ? 'is-selected' : ''}`} onClick={() => toggleRevenue(ind.code)}>
+                  {selectedRevenueCodes.includes(ind.code) ? '✓ ' : '+ '}{ind.label ?? ind.code}
+                </button>
+              ))}
+              <span className="fin-ref-options-actions">
+                <button type="button" className="fin-ref-mini" onClick={selectAllRevenue}>Pilih Semua</button>
+                <button type="button" className="fin-ref-mini" onClick={clearRevenue}>Kosongkan</button>
+              </span>
+            </div>
+            <span className="fin-ref-hint">{selectedRevenueCodes.length} dari {REVENUE_ELIGIBLE.length} komponen • dijumlahkan menjadi satu total pendapatan</span>
           </div>
-          <div className="fincomp-selector-actions">
-            <Button variant="secondary" size="small" onClick={selectAllCost}>Pilih Semua</Button>
-            <Button variant="ghost" size="small" onClick={clearCost}>Kosongkan</Button>
+
+          <div className="fin-ref-field fin-ref-field-span">
+            <span className="fin-ref-field-label">Komponen Biaya</span>
+            <div className="fin-ref-multi is-cost">
+              <div className="fin-ref-chips">
+                {selectedCostCodes.map((code) => (
+                  <span key={code} className="fin-ref-chip is-cost">
+                    <span>{COST_LABEL.get(code) ?? code}</span>
+                    <button type="button" aria-label={`Hapus ${code}`} onClick={() => toggleCost(code)}>×</button>
+                  </span>
+                ))}
+                {selectedCostCodes.length === 0 && <span className="fin-ref-empty">Belum ada komponen terpilih</span>}
+              </div>
+              <Icon name="chevron-right" size={12} className="fin-ref-multi-chevron" />
+            </div>
+            <div className="fin-ref-chip-options">
+              {COST_DEFINITIONS.map((def) => (
+                <button key={def.code} type="button" className={`fin-ref-option is-cost ${selectedCostCodes.includes(def.code) ? 'is-selected' : ''}`} onClick={() => toggleCost(def.code)}>
+                  {selectedCostCodes.includes(def.code) ? '✓ ' : '+ '}{def.label}
+                </button>
+              ))}
+              <span className="fin-ref-options-actions">
+                <button type="button" className="fin-ref-mini" onClick={selectAllCost}>Pilih Semua</button>
+                <button type="button" className="fin-ref-mini" onClick={clearCost}>Kosongkan</button>
+              </span>
+            </div>
+            <span className="fin-ref-hint">{selectedCostCodes.length} dari {COST_DEFINITIONS.length} komponen • sumber Lembur APPROVED server-side</span>
+          </div>
+
+          <div className="fin-ref-actions">
+            <Button variant="primary" size="small" className="fin-ref-apply" icon={<Icon name="filter" size={14} />}>Terapkan</Button>
+            <Button variant="ghost" size="small" className="fin-ref-reset" onClick={resetFilters}>Reset Filter</Button>
           </div>
         </div>
-        <div className="fincomp-chip-grid">
-          {COST_DEFINITIONS.map((def) => (
-            <label key={def.code} className={`fincomp-chip ${selectedCostCodes.includes(def.code) ? 'is-selected' : ''}`}>
-              <input type="checkbox" checked={selectedCostCodes.includes(def.code)} onChange={() => toggleCost(def.code)} />
-              <span>{def.label}</span>
-              <small>{def.code}</small>
-            </label>
-          ))}
-        </div>
-        <p className="fincomp-note">Sumber Lembur: overtime_entries APPROVED - calculated_amount_snapshot agregat server-side.</p>
       </section>
 
       {error && <Alert tone="danger">{error}</Alert>}
-      {loading && <StatePanel state="loading" title="Memuat Financial Comparison" />}
+      {loading && <StatePanel state="loading" title="Memuat Dashboard Finansial" />}
       {!loading && !error && dashboard && (
         <>
           {!hasSelection && <Alert tone="warning">Pilih minimal satu komponen Pendapatan dan satu komponen Biaya Operasional untuk melihat agregasi.</Alert>}
 
-          <div className="vc-fin-kpis fincomp-kpis">
-            <KpiCard className="vc-fin-kpi vc-fin-kpi-target" label="TOTAL PENDAPATAN TERPILIH" value={formatRp(revenueSelectedTotal)} helper={`${selectedRevenueCodes.length} komponen`} />
-            <KpiCard className="vc-fin-kpi vc-fin-kpi-actual" label="TOTAL BIAYA OPERASIONAL TERPILIH" value={formatRp(costSelectedTotal)} helper={`${selectedCostCodes.length} komponen APPROVED`} />
-            <KpiCard className="vc-fin-kpi" label="SELISIH / MARGIN" value={formatRp(margin)} helper={margin >= 0 ? 'Surplus' : 'Defisit'} />
-            <KpiCard className="vc-fin-kpi" label="PERSENTASE MARGIN" value={marginPercent == null ? '-' : formatPercent(marginPercent)} helper={costRatio == null ? 'Biaya / Pendapatan' : `Efisiensi: ${formatPercent(costRatio)} biaya`} />
+          <div className="fin-ref-kpis">
+            <div className="fin-ref-kpi is-revenue">
+              <span className="fin-ref-kpi-icon"><Icon name="chart-bar" size={20} /></span>
+              <div className="fin-ref-kpi-body">
+                <span className="fin-ref-kpi-label">Total Pendapatan Terpilih (Akumulasi)</span>
+                <strong className="fin-ref-kpi-value">{formatRp(revenueSelectedTotal)}</strong>
+                <span className="fin-ref-kpi-helper">{selectedRevenueCodes.length} komponen • {formatCompactRp(revenueSelectedTotal)}</span>
+              </div>
+            </div>
+            <div className="fin-ref-kpi is-cost">
+              <span className="fin-ref-kpi-icon"><Icon name="wallet" size={20} /></span>
+              <div className="fin-ref-kpi-body">
+                <span className="fin-ref-kpi-label">Total Biaya Terpilih (Akumulasi)</span>
+                <strong className="fin-ref-kpi-value">{formatRp(costSelectedTotal)}</strong>
+                <span className="fin-ref-kpi-helper">{selectedCostCodes.length} komponen APPROVED • {formatCompactRp(costSelectedTotal)}</span>
+              </div>
+            </div>
+            <div className={`fin-ref-kpi is-margin ${margin >= 0 ? 'is-positive' : 'is-negative'}`}>
+              <span className="fin-ref-kpi-icon"><Icon name="trend-up" size={20} /></span>
+              <div className="fin-ref-kpi-body">
+                <span className="fin-ref-kpi-label">Margin Bersih (Akumulasi)</span>
+                <strong className="fin-ref-kpi-value">{formatRp(margin)}</strong>
+                <span className="fin-ref-kpi-helper">{margin >= 0 ? 'Surplus' : 'Defisit'} • {marginPercent == null ? '-' : formatPercent(marginPercent)}</span>
+              </div>
+            </div>
+            <div className="fin-ref-kpi is-ratio">
+              <span className="fin-ref-kpi-icon"><Icon name="pie-chart" size={20} /></span>
+              <div className="fin-ref-kpi-body">
+                <span className="fin-ref-kpi-label">Rasio Biaya terhadap Pendapatan</span>
+                <strong className="fin-ref-kpi-value">{costRatio == null ? '-' : formatPercent(costRatio)}</strong>
+                <span className="fin-ref-kpi-helper">Biaya / Pendapatan • {costRatio == null ? '—' : `${formatPercent(costRatio)} biaya`}</span>
+              </div>
+            </div>
           </div>
 
-          <section className="vc-fin-section fincomp-chart-section">
+          <section className="vc-fin-section fincomp-chart-section fin-ref-chart">
             <div className="vc-fin-section-title">
               <div>
                 <span>AGREGASI</span>
                 <h4>PENDAPATAN TERPILIH VS BIAYA TERPILIH</h4>
-                <p className="fincomp-chart-subtitle">Nilai aktual periode berjalan dalam Rupiah</p>
+                <p className="fincomp-chart-subtitle">Periode {period} • Nilai aktual periode berjalan dalam Rupiah</p>
               </div>
               <div className="vc-fin-legend fincomp-chart-legend" aria-label="Legenda diagram">
-                <span><i className="is-target" /> Pendapatan</span>
-                <span><i className="is-actual" /> Biaya Operasional</span>
+                <span><i className="is-target" /> Pendapatan Terpilih (Akumulasi)</span>
+                <span><i className="is-actual" /> Biaya Terpilih (Akumulasi)</span>
+                <span><i className={margin >= 0 ? 'is-margin' : 'is-margin-negative'} /> Margin Bersih</span>
               </div>
             </div>
 
-            <div className="fincomp-chart-layout">
-              <div className="fincomp-plot-card">
+            <div className="fincomp-chart-layout fin-ref-layout">
+              <div className="fincomp-plot-card fin-ref-plot-card">
                 <div className="fincomp-axis" aria-hidden="true">
                   {chartTicks.map((tick) => <span key={tick}>{formatCompactRp(comparisonMax * tick)}</span>)}
                 </div>
@@ -256,7 +320,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
               </div>
 
               <aside
-                className={`fincomp-margin-panel ${margin >= 0 ? 'is-positive' : 'is-negative'}`}
+                className={`fincomp-margin-panel fin-ref-margin ${margin >= 0 ? 'is-positive' : 'is-negative'}`}
                 tabIndex={0}
                 aria-label={`${margin >= 0 ? 'Surplus' : 'Defisit'} ${formatRp(margin)}, persentase margin ${formatPercent(marginPercent)}`}
               >
@@ -278,6 +342,10 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
                   <span>Pendapatan</span><strong>{formatCompactRp(revenueSelectedTotal)}</strong>
                   <span>Biaya</span><strong>{formatCompactRp(costSelectedTotal)}</strong>
                 </div>
+                <div className="fin-ref-margin-summary">
+                  <span><i className="dot is-revenue" /> Pendapatan terpilih</span><strong>{formatRp(revenueSelectedTotal)}</strong>
+                  <span><i className="dot is-cost" /> Biaya terpilih</span><strong>{formatRp(costSelectedTotal)}</strong>
+                </div>
               </aside>
             </div>
 
@@ -285,9 +353,10 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
               <strong>{margin >= 0 ? 'Pendapatan masih berada di atas biaya operasional.' : 'Biaya operasional melampaui pendapatan terpilih.'}</strong>
               <span>{marginPercent == null ? 'Margin tidak dihitung ketika pendapatan bernilai nol.' : `Margin periode ini ${formatPercent(marginPercent)} dari pendapatan terpilih.`}</span>
             </div>
+            <p className="fin-ref-footnote">Nilai ditampilkan sebagai akumulasi dari komponen pendapatan &amp; biaya yang Anda pilih pada periode {period}.</p>
           </section>
 
-          <section className="vc-fin-section">
+          <section className="vc-fin-section fin-ref-table">
             <div className="vc-fin-section-title"><div><span>RINCIAN</span><h4>PEMBENTUK PENDAPATAN TERPILIH</h4></div></div>
             <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
               <thead><tr><th>Kode</th><th>Komponen</th><th style={{ textAlign: 'right' }}>Pendapatan Agregat</th><th>Status Harga</th></tr></thead>
@@ -307,7 +376,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
             </DataTable>
           </section>
 
-          <section className="vc-fin-section">
+          <section className="vc-fin-section fin-ref-table">
             <div className="vc-fin-section-title"><div><span>RINCIAN</span><h4>PEMBENTUK BIAYA OPERASIONAL TERPILIH</h4></div></div>
             <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
               <thead><tr><th>Kode</th><th>Kategori Lembur</th><th style={{ textAlign: 'right' }}>Biaya Agregat APPROVED</th><th style={{ textAlign: 'right' }}>Aktivitas</th><th style={{ textAlign: 'right' }}>Entri</th></tr></thead>

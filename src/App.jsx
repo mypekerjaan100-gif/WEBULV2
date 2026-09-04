@@ -4,6 +4,7 @@ import DashboardPage from './pages/DashboardPage.jsx'
 import ContractPage from './pages/ContractPage.jsx'
 import SLAPelayananTeknikPage from './pages/sla/SLAPelayananTeknikPage.jsx'
 import UserListPage from './pages/user-management/UserListPage.jsx'
+import FinancialAnalysisPage from './pages/FinancialAnalysisPage.jsx'
 import { SlaPreviewContext } from './context/SlaPreviewContext.js'
 import {
   currentNameOf,
@@ -64,7 +65,9 @@ export default function App() {
   const contractAccess = authority?.actor?.contract_access ?? []
   const organizationAccess = authority?.actor?.organization_access ?? []
   const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
+  const FINANCIAL_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP']
   const isManagementUserRaw = !isSuperAdmin && organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
+  const canAccessFinancial = isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
   const adminUp3Access = !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
     ? contractAccess[0]
     : null
@@ -228,7 +231,14 @@ export default function App() {
   }
 
   const navigatePage = (pageId) => {
-    if (pageId && !isSuperAdmin) return
+    if (!pageId) {
+      setCurrentPage(null)
+      setActiveContractId(null)
+      return
+    }
+    if (pageId === 'pengguna-akses' && !isSuperAdmin) return
+    if (pageId === 'analisis-finansial' && !canAccessFinancial) return
+    if (pageId !== 'pengguna-akses' && pageId !== 'analisis-finansial' && !isSuperAdmin) return
     setCurrentPage(pageId)
     setActiveContractId(null)
   }
@@ -312,6 +322,8 @@ export default function App() {
       >
         {currentPage === 'pengguna-akses' ? (
           <UserListPage onBack={() => navigatePage(null)} />
+        ) : currentPage === 'analisis-finansial' ? (
+          <FinancialAnalysisPage />
         ) : activeContract ? (
           activeContract.id === 'pelayanan-teknik' ? (
             <SLAPelayananTeknikPage

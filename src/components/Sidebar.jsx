@@ -9,7 +9,9 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
   )
   const organizationAccess = authority?.actor?.organization_access ?? []
   const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
+  const FINANCIAL_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP']
   const isManagementUser = organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
+  const canAccessFinancial = isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
   if (isManagementUser) allowedContractCodes.add('pelayanan-teknik')
 
   const pelayananTeknik = { id: 'pelayanan-teknik', title: 'Pelayanan Teknik', icon: 'operations' }
@@ -21,9 +23,11 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
 
   const showPelayananTeknik = isSuperAdmin || allowedContractCodes.has(pelayananTeknik.id)
   const kontrakLainFiltered = kontrakLain.filter((c) => isSuperAdmin || allowedContractCodes.has(c.id))
+  const actorEmail = authority?.actor?.email ?? authority?.actor?.user_email ?? ''
+  const actorLabel = isSuperAdmin ? 'Super Admin' : organizationAccess[0]?.organization_role?.replaceAll('_',' ') ?? allowedContractCodes.has('pelayanan-teknik') ? 'Manajemen' : 'Pengguna'
 
   return (
-    <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
+    <aside className={`sidebar ${open ? 'sidebar-open' : ''} ${collapsed ? 'is-collapsed' : ''}`}>
       <div className="sidebar-brand">
         <span className="sidebar-logo-frame">
           <img src="/logo-pln-nusa-daya.png" alt="PLN Nusa Daya" className="sidebar-logo" />
@@ -43,9 +47,26 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
           <span className="nav-item-label">Dashboard</span>
         </button>
 
+        {canAccessFinancial && (
+          <>
+            <div className="nav-section-title nav-section-financial">
+              <span>Analisis Finansial</span>
+              {!collapsed && <span className="nav-section-badge"><Icon name="shield" size={10} /> Akses: TL Manager - MUP</span>}
+            </div>
+            <button
+              type="button"
+              className={`nav-item nav-item-financial ${currentPage === 'analisis-finansial' ? 'nav-item-active' : ''}`}
+              onClick={() => onNavigatePage('analisis-finansial')}
+            >
+              <span className="nav-icon"><Icon name="chart-bar" /></span>
+              <span className="nav-item-label">Dashboard Finansial</span>
+            </button>
+          </>
+        )}
+
         {showPelayananTeknik && (
           <>
-            <div className="nav-section-title">Pelayanan Teknik</div>
+            <div className="nav-section-title">Operasional</div>
             <button
               type="button"
               className={`nav-item ${activeContractId === pelayananTeknik.id ? 'nav-item-active' : ''}`}
@@ -74,9 +95,15 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
           </>
         )}
 
+        <div className="nav-section-title">Master Data</div>
+        <div className="nav-item nav-item-disabled" title="Kelola via Pelayanan Teknik">
+          <span className="nav-icon"><Icon name="layers" /></span>
+          <span className="nav-item-label">Komponen &amp; Unit</span>
+        </div>
+
         {isSuperAdmin && (
           <>
-            <div className="nav-section-title">Manajemen</div>
+            <div className="nav-section-title">Pengguna &amp; Akses</div>
             <button
               type="button"
               className={`nav-item ${currentPage === 'pengguna-akses' ? 'nav-item-active' : ''}`}
@@ -88,6 +115,15 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
           </>
         )}
       </nav>
+      <div className="sidebar-footer">
+        <div className="sidebar-user">
+          <span className="sidebar-user-avatar">{(actorLabel[0] ?? 'U').toUpperCase()}</span>
+          <span className="sidebar-user-meta">
+            <strong>{actorLabel}</strong>
+            <small>{actorEmail || (isSuperAdmin ? 'super.admin@pln.co.id' : 'Akses terverifikasi')}</small>
+          </span>
+        </div>
+      </div>
     </aside>
   )
 }
