@@ -260,11 +260,11 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
                 <Icon name="chevron-right" size={11} className="fin-ref-compact-chevron" />
               </span>
             </label>
-          </div>
 
-          <div className="fin-ref-filter-actions">
-            <Button variant="primary" size="small" className="fin-ref-btn-apply" icon={<Icon name="filter" size={13} />}>Terapkan Perbandingan</Button>
-            <Button variant="ghost" size="small" className="fin-ref-btn-reset" onClick={resetFilters}>Reset Filter</Button>
+            <div className="fin-ref-filter-actions">
+              <Button variant="primary" size="small" className="fin-ref-btn-apply" icon={<Icon name="filter" size={13} />}>Terapkan Perbandingan</Button>
+              <Button variant="ghost" size="small" className="fin-ref-btn-reset" onClick={resetFilters}>Reset Filter</Button>
+            </div>
           </div>
         </div>
       </section>
