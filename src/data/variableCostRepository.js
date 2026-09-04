@@ -538,3 +538,13 @@ export async function getFinancialComparisonDashboard({ contractId, up3Id, perio
     p_unit_id: unitId ?? null,
   }, 'FINANCIAL_COMPARISON')
 }
+
+export async function getFinancialComparisonTrend({ contractId, up3Id, endPeriodMonth, unitId, monthCount }) {
+  return rpc('get_financial_comparison_trend', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_end_period_month: endPeriodMonth,
+    p_unit_id: unitId ?? null,
+    p_month_count: monthCount,
+  }, 'FINANCIAL_COMPARISON_TREND')
+}

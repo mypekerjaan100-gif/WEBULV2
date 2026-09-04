@@ -51,7 +51,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
           <>
             <div className="nav-section-title nav-section-financial">
               <span>Analisis Finansial</span>
-              {!collapsed && <span className="nav-section-badge"><Icon name="shield" size={10} /> Akses: TL Manager - MUP</span>}
+              {!collapsed && <span className="nav-section-badge"><Icon name="shield" size={10} /> Akses Manajemen</span>}
             </div>
             <button
               type="button"
@@ -60,26 +60,6 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
             >
               <span className="nav-icon"><Icon name="chart-bar" /></span>
               <span className="nav-item-label">Dashboard Finansial</span>
-            </button>
-            <button type="button" className="nav-item nav-item-coming" title="Segera hadir" disabled aria-disabled="true">
-              <span className="nav-icon"><Icon name="trend-up" size={16} /></span>
-              <span className="nav-item-label">Pendapatan</span>
-              <span className="nav-coming">Soon</span>
-            </button>
-            <button type="button" className="nav-item nav-item-coming" title="Segera hadir" disabled aria-disabled="true">
-              <span className="nav-icon"><Icon name="wallet" size={16} /></span>
-              <span className="nav-item-label">Biaya</span>
-              <span className="nav-coming">Soon</span>
-            </button>
-            <button type="button" className="nav-item nav-item-coming" title="Segera hadir" disabled aria-disabled="true">
-              <span className="nav-icon"><Icon name="pie-chart" size={16} /></span>
-              <span className="nav-item-label">Realisasi vs Target</span>
-              <span className="nav-coming">Soon</span>
-            </button>
-            <button type="button" className="nav-item nav-item-coming" title="Segera hadir" disabled aria-disabled="true">
-              <span className="nav-icon"><Icon name="layers" size={16} /></span>
-              <span className="nav-item-label">Perbandingan Unit</span>
-              <span className="nav-coming">Soon</span>
             </button>
           </>
         )}

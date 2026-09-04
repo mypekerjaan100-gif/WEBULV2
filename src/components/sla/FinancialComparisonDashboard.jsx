@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getFinancialComparisonDashboard, periodLabelToMonth } from '../../data/variableCostRepository.js'
+import { getFinancialComparisonDashboard, getFinancialComparisonTrend, periodLabelToMonth } from '../../data/variableCostRepository.js'
 import { variableCostIndicators, slaPeriods } from '../../data/slaPelayananTeknik.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { REPLACEMENT_TYPES } from '../../data/overtimeReplacementL2.js'
@@ -40,11 +40,36 @@ function formatCompactRp(value) {
   return `Rp ${amount.toLocaleString('id-ID', { notation: 'compact', maximumFractionDigits: 1 })}`
 }
 
+function selectedTotals(snapshot, revenueCodes, costCodes) {
+  const revenueByCode = new Map((snapshot?.revenue_eligible_components ?? snapshot?.revenue_components ?? []).map((row) => [row.indicator_code, Number(row.amount ?? 0)]))
+  const costByCode = new Map((snapshot?.cost_components ?? []).map((row) => [row.cost_code, Number(row.amount ?? 0)]))
+  const revenue = revenueCodes.reduce((sum, code) => sum + (revenueByCode.get(code) ?? 0), 0)
+  const cost = costCodes.reduce((sum, code) => sum + (costByCode.get(code) ?? 0), 0)
+  const margin = revenue - cost
+  return {
+    revenue,
+    cost,
+    margin,
+    ratio: revenue > 0 ? (cost / revenue) * 100 : null,
+  }
+}
+
+function formatTrendMonth(value) {
+  if (!value) return '-'
+  return new Date(`${String(value).slice(0, 10)}T00:00:00Z`).toLocaleDateString('id-ID', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
 export default function FinancialComparisonDashboard({ contractId, up3Id, period, periods, onPeriodChange, units, orgMap }) {
   const [unitId, setUnitId] = useState(ALL_UNITS)
   const [selectedRevenueCodes, setSelectedRevenueCodes] = useState(() => REVENUE_ELIGIBLE.map((i) => i.code))
   const [selectedCostCodes, setSelectedCostCodes] = useState(() => COST_DEFINITIONS.map((c) => c.code))
   const [dashboard, setDashboard] = useState(null)
+  const [trend, setTrend] = useState([])
+  const [monthCount, setMonthCount] = useState(6)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [revenuePickerOpen, setRevenuePickerOpen] = useState(false)
@@ -64,31 +89,46 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
     const pUp3 = orgMap.up3Uuid
     const pContract = orgMap.contractUuid
     const pUnit = unitId === ALL_UNITS ? null : unitId
-    getFinancialComparisonDashboard({ contractId: pContract, up3Id: pUp3, periodMonth, unitId: pUnit })
-      .then((res) => { if (cur !== requestId.current) return; setDashboard(res) })
+    Promise.all([
+      getFinancialComparisonDashboard({ contractId: pContract, up3Id: pUp3, periodMonth, unitId: pUnit }),
+      getFinancialComparisonTrend({ contractId: pContract, up3Id: pUp3, endPeriodMonth: periodMonth, unitId: pUnit, monthCount }),
+    ])
+      .then(([snapshot, trendRows]) => {
+        if (cur !== requestId.current) return
+        setDashboard(snapshot)
+        setTrend(trendRows ?? [])
+      })
       .catch((e) => {
         if (cur !== requestId.current) return
         setDashboard(null)
+        setTrend([])
         const msg = e?.message || 'Gagal memuat Dashboard Finansial.'
         if (/Not authorized|42501/i.test(msg)) setError('Akses finansial tidak tersedia untuk peran ini.')
         else setError(msg)
       })
       .finally(() => { if (cur === requestId.current) setLoading(false) })
-  }, [contractId, up3Id, periodMonth, unitId, orgMap?.contractUuid, orgMap?.up3Uuid])
+  }, [contractId, up3Id, periodMonth, unitId, monthCount, orgMap?.contractUuid, orgMap?.up3Uuid])
 
-  const revenueByCode = new Map((dashboard?.revenue_eligible_components ?? dashboard?.revenue_components ?? []).map((r) => [r.indicator_code, Number(r.amount ?? 0)]))
-  const costByCode = new Map((dashboard?.cost_components ?? []).map((c) => [c.cost_code, Number(c.amount ?? 0)]))
-
-  const revenueSelectedTotal = selectedRevenueCodes.reduce((sum, code) => sum + (revenueByCode.get(code) ?? 0), 0)
-  const costSelectedTotal = selectedCostCodes.reduce((sum, code) => sum + (costByCode.get(code) ?? 0), 0)
-  const margin = revenueSelectedTotal - costSelectedTotal
+  const currentTotals = selectedTotals(dashboard, selectedRevenueCodes, selectedCostCodes)
+  const revenueSelectedTotal = currentTotals.revenue
+  const costSelectedTotal = currentTotals.cost
+  const margin = currentTotals.margin
   const marginPercent = revenueSelectedTotal > 0 ? (margin / revenueSelectedTotal) * 100 : null
-  const costRatio = revenueSelectedTotal > 0 ? (costSelectedTotal / revenueSelectedTotal) * 100 : null
+  const costRatio = currentTotals.ratio
 
-  const comparisonMax = Math.max(1, revenueSelectedTotal, costSelectedTotal, Math.abs(margin))
+  const monthlyTrend = trend.map((snapshot) => ({
+    periodMonth: snapshot.period_month,
+    label: formatTrendMonth(snapshot.period_month),
+    ...selectedTotals(snapshot, selectedRevenueCodes, selectedCostCodes),
+  }))
+  const comparisonMax = Math.max(1, ...monthlyTrend.flatMap((row) => [row.revenue, row.cost, Math.abs(row.margin)]))
   const chartTicks = [1, 0.75, 0.5, 0.25, 0]
   const hasSelection = selectedRevenueCodes.length > 0 && selectedCostCodes.length > 0
-  const marginHeightPct = comparisonMax > 0 ? Math.max(0, Math.min(100, (margin / comparisonMax) * 100)) : 0
+  const linePoints = monthlyTrend.map((row, index) => {
+    const x = index * 100 + 50
+    const y = 100 - Math.max(0, Math.min(100, (row.margin / comparisonMax) * 100))
+    return `${x},${y}`
+  }).join(' ')
 
   const toggleRevenue = (code) => setSelectedRevenueCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]))
   const toggleCost = (code) => setSelectedCostCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]))
@@ -211,9 +251,12 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
 
             <label className="fin-ref-compact-field is-select">
               <span className="fin-ref-compact-label">Mode Perbandingan</span>
-              <span className="fin-ref-compact-select is-disabled">
+              <span className="fin-ref-compact-select">
                 <Icon name="chart-bar" size={13} />
-                <select value="Akumulasi" disabled><option>Akumulasi</option></select>
+                <select value={monthCount} onChange={(event) => setMonthCount(Number(event.target.value))}>
+                  <option value={6}>6 Bulan</option>
+                  <option value={12}>12 Bulan</option>
+                </select>
                 <Icon name="chevron-right" size={11} className="fin-ref-compact-chevron" />
               </span>
             </label>
@@ -275,7 +318,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
                 <div>
                   <span className="fin-ref-eyebrow">ANALITIK</span>
                   <h4>Perbandingan Akumulasi: Pendapatan Terpilih vs Biaya Terpilih</h4>
-                  <p>Periode {period} • Rupiah akumulasi komponen terpilih</p>
+                  <p>{monthCount} bulan hingga {period} • Rupiah per bulan dari komponen terpilih</p>
                 </div>
                 <div className="fin-ref-legend">
                   <span><i className="dot rev" /> Pendapatan Terpilih</span>
@@ -284,45 +327,54 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
                 </div>
               </div>
 
-              <div className="fin-ref-chart-body">
+              <div className="fin-trend-chart-body">
                 <div className="fin-ref-yaxis" aria-hidden="true">
                   {chartTicks.map((t) => <span key={t}>{formatCompactRp(comparisonMax * t)}</span>)}
                 </div>
-                <div className="fin-ref-plot" role="img" aria-label={`Pendapatan ${formatRp(revenueSelectedTotal)} Biaya ${formatRp(costSelectedTotal)} Margin ${formatRp(margin)}`}>
-                  <div className="fin-ref-grid" aria-hidden="true">
-                    {chartTicks.map((t) => <i key={t} />)}
-                  </div>
-                  {/* margin line */}
-                  <div className="fin-ref-margin-line" style={{ bottom: `calc(28px + ${marginHeightPct}% * 0.78)` }} aria-hidden="true">
-                    <span className="fin-ref-margin-dot" />
-                    <span className="fin-ref-margin-label">{formatCompactRp(margin)}</span>
-                  </div>
-                  <div className="fin-ref-bars">
-                    <div className="fin-ref-bar-group">
-                      <span className="fin-ref-bar-value">{formatCompactRp(revenueSelectedTotal)}</span>
-                      <div className="fin-ref-bar-track">
-                        <span className="fin-ref-bar is-rev" style={{ height: `${(revenueSelectedTotal / comparisonMax) * 100}%` }} />
-                      </div>
-                      <span className="fin-ref-bar-label">Pendapatan</span>
+                <div className="fin-trend-scroll">
+                  <div
+                    className="fin-trend-canvas"
+                    style={{ minWidth: `${Math.max(560, monthlyTrend.length * 105)}px` }}
+                    role="img"
+                    aria-label={`Tren ${monthlyTrend.length} bulan Pendapatan Terpilih, Biaya Terpilih, dan Margin Bersih`}
+                  >
+                    <div className="fin-trend-grid" aria-hidden="true">
+                      {chartTicks.map((tick) => <i key={tick} />)}
                     </div>
-                    <div className="fin-ref-bar-group">
-                      <span className="fin-ref-bar-value">{formatCompactRp(costSelectedTotal)}</span>
-                      <div className="fin-ref-bar-track">
-                        <span className="fin-ref-bar is-cost" style={{ height: `${(costSelectedTotal / comparisonMax) * 100}%` }} />
-                      </div>
-                      <span className="fin-ref-bar-label">Biaya</span>
+                    {monthlyTrend.length > 1 && (
+                      <svg
+                        className="fin-trend-line"
+                        viewBox={`0 0 ${monthlyTrend.length * 100} 100`}
+                        preserveAspectRatio="none"
+                        aria-hidden="true"
+                      >
+                        <polyline points={linePoints} fill="none" vectorEffect="non-scaling-stroke" />
+                      </svg>
+                    )}
+                    <div className="fin-trend-bars">
+                      {monthlyTrend.map((row, index) => {
+                        const marginTop = 100 - Math.max(0, Math.min(100, (row.margin / comparisonMax) * 100))
+                        return (
+                          <div className="fin-trend-month" key={row.periodMonth}>
+                            <div className="fin-trend-month-bars">
+                              <span className="fin-trend-bar is-revenue" style={{ height: `${(row.revenue / comparisonMax) * 100}%` }} title={`Pendapatan ${row.label}: ${formatRp(row.revenue)}`} />
+                              <span className="fin-trend-bar is-cost" style={{ height: `${(row.cost / comparisonMax) * 100}%` }} title={`Biaya ${row.label}: ${formatRp(row.cost)}`} />
+                            </div>
+                            <span className="fin-trend-month-label">{row.label}</span>
+                            <span
+                              className={`fin-trend-point ${row.margin < 0 ? 'is-negative' : ''}`}
+                              style={{ top: `${marginTop * 0.89}%`, left: `${((index + 0.5) / monthlyTrend.length) * 100}%` }}
+                              title={`Margin ${row.label}: ${formatRp(row.margin)}`}
+                            />
+                          </div>
+                        )
+                      })}
                     </div>
-                    <div className="fin-ref-bar-group is-margin">
-                      <span className="fin-ref-bar-value is-margin">{formatCompactRp(margin)}</span>
-                      <div className="fin-ref-bar-track is-margin">
-                        <span className="fin-ref-bar is-margin" style={{ height: `${(Math.abs(margin) / comparisonMax) * 100}%`, opacity: margin >= 0 ? 1 : 0.9 }} />
-                      </div>
-                      <span className="fin-ref-bar-label">Margin</span>
-                    </div>
+                    {monthlyTrend.length === 0 && <span className="fin-trend-empty">Belum ada periode aktif pada rentang ini.</span>}
                   </div>
                 </div>
               </div>
-              <p className="fin-ref-chart-foot">Nilai ditampilkan sebagai akumulasi dari komponen pendapatan &amp; biaya yang Anda pilih pada periode {period}.</p>
+              <p className="fin-ref-chart-foot">Setiap bulan menjumlahkan seluruh komponen pendapatan dan biaya yang sedang dipilih; garis menunjukkan selisih keduanya.</p>
             </section>
 
             <aside className="fin-ref-summary">
@@ -368,7 +420,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
           <section className="fin-ref-period">
             <div className="fin-ref-period-head">
               <h5>Ringkasan Akumulasi per Periode</h5>
-              <span>1 periode terpilih • Akumulasi komponen terpilih</span>
+              <span>{monthlyTrend.length} periode • Akumulasi komponen terpilih per bulan</span>
             </div>
             <DataTable className="fin-ref-table" frameClassName="fin-ref-table-wrap" sticky>
               <thead>
@@ -381,13 +433,16 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
                 </tr>
               </thead>
               <tbody>
-                <tr className="is-active">
-                  <td><strong>{period}</strong></td>
-                  <td style={{ textAlign: 'right' }}>{formatRp(revenueSelectedTotal)}</td>
-                  <td style={{ textAlign: 'right' }}>{formatRp(costSelectedTotal)}</td>
-                  <td style={{ textAlign: 'right' }}><span className={`fin-ref-margin-badge ${margin >= 0 ? 'is-pos' : 'is-neg'}`}>{formatRp(margin)}</span></td>
-                  <td style={{ textAlign: 'right' }}>{costRatio == null ? '-' : formatPercent(costRatio)}</td>
-                </tr>
+                {monthlyTrend.map((row, index) => (
+                  <tr className={index === monthlyTrend.length - 1 ? 'is-active' : ''} key={row.periodMonth}>
+                    <td><strong>{row.label}</strong></td>
+                    <td style={{ textAlign: 'right' }}>{formatRp(row.revenue)}</td>
+                    <td style={{ textAlign: 'right' }}>{formatRp(row.cost)}</td>
+                    <td style={{ textAlign: 'right' }}><span className={`fin-ref-margin-badge ${row.margin >= 0 ? 'is-pos' : 'is-neg'}`}>{formatRp(row.margin)}</span></td>
+                    <td style={{ textAlign: 'right' }}>{row.ratio == null ? '-' : formatPercent(row.ratio)}</td>
+                  </tr>
+                ))}
+                {monthlyTrend.length === 0 && <tr><td colSpan={5} className="fin-trend-table-empty">Belum ada periode aktif pada rentang ini.</td></tr>}
               </tbody>
             </DataTable>
             <div className={`fin-ref-period-insight ${margin >= 0 ? 'is-pos' : 'is-neg'}`}>
