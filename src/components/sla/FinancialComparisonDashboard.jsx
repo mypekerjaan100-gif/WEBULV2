@@ -34,7 +34,6 @@ function formatPercent(value) {
   if (!Number.isFinite(n)) return '-'
   return `${n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
-
 function formatCompactRp(value) {
   const amount = Number(value)
   if (!Number.isFinite(amount)) return 'Rp 0'
@@ -48,16 +47,15 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [revenuePickerOpen, setRevenuePickerOpen] = useState(false)
+  const [costPickerOpen, setCostPickerOpen] = useState(false)
   const requestId = useRef(0)
   const periodMonth = periodLabelToMonth(period)
 
   useEffect(() => {
     const cur = ++requestId.current
     if (!contractId || !up3Id || !periodMonth || !orgMap?.contractUuid || !orgMap?.up3Uuid) {
-      if (!periodMonth) {
-        setLoading(false)
-        return
-      }
+      if (!periodMonth) { setLoading(false); return }
       setLoading(true)
       return
     }
@@ -67,10 +65,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
     const pContract = orgMap.contractUuid
     const pUnit = unitId === ALL_UNITS ? null : unitId
     getFinancialComparisonDashboard({ contractId: pContract, up3Id: pUp3, periodMonth, unitId: pUnit })
-      .then((res) => {
-        if (cur !== requestId.current) return
-        setDashboard(res)
-      })
+      .then((res) => { if (cur !== requestId.current) return; setDashboard(res) })
       .catch((e) => {
         if (cur !== requestId.current) return
         setDashboard(null)
@@ -78,9 +73,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
         if (/Not authorized|42501/i.test(msg)) setError('Akses finansial tidak tersedia untuk peran ini.')
         else setError(msg)
       })
-      .finally(() => {
-        if (cur === requestId.current) setLoading(false)
-      })
+      .finally(() => { if (cur === requestId.current) setLoading(false) })
   }, [contractId, up3Id, periodMonth, unitId, orgMap?.contractUuid, orgMap?.up3Uuid])
 
   const revenueByCode = new Map((dashboard?.revenue_eligible_components ?? dashboard?.revenue_components ?? []).map((r) => [r.indicator_code, Number(r.amount ?? 0)]))
@@ -92,132 +85,143 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const marginPercent = revenueSelectedTotal > 0 ? (margin / revenueSelectedTotal) * 100 : null
   const costRatio = revenueSelectedTotal > 0 ? (costSelectedTotal / revenueSelectedTotal) * 100 : null
 
-  const comparisonMax = Math.max(1, revenueSelectedTotal, costSelectedTotal)
+  const comparisonMax = Math.max(1, revenueSelectedTotal, costSelectedTotal, Math.abs(margin))
   const chartTicks = [1, 0.75, 0.5, 0.25, 0]
-  const marginGaugePercent = marginPercent == null ? 0 : Math.min(100, Math.abs(marginPercent))
   const hasSelection = selectedRevenueCodes.length > 0 && selectedCostCodes.length > 0
+  const marginHeightPct = comparisonMax > 0 ? Math.max(0, Math.min(100, (margin / comparisonMax) * 100)) : 0
 
-  const toggleRevenue = (code) => {
-    setSelectedRevenueCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]))
-  }
-  const toggleCost = (code) => {
-    setSelectedCostCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]))
-  }
-
+  const toggleRevenue = (code) => setSelectedRevenueCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]))
+  const toggleCost = (code) => setSelectedCostCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]))
   const selectAllRevenue = () => setSelectedRevenueCodes(REVENUE_ELIGIBLE.map((i) => i.code))
   const clearRevenue = () => setSelectedRevenueCodes([])
   const selectAllCost = () => setSelectedCostCodes(COST_DEFINITIONS.map((c) => c.code))
   const clearCost = () => setSelectedCostCodes([])
-  const resetFilters = () => {
-    selectAllRevenue()
-    selectAllCost()
-    setUnitId(ALL_UNITS)
-  }
+  const resetFilters = () => { selectAllRevenue(); selectAllCost(); setUnitId(ALL_UNITS) }
 
   const revenueComponentsForDisplay = (dashboard?.revenue_eligible_components ?? []).filter((r) => selectedRevenueCodes.includes(r.indicator_code))
   const costComponentsForDisplay = (dashboard?.cost_components ?? []).filter((c) => selectedCostCodes.includes(c.cost_code))
+  const pendingRevenueCount = REVENUE_ELIGIBLE.length - selectedRevenueCodes.length
+  const pendingCostCount = COST_DEFINITIONS.length - selectedCostCodes.length
 
   return (
     <div className="vc-fin-dashboard fincomp-dashboard fin-ref-dashboard">
-      {/* Top filter card - matches reference layout */}
-      <section className="fin-ref-filter-card">
-        <div className="fin-ref-filter-grid">
-          <label className="fin-ref-field">
-            <span className="fin-ref-field-label">Periode</span>
-            <span className="fin-ref-select-wrap">
-              <Icon name="calendar" size={14} />
-              <select className="fin-ref-select" value={period} onChange={(e) => onPeriodChange?.(e.target.value)}>
-                {(periods ?? slaPeriods).map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <Icon name="chevron-right" size={12} className="fin-ref-chevron" />
-            </span>
-          </label>
-
-          <label className="fin-ref-field">
-            <span className="fin-ref-field-label">Unit / ULP</span>
-            <span className="fin-ref-select-wrap">
-              <Icon name="layers" size={14} />
-              <select className="fin-ref-select" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-                <option value={ALL_UNITS}>Semua ULP - Konsolidasi UP3</option>
-                {(units ?? []).filter((u) => u.type === 'ULP').map((u) => {
-                  const id = u.uuid ?? u.id
-                  return <option key={id} value={id}>{u.displayName ?? u.name ?? id}</option>
-                })}
-              </select>
-              <Icon name="chevron-right" size={12} className="fin-ref-chevron" />
-            </span>
-          </label>
-
-          <label className="fin-ref-field">
-            <span className="fin-ref-field-label">Mode Perbandingan</span>
-            <span className="fin-ref-select-wrap is-disabled">
-              <Icon name="chart-bar" size={14} />
-              <select className="fin-ref-select" value="Akumulasi" disabled>
-                <option>Akumulasi</option>
-              </select>
-              <Icon name="chevron-right" size={12} className="fin-ref-chevron" />
-            </span>
-          </label>
-
-          <div className="fin-ref-field fin-ref-field-span">
-            <span className="fin-ref-field-label">Komponen Pendapatan</span>
-            <div className="fin-ref-multi">
-              <div className="fin-ref-chips">
-                {selectedRevenueCodes.map((code) => (
-                  <span key={code} className="fin-ref-chip is-revenue">
-                    <span>{REVENUE_LABEL.get(code) ?? code}</span>
-                    <button type="button" aria-label={`Hapus ${code}`} onClick={() => toggleRevenue(code)}>×</button>
-                  </span>
-                ))}
-                {selectedRevenueCodes.length === 0 && <span className="fin-ref-empty">Belum ada komponen terpilih</span>}
-              </div>
-              <Icon name="chevron-right" size={12} className="fin-ref-multi-chevron" />
+      {/* Compact filter - order per spec */}
+      <section className="fin-ref-filter-compact">
+        <div className="fin-ref-filter-bar">
+          <div className="fin-ref-filter-left">
+            <div className="fin-ref-compact-field">
+              <span className="fin-ref-compact-label">Komponen Pendapatan</span>
+              <button type="button" className={`fin-ref-compact-multi ${revenuePickerOpen ? 'is-open' : ''}`} onClick={() => setRevenuePickerOpen((v) => !v)} aria-expanded={revenuePickerOpen}>
+                <span className="fin-ref-compact-chips">
+                  {selectedRevenueCodes.slice(0, 3).map((code) => (
+                    <span key={code} className="fin-ref-compact-chip is-revenue" onClick={(e) => { e.stopPropagation(); toggleRevenue(code) }}>
+                      {REVENUE_LABEL.get(code) ?? code} ×
+                    </span>
+                  ))}
+                  {selectedRevenueCodes.length > 3 && <span className="fin-ref-compact-more">+{selectedRevenueCodes.length - 3}</span>}
+                  {selectedRevenueCodes.length === 0 && <span className="fin-ref-compact-placeholder">Pilih komponen</span>}
+                </span>
+                <Icon name="chevron-right" size={12} className="fin-ref-compact-chevron" />
+              </button>
+              {revenuePickerOpen && (
+                <div className="fin-ref-picker">
+                  <div className="fin-ref-picker-grid">
+                    {REVENUE_ELIGIBLE.map((ind) => (
+                      <button key={ind.code} type="button" className={`fin-ref-picker-item ${selectedRevenueCodes.includes(ind.code) ? 'is-selected' : ''}`} onClick={() => toggleRevenue(ind.code)}>
+                        <span className="fin-ref-picker-check">{selectedRevenueCodes.includes(ind.code) ? '✓' : '+'}</span>
+                        <span>{ind.label ?? ind.code}</span>
+                        <small>{ind.code}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="fin-ref-picker-actions">
+                    <span>{selectedRevenueCodes.length} dari {REVENUE_ELIGIBLE.length} terpilih</span>
+                    <span className="fin-ref-picker-btns">
+                      <button type="button" onClick={selectAllRevenue}>Pilih Semua</button>
+                      <button type="button" onClick={clearRevenue}>Kosongkan</button>
+                    </span>
+                  </div>
+                </div>
+              )}
+              {pendingRevenueCount > 0 && !revenuePickerOpen && <span className="fin-ref-compact-hint">{pendingRevenueCount} lainnya belum dipilih</span>}
             </div>
-            <div className="fin-ref-chip-options">
-              {REVENUE_ELIGIBLE.map((ind) => (
-                <button key={ind.code} type="button" className={`fin-ref-option ${selectedRevenueCodes.includes(ind.code) ? 'is-selected' : ''}`} onClick={() => toggleRevenue(ind.code)}>
-                  {selectedRevenueCodes.includes(ind.code) ? '✓ ' : '+ '}{ind.label ?? ind.code}
-                </button>
-              ))}
-              <span className="fin-ref-options-actions">
-                <button type="button" className="fin-ref-mini" onClick={selectAllRevenue}>Pilih Semua</button>
-                <button type="button" className="fin-ref-mini" onClick={clearRevenue}>Kosongkan</button>
+
+            <div className="fin-ref-compact-field">
+              <span className="fin-ref-compact-label">Komponen Biaya</span>
+              <button type="button" className={`fin-ref-compact-multi is-cost ${costPickerOpen ? 'is-open' : ''}`} onClick={() => setCostPickerOpen((v) => !v)} aria-expanded={costPickerOpen}>
+                <span className="fin-ref-compact-chips">
+                  {selectedCostCodes.slice(0, 3).map((code) => (
+                    <span key={code} className="fin-ref-compact-chip is-cost" onClick={(e) => { e.stopPropagation(); toggleCost(code) }}>
+                      {COST_LABEL.get(code) ?? code} ×
+                    </span>
+                  ))}
+                  {selectedCostCodes.length > 3 && <span className="fin-ref-compact-more">+{selectedCostCodes.length - 3}</span>}
+                  {selectedCostCodes.length === 0 && <span className="fin-ref-compact-placeholder">Pilih komponen</span>}
+                </span>
+                <Icon name="chevron-right" size={12} className="fin-ref-compact-chevron" />
+              </button>
+              {costPickerOpen && (
+                <div className="fin-ref-picker is-cost">
+                  <div className="fin-ref-picker-grid">
+                    {COST_DEFINITIONS.map((def) => (
+                      <button key={def.code} type="button" className={`fin-ref-picker-item is-cost ${selectedCostCodes.includes(def.code) ? 'is-selected' : ''}`} onClick={() => toggleCost(def.code)}>
+                        <span className="fin-ref-picker-check">{selectedCostCodes.includes(def.code) ? '✓' : '+'}</span>
+                        <span>{def.label}</span>
+                        <small>{def.code}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="fin-ref-picker-actions">
+                    <span>{selectedCostCodes.length} dari {COST_DEFINITIONS.length} terpilih</span>
+                    <span className="fin-ref-picker-btns">
+                      <button type="button" onClick={selectAllCost}>Pilih Semua</button>
+                      <button type="button" onClick={clearCost}>Kosongkan</button>
+                    </span>
+                  </div>
+                </div>
+              )}
+              {pendingCostCount > 0 && !costPickerOpen && <span className="fin-ref-compact-hint">{pendingCostCount} lainnya belum dipilih</span>}
+            </div>
+
+            <label className="fin-ref-compact-field is-select">
+              <span className="fin-ref-compact-label">Periode</span>
+              <span className="fin-ref-compact-select">
+                <Icon name="calendar" size={13} />
+                <select value={period} onChange={(e) => onPeriodChange?.(e.target.value)}>
+                  {(periods ?? slaPeriods).map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <Icon name="chevron-right" size={11} className="fin-ref-compact-chevron" />
               </span>
-            </div>
-            <span className="fin-ref-hint">{selectedRevenueCodes.length} dari {REVENUE_ELIGIBLE.length} komponen • dijumlahkan menjadi satu total pendapatan</span>
+            </label>
+
+            <label className="fin-ref-compact-field is-select">
+              <span className="fin-ref-compact-label">Unit / ULP</span>
+              <span className="fin-ref-compact-select">
+                <Icon name="layers" size={13} />
+                <select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+                  <option value={ALL_UNITS}>Semua ULP</option>
+                  {(units ?? []).filter((u) => u.type === 'ULP').map((u) => {
+                    const id = u.uuid ?? u.id
+                    return <option key={id} value={id}>{u.displayName ?? u.name ?? id}</option>
+                  })}
+                </select>
+                <Icon name="chevron-right" size={11} className="fin-ref-compact-chevron" />
+              </span>
+            </label>
+
+            <label className="fin-ref-compact-field is-select">
+              <span className="fin-ref-compact-label">Mode Perbandingan</span>
+              <span className="fin-ref-compact-select is-disabled">
+                <Icon name="chart-bar" size={13} />
+                <select value="Akumulasi" disabled><option>Akumulasi</option></select>
+                <Icon name="chevron-right" size={11} className="fin-ref-compact-chevron" />
+              </span>
+            </label>
           </div>
 
-          <div className="fin-ref-field fin-ref-field-span">
-            <span className="fin-ref-field-label">Komponen Biaya</span>
-            <div className="fin-ref-multi is-cost">
-              <div className="fin-ref-chips">
-                {selectedCostCodes.map((code) => (
-                  <span key={code} className="fin-ref-chip is-cost">
-                    <span>{COST_LABEL.get(code) ?? code}</span>
-                    <button type="button" aria-label={`Hapus ${code}`} onClick={() => toggleCost(code)}>×</button>
-                  </span>
-                ))}
-                {selectedCostCodes.length === 0 && <span className="fin-ref-empty">Belum ada komponen terpilih</span>}
-              </div>
-              <Icon name="chevron-right" size={12} className="fin-ref-multi-chevron" />
-            </div>
-            <div className="fin-ref-chip-options">
-              {COST_DEFINITIONS.map((def) => (
-                <button key={def.code} type="button" className={`fin-ref-option is-cost ${selectedCostCodes.includes(def.code) ? 'is-selected' : ''}`} onClick={() => toggleCost(def.code)}>
-                  {selectedCostCodes.includes(def.code) ? '✓ ' : '+ '}{def.label}
-                </button>
-              ))}
-              <span className="fin-ref-options-actions">
-                <button type="button" className="fin-ref-mini" onClick={selectAllCost}>Pilih Semua</button>
-                <button type="button" className="fin-ref-mini" onClick={clearCost}>Kosongkan</button>
-              </span>
-            </div>
-            <span className="fin-ref-hint">{selectedCostCodes.length} dari {COST_DEFINITIONS.length} komponen • sumber Lembur APPROVED server-side</span>
-          </div>
-
-          <div className="fin-ref-actions">
-            <Button variant="primary" size="small" className="fin-ref-apply" icon={<Icon name="filter" size={14} />}>Terapkan</Button>
-            <Button variant="ghost" size="small" className="fin-ref-reset" onClick={resetFilters}>Reset Filter</Button>
+          <div className="fin-ref-filter-actions">
+            <Button variant="primary" size="small" className="fin-ref-btn-apply" icon={<Icon name="filter" size={13} />}>Terapkan Perbandingan</Button>
+            <Button variant="ghost" size="small" className="fin-ref-btn-reset" onClick={resetFilters}>Reset Filter</Button>
           </div>
         </div>
       </section>
@@ -228,29 +232,30 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
         <>
           {!hasSelection && <Alert tone="warning">Pilih minimal satu komponen Pendapatan dan satu komponen Biaya Operasional untuk melihat agregasi.</Alert>}
 
+          {/* KPI - 4 premium */}
           <div className="fin-ref-kpis">
             <div className="fin-ref-kpi is-revenue">
               <span className="fin-ref-kpi-icon"><Icon name="chart-bar" size={20} /></span>
               <div className="fin-ref-kpi-body">
-                <span className="fin-ref-kpi-label">Total Pendapatan Terpilih (Akumulasi)</span>
+                <span className="fin-ref-kpi-label">Total Pendapatan Terpilih</span>
                 <strong className="fin-ref-kpi-value">{formatRp(revenueSelectedTotal)}</strong>
-                <span className="fin-ref-kpi-helper">{selectedRevenueCodes.length} komponen • {formatCompactRp(revenueSelectedTotal)}</span>
+                <span className="fin-ref-kpi-sub">Akumulasi • {selectedRevenueCodes.length} komponen</span>
               </div>
             </div>
             <div className="fin-ref-kpi is-cost">
               <span className="fin-ref-kpi-icon"><Icon name="wallet" size={20} /></span>
               <div className="fin-ref-kpi-body">
-                <span className="fin-ref-kpi-label">Total Biaya Terpilih (Akumulasi)</span>
+                <span className="fin-ref-kpi-label">Total Biaya Terpilih</span>
                 <strong className="fin-ref-kpi-value">{formatRp(costSelectedTotal)}</strong>
-                <span className="fin-ref-kpi-helper">{selectedCostCodes.length} komponen APPROVED • {formatCompactRp(costSelectedTotal)}</span>
+                <span className="fin-ref-kpi-sub">Akumulasi • {selectedCostCodes.length} komponen APPROVED</span>
               </div>
             </div>
             <div className={`fin-ref-kpi is-margin ${margin >= 0 ? 'is-positive' : 'is-negative'}`}>
               <span className="fin-ref-kpi-icon"><Icon name="trend-up" size={20} /></span>
               <div className="fin-ref-kpi-body">
-                <span className="fin-ref-kpi-label">Margin Bersih (Akumulasi)</span>
+                <span className="fin-ref-kpi-label">Margin Bersih</span>
                 <strong className="fin-ref-kpi-value">{formatRp(margin)}</strong>
-                <span className="fin-ref-kpi-helper">{margin >= 0 ? 'Surplus' : 'Defisit'} • {marginPercent == null ? '-' : formatPercent(marginPercent)}</span>
+                <span className={`fin-ref-kpi-sub ${margin >= 0 ? 'is-up' : 'is-down'}`}>{marginPercent == null ? '-' : formatPercent(marginPercent)} • {margin >= 0 ? 'Surplus' : 'Defisit'}</span>
               </div>
             </div>
             <div className="fin-ref-kpi is-ratio">
@@ -258,143 +263,162 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
               <div className="fin-ref-kpi-body">
                 <span className="fin-ref-kpi-label">Rasio Biaya terhadap Pendapatan</span>
                 <strong className="fin-ref-kpi-value">{costRatio == null ? '-' : formatPercent(costRatio)}</strong>
-                <span className="fin-ref-kpi-helper">Biaya / Pendapatan • {costRatio == null ? '—' : `${formatPercent(costRatio)} biaya`}</span>
+                <span className="fin-ref-kpi-sub">Akumulasi • Biaya / Pendapatan</span>
               </div>
             </div>
           </div>
 
-          <section className="vc-fin-section fincomp-chart-section fin-ref-chart">
-            <div className="vc-fin-section-title">
-              <div>
-                <span>AGREGASI</span>
-                <h4>PENDAPATAN TERPILIH VS BIAYA TERPILIH</h4>
-                <p className="fincomp-chart-subtitle">Periode {period} • Nilai aktual periode berjalan dalam Rupiah</p>
+          {/* Main chart + right summary */}
+          <div className="fin-ref-main-grid">
+            <section className="fin-ref-chart-main">
+              <div className="fin-ref-chart-head">
+                <div>
+                  <span className="fin-ref-eyebrow">ANALITIK</span>
+                  <h4>Perbandingan Akumulasi: Pendapatan Terpilih vs Biaya Terpilih</h4>
+                  <p>Periode {period} • Rupiah akumulasi komponen terpilih</p>
+                </div>
+                <div className="fin-ref-legend">
+                  <span><i className="dot rev" /> Pendapatan Terpilih</span>
+                  <span><i className="dot cost" /> Biaya Terpilih</span>
+                  <span><i className="dot margin" /> Margin Bersih</span>
+                </div>
               </div>
-              <div className="vc-fin-legend fincomp-chart-legend" aria-label="Legenda diagram">
-                <span><i className="is-target" /> Pendapatan Terpilih (Akumulasi)</span>
-                <span><i className="is-actual" /> Biaya Terpilih (Akumulasi)</span>
-                <span><i className={margin >= 0 ? 'is-margin' : 'is-margin-negative'} /> Margin Bersih</span>
+
+              <div className="fin-ref-chart-body">
+                <div className="fin-ref-yaxis" aria-hidden="true">
+                  {chartTicks.map((t) => <span key={t}>{formatCompactRp(comparisonMax * t)}</span>)}
+                </div>
+                <div className="fin-ref-plot" role="img" aria-label={`Pendapatan ${formatRp(revenueSelectedTotal)} Biaya ${formatRp(costSelectedTotal)} Margin ${formatRp(margin)}`}>
+                  <div className="fin-ref-grid" aria-hidden="true">
+                    {chartTicks.map((t) => <i key={t} />)}
+                  </div>
+                  {/* margin line */}
+                  <div className="fin-ref-margin-line" style={{ bottom: `calc(28px + ${marginHeightPct}% * 0.78)` }} aria-hidden="true">
+                    <span className="fin-ref-margin-dot" />
+                    <span className="fin-ref-margin-label">{formatCompactRp(margin)}</span>
+                  </div>
+                  <div className="fin-ref-bars">
+                    <div className="fin-ref-bar-group">
+                      <span className="fin-ref-bar-value">{formatCompactRp(revenueSelectedTotal)}</span>
+                      <div className="fin-ref-bar-track">
+                        <span className="fin-ref-bar is-rev" style={{ height: `${(revenueSelectedTotal / comparisonMax) * 100}%` }} />
+                      </div>
+                      <span className="fin-ref-bar-label">Pendapatan</span>
+                    </div>
+                    <div className="fin-ref-bar-group">
+                      <span className="fin-ref-bar-value">{formatCompactRp(costSelectedTotal)}</span>
+                      <div className="fin-ref-bar-track">
+                        <span className="fin-ref-bar is-cost" style={{ height: `${(costSelectedTotal / comparisonMax) * 100}%` }} />
+                      </div>
+                      <span className="fin-ref-bar-label">Biaya</span>
+                    </div>
+                    <div className="fin-ref-bar-group is-margin">
+                      <span className="fin-ref-bar-value is-margin">{formatCompactRp(margin)}</span>
+                      <div className="fin-ref-bar-track is-margin">
+                        <span className="fin-ref-bar is-margin" style={{ height: `${(Math.abs(margin) / comparisonMax) * 100}%`, opacity: margin >= 0 ? 1 : 0.9 }} />
+                      </div>
+                      <span className="fin-ref-bar-label">Margin</span>
+                    </div>
+                  </div>
+                </div>
               </div>
+              <p className="fin-ref-chart-foot">Nilai ditampilkan sebagai akumulasi dari komponen pendapatan &amp; biaya yang Anda pilih pada periode {period}.</p>
+            </section>
+
+            <aside className="fin-ref-summary">
+              <div className="fin-ref-summary-head">
+                <h5>Ringkasan Komponen Terpilih (Akumulasi)</h5>
+                <span className="fin-ref-summary-sub">Periode {period}</span>
+              </div>
+              <div className="fin-ref-summary-section">
+                <div className="fin-ref-summary-title"><span><i className="dot rev" /> Komponen Pendapatan Terpilih</span><strong>Total</strong></div>
+                <div className="fin-ref-summary-list">
+                  {revenueComponentsForDisplay.length === 0 && <span className="fin-ref-empty-row">Tidak ada komponen terpilih</span>}
+                  {revenueComponentsForDisplay.map((r) => (
+                    <span key={r.indicator_code} className="fin-ref-summary-row">
+                      <span className="fin-ref-summary-name"><i className="dot rev sm" /> {r.indicator_name}</span>
+                      <strong>{formatRp(r.amount)}</strong>
+                    </span>
+                  ))}
+                </div>
+                <div className="fin-ref-summary-total">
+                  <span>Total Pendapatan Terpilih</span><strong>{formatRp(revenueSelectedTotal)}</strong>
+                </div>
+              </div>
+              <div className="fin-ref-summary-section is-cost">
+                <div className="fin-ref-summary-title"><span><i className="dot cost" /> Komponen Biaya Terpilih</span><strong>Total</strong></div>
+                <div className="fin-ref-summary-list">
+                  {costComponentsForDisplay.length === 0 && <span className="fin-ref-empty-row">Tidak ada komponen terpilih</span>}
+                  {costComponentsForDisplay.map((c) => (
+                    <span key={c.cost_code} className="fin-ref-summary-row">
+                      <span className="fin-ref-summary-name"><i className="dot cost sm" /> {c.cost_label}</span>
+                      <strong>{formatRp(c.amount)}</strong>
+                    </span>
+                  ))}
+                </div>
+                <div className="fin-ref-summary-total is-cost">
+                  <span>Total Biaya Terpilih</span><strong>{formatRp(costSelectedTotal)}</strong>
+                </div>
+              </div>
+              <div className="fin-ref-summary-foot">Nilai ditampilkan sebagai akumulasi dari item terpilih.</div>
+            </aside>
+          </div>
+
+          {/* Bottom period table */}
+          <section className="fin-ref-period">
+            <div className="fin-ref-period-head">
+              <h5>Ringkasan Akumulasi per Periode</h5>
+              <span>1 periode terpilih • Akumulasi komponen terpilih</span>
             </div>
-
-            <div className="fincomp-chart-layout fin-ref-layout">
-              <div className="fincomp-plot-card fin-ref-plot-card">
-                <div className="fincomp-axis" aria-hidden="true">
-                  {chartTicks.map((tick) => <span key={tick}>{formatCompactRp(comparisonMax * tick)}</span>)}
-                </div>
-                <div
-                  className="fincomp-plot"
-                  role="img"
-                  aria-label={`Perbandingan Pendapatan ${formatRp(revenueSelectedTotal)} dan Biaya Operasional ${formatRp(costSelectedTotal)}`}
-                >
-                  <div className="fincomp-grid" aria-hidden="true">
-                    {chartTicks.map((tick) => <i key={tick} />)}
-                  </div>
-
-                  <div className="fincomp-metric" tabIndex={0} aria-label={`Pendapatan Terpilih ${formatRp(revenueSelectedTotal)}`}>
-                    <div className="fincomp-tooltip" role="tooltip">
-                      <strong>Pendapatan Terpilih</strong>
-                      <span>{formatRp(revenueSelectedTotal)}</span>
-                      <small>Akumulasi {selectedRevenueCodes.length} komponen pendapatan</small>
-                    </div>
-                    <strong className="fincomp-column-value">{formatCompactRp(revenueSelectedTotal)}</strong>
-                    <div className="fincomp-column-track">
-                      <span className="fincomp-column is-revenue" style={{ height: `${(revenueSelectedTotal / comparisonMax) * 100}%` }} />
-                    </div>
-                    <div className="fincomp-column-label"><span>Pendapatan</span><small>Terpilih</small></div>
-                  </div>
-
-                  <div className="fincomp-metric" tabIndex={0} aria-label={`Biaya Operasional Terpilih ${formatRp(costSelectedTotal)}`}>
-                    <div className="fincomp-tooltip" role="tooltip">
-                      <strong>Biaya Operasional Terpilih</strong>
-                      <span>{formatRp(costSelectedTotal)}</span>
-                      <small>Akumulasi {selectedCostCodes.length} komponen Lembur APPROVED</small>
-                    </div>
-                    <strong className="fincomp-column-value">{formatCompactRp(costSelectedTotal)}</strong>
-                    <div className="fincomp-column-track">
-                      <span className="fincomp-column is-cost" style={{ height: `${(costSelectedTotal / comparisonMax) * 100}%` }} />
-                    </div>
-                    <div className="fincomp-column-label"><span>Biaya Operasional</span><small>Terpilih</small></div>
-                  </div>
-                </div>
-              </div>
-
-              <aside
-                className={`fincomp-margin-panel fin-ref-margin ${margin >= 0 ? 'is-positive' : 'is-negative'}`}
-                tabIndex={0}
-                aria-label={`${margin >= 0 ? 'Surplus' : 'Defisit'} ${formatRp(margin)}, persentase margin ${formatPercent(marginPercent)}`}
-              >
-                <div className="fincomp-margin-head">
-                  <span>Margin / Selisih</span>
-                  <strong>{margin >= 0 ? 'Surplus' : 'Defisit'}</strong>
-                </div>
-                <div className="fincomp-margin-gauge" style={{ '--gauge-value': `${marginGaugePercent * 3.6}deg` }}>
-                  <div className="fincomp-tooltip fincomp-margin-tooltip" role="tooltip">
-                    <strong>Margin / Selisih</strong>
-                    <span>{formatRp(margin)}</span>
-                    <small>Pendapatan dikurangi Biaya Operasional</small>
-                  </div>
-                  <div className="fincomp-margin-center"><strong>{formatPercent(marginPercent)}</strong><span>Margin</span></div>
-                </div>
-                <strong className="fincomp-margin-value">{formatRp(margin)}</strong>
-                <p>{marginPercent == null ? 'Persentase belum tersedia karena pendapatan bernilai nol.' : `${formatPercent(costRatio)} dari pendapatan digunakan untuk biaya operasional.`}</p>
-                <div className="fincomp-margin-formula">
-                  <span>Pendapatan</span><strong>{formatCompactRp(revenueSelectedTotal)}</strong>
-                  <span>Biaya</span><strong>{formatCompactRp(costSelectedTotal)}</strong>
-                </div>
-                <div className="fin-ref-margin-summary">
-                  <span><i className="dot is-revenue" /> Pendapatan terpilih</span><strong>{formatRp(revenueSelectedTotal)}</strong>
-                  <span><i className="dot is-cost" /> Biaya terpilih</span><strong>{formatRp(costSelectedTotal)}</strong>
-                </div>
-              </aside>
-            </div>
-
-            <div className={`fincomp-insight ${margin >= 0 ? 'is-positive' : 'is-negative'}`}>
+            <DataTable className="fin-ref-table" frameClassName="fin-ref-table-wrap" sticky>
+              <thead>
+                <tr>
+                  <th>Periode</th>
+                  <th style={{ textAlign: 'right' }}>Pendapatan Terpilih (Akumulasi)</th>
+                  <th style={{ textAlign: 'right' }}>Biaya Terpilih (Akumulasi)</th>
+                  <th style={{ textAlign: 'right' }}>Margin Bersih (Akumulasi)</th>
+                  <th style={{ textAlign: 'right' }}>Rasio Biaya / Pendapatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="is-active">
+                  <td><strong>{period}</strong></td>
+                  <td style={{ textAlign: 'right' }}>{formatRp(revenueSelectedTotal)}</td>
+                  <td style={{ textAlign: 'right' }}>{formatRp(costSelectedTotal)}</td>
+                  <td style={{ textAlign: 'right' }}><span className={`fin-ref-margin-badge ${margin >= 0 ? 'is-pos' : 'is-neg'}`}>{formatRp(margin)}</span></td>
+                  <td style={{ textAlign: 'right' }}>{costRatio == null ? '-' : formatPercent(costRatio)}</td>
+                </tr>
+              </tbody>
+            </DataTable>
+            <div className={`fin-ref-period-insight ${margin >= 0 ? 'is-pos' : 'is-neg'}`}>
               <strong>{margin >= 0 ? 'Pendapatan masih berada di atas biaya operasional.' : 'Biaya operasional melampaui pendapatan terpilih.'}</strong>
-              <span>{marginPercent == null ? 'Margin tidak dihitung ketika pendapatan bernilai nol.' : `Margin periode ini ${formatPercent(marginPercent)} dari pendapatan terpilih.`}</span>
+              <span>Persentase perbandingan dihitung terhadap pendapatan terpilih akumulasi.</span>
             </div>
-            <p className="fin-ref-footnote">Nilai ditampilkan sebagai akumulasi dari komponen pendapatan &amp; biaya yang Anda pilih pada periode {period}.</p>
           </section>
 
-          <section className="vc-fin-section fin-ref-table">
-            <div className="vc-fin-section-title"><div><span>RINCIAN</span><h4>PEMBENTUK PENDAPATAN TERPILIH</h4></div></div>
-            <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
-              <thead><tr><th>Kode</th><th>Komponen</th><th style={{ textAlign: 'right' }}>Pendapatan Agregat</th><th>Status Harga</th></tr></thead>
-              <tbody>
-                {revenueComponentsForDisplay.length === 0 ? <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Tidak ada komponen terpilih</td></tr> : revenueComponentsForDisplay.map((r) => (
-                  <tr key={r.indicator_code}>
-                    <td><strong>{r.indicator_code}</strong></td>
-                    <td>{r.indicator_name}</td>
-                    <td style={{ textAlign: 'right' }}>{formatRp(r.amount)}</td>
-                    <td>{Number(r.missing_price_count) > 0 ? <span className="ui-status-badge ui-status-warning">Harga belum lengkap: {r.missing_price_count}</span> : <span className="ui-status-badge ui-status-success">Harga lengkap</span>}</td>
-                  </tr>
-                ))}
-                {revenueComponentsForDisplay.length > 0 && (
-                  <tr style={{ fontWeight: 700, background: 'var(--surface-subtle)' }}><td colSpan={2} style={{ textAlign: 'right' }}>TOTAL</td><td style={{ textAlign: 'right' }}>{formatRp(revenueSelectedTotal)}</td><td /></tr>
-                )}
-              </tbody>
-            </DataTable>
-          </section>
-
-          <section className="vc-fin-section fin-ref-table">
-            <div className="vc-fin-section-title"><div><span>RINCIAN</span><h4>PEMBENTUK BIAYA OPERASIONAL TERPILIH</h4></div></div>
-            <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
-              <thead><tr><th>Kode</th><th>Kategori Lembur</th><th style={{ textAlign: 'right' }}>Biaya Agregat APPROVED</th><th style={{ textAlign: 'right' }}>Aktivitas</th><th style={{ textAlign: 'right' }}>Entri</th></tr></thead>
-              <tbody>
-                {costComponentsForDisplay.length === 0 ? <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Tidak ada komponen terpilih</td></tr> : costComponentsForDisplay.map((c) => (
-                  <tr key={c.cost_code}>
-                    <td><strong>{c.cost_code}</strong></td>
-                    <td>{c.cost_label}</td>
-                    <td style={{ textAlign: 'right' }}>{formatRp(c.amount)}</td>
-                    <td style={{ textAlign: 'right' }}>{c.activity_count}</td>
-                    <td style={{ textAlign: 'right' }}>{c.entry_count}</td>
-                  </tr>
-                ))}
-                {costComponentsForDisplay.length > 0 && (
-                  <tr style={{ fontWeight: 700, background: 'var(--surface-subtle)' }}><td colSpan={2} style={{ textAlign: 'right' }}>TOTAL</td><td style={{ textAlign: 'right' }}>{formatRp(costSelectedTotal)}</td><td style={{ textAlign: 'right' }}>{costComponentsForDisplay.reduce((s, c) => s + Number(c.activity_count ?? 0), 0)}</td><td style={{ textAlign: 'right' }}>{costComponentsForDisplay.reduce((s, c) => s + Number(c.entry_count ?? 0), 0)}</td></tr>
-                )}
-              </tbody>
-            </DataTable>
+          {/* Detailed breakdown keep for audit but compact */}
+          <section className="vc-fin-section fin-ref-detail">
+            <div className="vc-fin-section-title"><div><span>DETAIL</span><h4>Pembentuk Pendapatan &amp; Biaya (Audit)</h4></div></div>
+            <div className="fin-ref-detail-grid">
+              <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
+                <thead><tr><th>Kode</th><th>Komponen</th><th style={{ textAlign: 'right' }}>Pendapatan</th><th>Status</th></tr></thead>
+                <tbody>
+                  {revenueComponentsForDisplay.map((r) => (
+                    <tr key={r.indicator_code}><td><strong>{r.indicator_code}</strong></td><td>{r.indicator_name}</td><td style={{ textAlign: 'right' }}>{formatRp(r.amount)}</td><td>{Number(r.missing_price_count) > 0 ? <span className="ui-status-badge ui-status-warning">Harga belum lengkap: {r.missing_price_count}</span> : <span className="ui-status-badge ui-status-success">Harga lengkap</span>}</td></tr>
+                  ))}
+                  {revenueComponentsForDisplay.length > 0 && <tr style={{ fontWeight: 700, background: 'var(--surface-subtle)' }}><td colSpan={2} style={{ textAlign: 'right' }}>TOTAL</td><td style={{ textAlign: 'right' }}>{formatRp(revenueSelectedTotal)}</td><td /></tr>}
+                </tbody>
+              </DataTable>
+              <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
+                <thead><tr><th>Kode</th><th>Kategori</th><th style={{ textAlign: 'right' }}>Biaya</th><th style={{ textAlign: 'right' }}>Entri</th></tr></thead>
+                <tbody>
+                  {costComponentsForDisplay.map((c) => (
+                    <tr key={c.cost_code}><td><strong>{c.cost_code}</strong></td><td>{c.cost_label}</td><td style={{ textAlign: 'right' }}>{formatRp(c.amount)}</td><td style={{ textAlign: 'right' }}>{c.entry_count}</td></tr>
+                  ))}
+                  {costComponentsForDisplay.length > 0 && <tr style={{ fontWeight: 700, background: 'var(--surface-subtle)' }}><td colSpan={2} style={{ textAlign: 'right' }}>TOTAL</td><td style={{ textAlign: 'right' }}>{formatRp(costSelectedTotal)}</td><td style={{ textAlign: 'right' }}>{costComponentsForDisplay.reduce((s, c) => s + Number(c.entry_count ?? 0), 0)}</td></tr>}
+                </tbody>
+              </DataTable>
+            </div>
           </section>
         </>
       )}
