@@ -223,6 +223,13 @@ export default function App() {
       : selectedManagementScope
         ? [selectedManagementScope.contractCode]
         : []
+  const isActiveContractAuthorized = !activeContractId || isSuperAdmin || authorizedContractIds.includes(activeContractId)
+
+  useEffect(() => {
+    if (currentPage === 'pengguna-akses' && !isSuperAdmin) setCurrentPage(null)
+    else if (currentPage === 'analisis-finansial' && !canAccessFinancial) setCurrentPage(null)
+    if (!isActiveContractAuthorized) setActiveContractId(null)
+  }, [canAccessFinancial, currentPage, isActiveContractAuthorized, isSuperAdmin])
 
   const navigate = (contractId) => {
     if (contractId && !isSuperAdmin && !authorizedContractIds.includes(contractId)) return

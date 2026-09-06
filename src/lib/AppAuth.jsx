@@ -60,6 +60,10 @@ export default function AppAuth({ children }) {
         setView('recovery')
       } else if (event === 'SIGNED_IN') {
         setView('app')
+      } else if (event === 'TOKEN_REFRESHED') {
+        resolveAuthority().then(({ actor, error: authorityError }) => {
+          if (!authorityError && actor) setAuthority({ loading: false, actor, error: null })
+        })
       } else if (event === 'SIGNED_OUT') {
         setAuthority({ loading: false, actor: null, error: null })
         setView('signin')

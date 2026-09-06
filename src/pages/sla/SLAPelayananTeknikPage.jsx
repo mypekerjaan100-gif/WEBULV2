@@ -155,6 +155,7 @@ export default function SLAPelayananTeknikPage({
   const [exportOpen, setExportOpen] = useState(false)
   const [changeRequests, setChangeRequests] = useState([])
   const auth = useAuth()
+  const authUserId = auth?.session?.user?.id
   const [employees, setEmployees] = useState([])
   const [employeesLoaded, setEmployeesLoaded] = useState(false)
   const [employeeLoadError, setEmployeeLoadError] = useState('')
@@ -243,7 +244,7 @@ export default function SLAPelayananTeknikPage({
   }, [])
 
   useEffect(() => {
-    if (!auth?.session) return
+    if (!authUserId) return
     let cancelled = false
     Promise.all([
       fetchEmployeesFromSupabase({
@@ -277,15 +278,15 @@ export default function SLAPelayananTeknikPage({
         }
       })
     return () => { cancelled = true }
-  }, [auth?.session, employeeReloadToken, canReadEmployeeFinancials])
+  }, [authUserId, employeeReloadToken, canReadEmployeeFinancials])
 
   useEffect(() => {
-    if (!auth?.session) return
+    if (!authUserId) return
     refreshLocations().catch(() => {})
-  }, [auth?.session, refreshLocations])
+  }, [authUserId, refreshLocations])
 
   useEffect(() => {
-    if (!auth?.session) {
+    if (!authUserId) {
       setOrgMap(null)
       setOrgMapStatus('loading')
       setOrgMapError('')
@@ -314,7 +315,7 @@ export default function SLAPelayananTeknikPage({
         setOrgMapStatus('error')
       })
     return () => { cancelled = true }
-  }, [auth?.session, up3Id, units])
+  }, [authUserId, up3Id, units])
   const [pensionPolicies, setPensionPolicies] = useState(() =>
     initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id),
   )
@@ -608,10 +609,10 @@ export default function SLAPelayananTeknikPage({
   }, [refreshLembur, onApprovalChange])
 
   useEffect(() => {
-    if (moduleId !== 'lembur' || !auth?.session) return
+    if (moduleId !== 'lembur' || !authUserId) return
     refreshLembur()
     return () => { lemburRequestId.current += 1 }
-  }, [moduleId, auth?.session, refreshLembur])
+  }, [moduleId, authUserId, refreshLembur])
 
   const saveLembur = async (id, draft) => {
     try {
