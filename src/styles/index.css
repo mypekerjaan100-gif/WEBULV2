@@ -5664,7 +5664,7 @@ summary:focus-visible {
 
 .lembur-form-overlay { z-index: 1050; overscroll-behavior: contain; }
 .lembur-form-card { width: min(100%, 680px); max-height: 90vh; overflow: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--color-border); border-radius: 14px; background: #fff; box-shadow: 0 24px 70px rgba(7, 26, 51, .22); }
-.lembur-form-modal-wide { width: min(calc(100vw - 48px), 1140px); padding: 0; }
+.lembur-form-modal-wide { width: min(calc(100vw - 48px), 1220px); padding: 0; }
 .lembur-picker-modal { overflow: visible; }
 .lembur-modal-header, .lembur-form-heading, .lembur-heading-actions, .lembur-form-actions, .lembur-detail-header, .lembur-detail-header-actions, .lembur-approval-actions, .lembur-preview-header, .lembur-preview-nav { display: flex; align-items: center; gap: 12px; }
 .lembur-modal-header, .lembur-form-heading, .lembur-detail-header, .lembur-preview-header { justify-content: space-between; }
@@ -5683,36 +5683,44 @@ summary:focus-visible {
 .lembur-type-card span { color: var(--color-text-muted); font-size: 12px; line-height: 18px; }
 .lembur-work-type-grid .lembur-type-card { min-height: 90px; }
 .lembur-back-button { margin-top: 18px; }
-.lembur-form-heading { position: sticky; top: 0; z-index: 4; margin: 0; padding: 11px 18px; border-bottom: 1px solid #e1e7eb; background: #fff; }
+.lembur-form-heading { position: sticky; top: 0; z-index: 4; min-height: 60px; margin: 0; padding: 8px 18px; border-bottom: 1px solid #e1e7eb; background: #fff; }
+.lembur-form-heading .lembur-kicker { line-height: 12px; }
 .lembur-form-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.lembur-form-workspace { display: grid; grid-template-columns: minmax(0, 62fr) minmax(0, 38fr); gap: 12px; padding: 12px 18px; align-items: start; }
+.lembur-form-left { display: grid; min-width: 0; gap: 12px; align-content: start; }
+.lembur-form-workspace .lembur-form-section { min-width: 0; margin: 0; }
 .lembur-form-section { margin: 12px 18px 0; padding: 14px 16px; border: 1px solid #dfe6ea; border-radius: 10px; background: #fff; }
 .lembur-section-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
 .lembur-section-heading > span { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 7px; background: #eaf2f5; color: #174b63; font-size: 12px; font-weight: 800; }
 .lembur-section-heading h3 { margin: 0; color: #173d4f; font-size: 16px; line-height: 20px; }
 .lembur-section-heading p { margin: 1px 0 0; color: var(--color-text-muted); font-size: 11px; line-height: 15px; }
 .lembur-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
-.lembur-form-grid.is-replacement { grid-template-columns: minmax(240px, 35fr) minmax(180px, 25fr) minmax(0, 40fr); }
-.lembur-form-grid.is-administrasi { grid-template-columns: minmax(180px, 22fr) minmax(180px, 22fr) minmax(0, 56fr); }
-.lembur-form-grid.is-technical { grid-template-columns: minmax(0, 30fr) minmax(0, 30fr) minmax(0, 40fr); }
-.lembur-form-grid.is-technical > .sla-context-field:nth-child(3) { grid-column: 1 / span 2; }
+.lembur-form-grid.is-replacement { grid-template-columns: minmax(170px, 1fr) minmax(180px, .85fr); }
+.lembur-form-grid.is-administrasi { grid-template-columns: minmax(160px, .9fr) minmax(180px, 1fr); }
+.lembur-form-grid.is-technical { grid-template-columns: minmax(140px, 160px) minmax(160px, 180px) minmax(220px, 1fr); }
+.lembur-form-grid.is-technical > .sla-context-field:nth-child(3) { grid-column: 1 / -1; }
+.lembur-form-grid.is-technical > .sla-context-field:nth-child(4) { grid-column: 3; grid-row: 1; }
 .lembur-form-modal-wide .sla-context-label { font-size: 12px; line-height: 16px; }
 .lembur-form-modal-wide .sla-context-select { min-width: 0; font-size: 13px; }
 .lembur-grid-full, .lembur-deadline-card, .lembur-deadline-helper { grid-column: 1 / -1; }
 .lembur-readonly-value { min-height: 38px; padding: 8px 11px; border: 1px solid #d8e1e6; border-radius: 7px; background: #f6f8f9; color: #173d4f; font-size: 13px; font-weight: 700; }
-.lembur-deadline-helper { margin: 0; padding: 6px 9px; color: #526b76; font-size: 11px; line-height: 16px; }
-.lembur-deadline-card { margin: 0; padding: 6px 9px; border-radius: 7px; font-size: 11px; line-height: 16px; }
+.lembur-deadline-helper { min-height: 44px; margin: 0; padding: 4px 8px; color: #526b76; font-size: 11px; line-height: 15px; }
+.lembur-deadline-card { min-height: 44px; margin: 0; padding: 4px 8px; border-radius: 7px; font-size: 11px; line-height: 15px; }
+.lembur-deadline-card > div:last-child { display: block; }
+.lembur-deadline-card strong { display: inline; margin-right: 4px; font-size: 11px; line-height: 15px; }
+.lembur-deadline-card .ui-alert-content { display: inline; margin-top: 0; font-size: 11px; line-height: 15px; }
 .lembur-deadline-expired { border: 1px solid #e4b9bd; background: #fff5f5; color: #7f2730; }
 .lembur-description-preview { display: grid; gap: 2px; margin: 0; padding: 8px 11px; border: 1px solid #d8e4e9; border-radius: 8px; background: #f7fafb; color: #274656; font-size: 12px; line-height: 1.4; }
 .lembur-description-preview > span { color: var(--color-text-muted); font-size: 11px; font-style: normal; font-weight: 700; text-transform: uppercase; }
 .lembur-time-grid { display: grid; gap: 8px; align-items: end; }
-.lembur-time-grid.is-replacement { grid-template-columns: minmax(230px, 30fr) minmax(230px, 30fr) minmax(105px, 13fr) minmax(105px, 13fr) minmax(88px, 10fr); }
-.lembur-time-grid.is-single { grid-template-columns: minmax(300px, 58fr) minmax(105px, 14fr) minmax(105px, 14fr) minmax(88px, 10fr); }
+.lembur-time-grid.is-replacement { grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) 88px 88px 70px; }
+.lembur-time-grid.is-single { grid-template-columns: minmax(220px, 1fr) 92px 92px 70px; }
 .lembur-duration-compact { display: grid; min-width: 0; min-height: 38px; align-content: center; padding: 5px 9px; border: 1px solid #d5e1e6; border-radius: 7px; background: #f5f9fa; }
 .lembur-duration-compact span, .lembur-duration-compact small { color: var(--color-text-muted); font-size: 10px; }
 .lembur-duration-compact strong { color: #174b63; font-size: 14px; }
 .lembur-participants { display: grid; gap: 6px; }
 .lembur-participants-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; color: #173d4f; }
-.lembur-participant-labels, .lembur-participant-row { display: grid; grid-template-columns: minmax(260px, 52fr) minmax(105px, 14fr) minmax(105px, 14fr) minmax(88px, 11fr) minmax(32px, 7fr); gap: 8px; align-items: center; }
+.lembur-participant-labels, .lembur-participant-row { display: grid; grid-template-columns: minmax(220px, 1fr) 88px 88px 70px 32px; gap: 8px; align-items: center; }
 .lembur-participant-labels { padding: 0 10px; color: var(--color-text-muted); font-size: 11px; font-weight: 700; }
 .lembur-participant-row { min-width: 0; padding: 6px 8px; border: 1px solid #e0e7eb; border-radius: 8px; background: #fafcfc; }
 .lembur-participant-row > .sla-context-select { width: 100%; min-width: 0; }
@@ -5720,14 +5728,15 @@ summary:focus-visible {
 .lembur-participant-row .lembur-row-remove { width: 27px; height: 27px; min-height: 27px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #8a4148; cursor: pointer; }
 .lembur-participant-row .lembur-row-remove:hover:not(:disabled) { background: #fbeaec; color: #8a4148; }
 
-.lembur-upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.lembur-upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
 .lembur-upload-card:only-child { width: min(100%, 560px); grid-column: 1 / -1; }
-.lembur-upload-card { display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid #dce5e9; border-radius: 9px; background: #fff; }
+.lembur-upload-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid #dce5e9; border-radius: 9px; background: #fff; }
 .lembur-upload-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #173d4f; }
 .lembur-upload-card-heading strong::before { content: '↑'; display: inline-grid; width: 20px; height: 20px; margin-right: 6px; place-items: center; border-radius: 5px; background: #e4eff3; color: #174b63; font-size: 12px; }
 .lembur-upload-card > small { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: 11px; line-height: 15px; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+.lembur-upload-card > small:hover { position: relative; z-index: 3; overflow: visible; padding: 6px 8px; border-radius: 6px; background: #fff; box-shadow: 0 8px 20px rgba(7, 26, 51, .14); -webkit-line-clamp: unset; }
 .lembur-timemark-badge { padding: 3px 7px; border-radius: 999px; background: #fff3d9; color: #7b500f; font-size: 10px; font-weight: 800; }
-.lembur-dropzone { display: grid; min-height: 84px; place-items: center; align-content: center; gap: 2px; padding: 8px; border: 1px dashed #9db4be; border-radius: 8px; background: #f8fbfc; color: #365966; font-size: 13px; text-align: center; cursor: pointer; }
+.lembur-dropzone { display: grid; height: 72px; min-height: 0; place-items: center; align-content: center; gap: 1px; padding: 5px; border: 1px dashed #9db4be; border-radius: 8px; background: #f8fbfc; color: #365966; font-size: 12px; text-align: center; cursor: pointer; }
 .lembur-dropzone:hover { border-color: #174b63; background: #f1f7f9; }
 .lembur-dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .lembur-dropzone small { color: var(--color-text-muted); font-size: 11px; }
@@ -5742,7 +5751,7 @@ summary:focus-visible {
 .lembur-thumb-button { padding: 0; border: 0; background: none; cursor: pointer; }
 .lembur-doc-icon { display: grid; width: 40px; height: 36px; flex: 0 0 40px; place-items: center; border-radius: 5px; background: #e9eff2; color: #486470; font-size: 10px; font-weight: 800; }
 .lembur-message { margin: 8px 18px 0; }
-.lembur-form-actions { position: sticky; bottom: 0; z-index: 4; justify-content: space-between; margin-top: 12px; padding: 10px 18px; border-top: 1px solid #e1e7eb; background: #fff; box-shadow: 0 -8px 20px rgba(7, 26, 51, .06); }
+.lembur-form-actions { position: sticky; bottom: 0; z-index: 4; min-height: 58px; justify-content: space-between; margin-top: 0; padding: 10px 18px; border-top: 1px solid #e1e7eb; background: #fff; box-shadow: 0 -8px 20px rgba(7, 26, 51, .06); }
 .lembur-form-actions-right { display: flex; align-items: center; gap: 8px; }
 
 .lembur-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 3px rgba(15, 32, 67, .04); }
@@ -5810,6 +5819,9 @@ summary:focus-visible {
 .lembur-document-fallback p { margin: 0; color: #adc0c8; font-size: 12px; }
 .lembur-preview-nav { justify-content: space-between; padding: 10px 14px; border-top: 1px solid #dfe6ea; }
 
+@media (max-width: 1000px) {
+  .lembur-form-workspace { grid-template-columns: 1fr; }
+}
 @media (max-width: 900px) {
   .lembur-time-grid, .lembur-time-grid.is-single, .lembur-time-grid.is-replacement { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lembur-duration-compact { min-height: 38px; }
@@ -5820,7 +5832,7 @@ summary:focus-visible {
   .lembur-landing-header, .lembur-form-heading { align-items: flex-start; flex-direction: column; }
   .lembur-heading-actions { width: 100%; justify-content: flex-end; }
   .lembur-type-grid, .lembur-form-grid, .lembur-form-grid.is-replacement, .lembur-form-grid.is-administrasi, .lembur-form-grid.is-technical, .lembur-upload-grid, .lembur-detail-evidence-grid { grid-template-columns: 1fr; }
-  .lembur-form-grid.is-technical > .sla-context-field:nth-child(3) { grid-column: 1 / -1; }
+  .lembur-form-grid.is-technical > .sla-context-field:nth-child(3), .lembur-form-grid.is-technical > .sla-context-field:nth-child(4) { grid-column: 1 / -1; grid-row: auto; }
   .lembur-time-grid, .lembur-time-grid.is-single, .lembur-time-grid.is-replacement { grid-template-columns: 1fr 1fr; }
   .lembur-participant-row { grid-template-columns: 1fr 1fr; }
   .lembur-participant-row > select { grid-column: 1 / -1; }
@@ -7510,6 +7522,7 @@ summary:focus-visible {
 }
 
 :root[data-theme='dark'] .lembur-dropzone:hover,
+:root[data-theme='dark'] .lembur-upload-card > small:hover,
 :root[data-theme='dark'] .lembur-detail-photo:hover,
 :root[data-theme='dark'] .lembur-detail-document:hover {
   border-color: var(--border-strong);
