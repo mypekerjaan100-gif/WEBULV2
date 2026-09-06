@@ -5664,7 +5664,7 @@ summary:focus-visible {
 
 .lembur-form-overlay { z-index: 1050; overscroll-behavior: contain; }
 .lembur-form-card { width: min(100%, 680px); max-height: 90vh; overflow: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--color-border); border-radius: 14px; background: #fff; box-shadow: 0 24px 70px rgba(7, 26, 51, .22); }
-.lembur-form-modal-wide { width: min(calc(100vw - 48px), 1220px); padding: 0; }
+.lembur-form-modal-wide { width: min(calc(100vw - 48px), 1240px); padding: 0; }
 .lembur-picker-modal { overflow: visible; }
 .lembur-modal-header, .lembur-form-heading, .lembur-heading-actions, .lembur-form-actions, .lembur-detail-header, .lembur-detail-header-actions, .lembur-approval-actions, .lembur-preview-header, .lembur-preview-nav { display: flex; align-items: center; gap: 12px; }
 .lembur-modal-header, .lembur-form-heading, .lembur-detail-header, .lembur-preview-header { justify-content: space-between; }
@@ -5686,7 +5686,8 @@ summary:focus-visible {
 .lembur-form-heading { position: sticky; top: 0; z-index: 4; min-height: 60px; margin: 0; padding: 8px 18px; border-bottom: 1px solid #e1e7eb; background: #fff; }
 .lembur-form-heading .lembur-kicker { line-height: 12px; }
 .lembur-form-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-.lembur-form-workspace { display: grid; grid-template-columns: minmax(0, 62fr) minmax(0, 38fr); gap: 12px; padding: 12px 18px; align-items: start; }
+.lembur-form-workspace { display: grid; grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); gap: 12px; padding: 12px 18px; align-items: start; }
+.lembur-form-workspace.is-technical { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); }
 .lembur-form-left { display: grid; min-width: 0; gap: 12px; align-content: start; }
 .lembur-form-workspace .lembur-form-section { min-width: 0; margin: 0; }
 .lembur-form-section { margin: 12px 18px 0; padding: 14px 16px; border: 1px solid #dfe6ea; border-radius: 10px; background: #fff; }
@@ -5702,10 +5703,11 @@ summary:focus-visible {
 .lembur-form-grid.is-technical > .sla-context-field:nth-child(4) { grid-column: 3; grid-row: 1; }
 .lembur-form-modal-wide .sla-context-label { font-size: 12px; line-height: 16px; }
 .lembur-form-modal-wide .sla-context-select { min-width: 0; font-size: 13px; }
+.lembur-form-modal-wide textarea.sla-context-select { min-height: 56px; }
 .lembur-grid-full, .lembur-deadline-card, .lembur-deadline-helper { grid-column: 1 / -1; }
 .lembur-readonly-value { min-height: 38px; padding: 8px 11px; border: 1px solid #d8e1e6; border-radius: 7px; background: #f6f8f9; color: #173d4f; font-size: 13px; font-weight: 700; }
-.lembur-deadline-helper { min-height: 44px; margin: 0; padding: 4px 8px; color: #526b76; font-size: 11px; line-height: 15px; }
-.lembur-deadline-card { min-height: 44px; margin: 0; padding: 4px 8px; border-radius: 7px; font-size: 11px; line-height: 15px; }
+.lembur-deadline-helper { min-height: 52px; margin: 0; padding: 4px 8px; color: #526b76; font-size: 11px; line-height: 15px; }
+.lembur-deadline-card { min-height: 52px; margin: 0; padding: 4px 8px; border-radius: 7px; font-size: 11px; line-height: 15px; }
 .lembur-deadline-card > div:last-child { display: block; }
 .lembur-deadline-card strong { display: inline; margin-right: 4px; font-size: 11px; line-height: 15px; }
 .lembur-deadline-card .ui-alert-content { display: inline; margin-top: 0; font-size: 11px; line-height: 15px; }
@@ -5720,22 +5722,31 @@ summary:focus-visible {
 .lembur-duration-compact strong { color: #174b63; font-size: 14px; }
 .lembur-participants { display: grid; gap: 6px; }
 .lembur-participants-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; color: #173d4f; }
-.lembur-participant-labels, .lembur-participant-row { display: grid; grid-template-columns: minmax(220px, 1fr) 88px 88px 70px 32px; gap: 8px; align-items: center; }
+.lembur-participant-labels, .lembur-participant-row { display: grid; grid-template-columns: minmax(200px, 1fr) 92px 92px 74px 36px; gap: 8px; align-items: center; }
 .lembur-participant-labels { padding: 0 10px; color: var(--color-text-muted); font-size: 11px; font-weight: 700; }
 .lembur-participant-row { min-width: 0; padding: 6px 8px; border: 1px solid #e0e7eb; border-radius: 8px; background: #fafcfc; }
 .lembur-participant-row > .sla-context-select { width: 100%; min-width: 0; }
 .lembur-participant-row > strong { color: #405c68; font-size: 13px; }
+.lembur-participant-row > strong { display: grid; min-height: 36px; place-items: center; padding: 4px; border: 1px solid #d5e1e6; border-radius: 7px; background: #f5f9fa; white-space: nowrap; }
 .lembur-participant-row .lembur-row-remove { width: 27px; height: 27px; min-height: 27px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #8a4148; cursor: pointer; }
 .lembur-participant-row .lembur-row-remove:hover:not(:disabled) { background: #fbeaec; color: #8a4148; }
 
 .lembur-upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
-.lembur-upload-card:only-child { width: min(100%, 560px); grid-column: 1 / -1; }
+.lembur-upload-card:only-child { width: min(100%, 380px); grid-column: 1 / -1; }
+.lembur-form-workspace.is-technical .lembur-upload-grid { align-items: stretch; }
+.lembur-form-workspace.is-technical .lembur-upload-card { min-height: 145px; }
 .lembur-upload-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid #dce5e9; border-radius: 9px; background: #fff; }
-.lembur-upload-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #173d4f; }
+.lembur-upload-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; color: #173d4f; }
+.lembur-upload-card-heading > strong { display: flex; min-width: 0; align-items: center; flex: 1 1 auto; font-size: 12px; line-height: 20px; white-space: nowrap; }
 .lembur-upload-card-heading strong::before { content: '↑'; display: inline-grid; width: 20px; height: 20px; margin-right: 6px; place-items: center; border-radius: 5px; background: #e4eff3; color: #174b63; font-size: 12px; }
 .lembur-upload-card > small { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: 11px; line-height: 15px; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
 .lembur-upload-card > small:hover { position: relative; z-index: 3; overflow: visible; padding: 6px 8px; border-radius: 6px; background: #fff; box-shadow: 0 8px 20px rgba(7, 26, 51, .14); -webkit-line-clamp: unset; }
-.lembur-timemark-badge { padding: 3px 7px; border-radius: 999px; background: #fff3d9; color: #7b500f; font-size: 10px; font-weight: 800; }
+.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2) > small { display: none; }
+.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2) > small:first-of-type { display: block; font-size: 0; line-height: 15px; white-space: nowrap; }
+.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2) > small:first-of-type::before { content: 'Wajah petugas dan kehadiran peserta harus terlihat jelas.'; font-size: 11px; }
+.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2)::after { content: 'Wajah petugas harus dapat dikenali, APD tetap digunakan, dan foto harus membuktikan seluruh peserta yang diajukan hadir.'; position: absolute; top: 38px; right: 9px; left: 9px; z-index: 5; display: none; padding: 7px 8px; border: 1px solid #dce5e9; border-radius: 6px; background: #fff; color: #365966; font-size: 11px; line-height: 15px; box-shadow: 0 8px 20px rgba(7, 26, 51, .14); }
+.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2):hover::after { display: block; }
+.lembur-timemark-badge { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 6px; border-radius: 999px; background: #fff3d9; color: #7b500f; font-size: 10px; line-height: 14px; font-weight: 800; white-space: nowrap; }
 .lembur-dropzone { display: grid; height: 72px; min-height: 0; place-items: center; align-content: center; gap: 1px; padding: 5px; border: 1px dashed #9db4be; border-radius: 8px; background: #f8fbfc; color: #365966; font-size: 12px; text-align: center; cursor: pointer; }
 .lembur-dropzone:hover { border-color: #174b63; background: #f1f7f9; }
 .lembur-dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -5819,8 +5830,8 @@ summary:focus-visible {
 .lembur-document-fallback p { margin: 0; color: #adc0c8; font-size: 12px; }
 .lembur-preview-nav { justify-content: space-between; padding: 10px 14px; border-top: 1px solid #dfe6ea; }
 
-@media (max-width: 1000px) {
-  .lembur-form-workspace { grid-template-columns: 1fr; }
+@media (max-width: 1099px) {
+  .lembur-form-workspace, .lembur-form-workspace.is-technical { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .lembur-time-grid, .lembur-time-grid.is-single, .lembur-time-grid.is-replacement { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -7577,6 +7588,13 @@ summary:focus-visible {
 
 :root[data-theme='dark'] .lembur-history-item p,
 :root[data-theme='dark'] .lembur-participant-row > strong {
+  color: var(--text-secondary);
+}
+
+:root[data-theme='dark'] .lembur-participant-row > strong,
+:root[data-theme='dark'] .lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2)::after {
+  border-color: var(--border);
+  background: var(--surface-subtle);
   color: var(--text-secondary);
 }
 

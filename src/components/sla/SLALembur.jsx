@@ -820,7 +820,7 @@ export default function SLALembur({
               </div>
 
               <fieldset disabled={formReadOnly} className="lembur-form-fieldset">
-                <div className="lembur-form-workspace">
+                <div className={`lembur-form-workspace ${formLayoutClass}`}>
                 <div className="lembur-form-left">
                  <section className="lembur-form-section">
                   <div className="lembur-section-heading"><span>A</span><div><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
