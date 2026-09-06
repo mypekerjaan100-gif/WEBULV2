@@ -23,6 +23,12 @@ import {
 
 const formatRp = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })
 const DAY_MS = 24 * 60 * 60 * 1000
+const WORK_TITLE_PLACEHOLDERS = {
+  GARDU: 'Contoh: Pemeliharaan Gardu',
+  JTM: 'Contoh: Penanganan Tiang Tumbang',
+  JTR: 'Contoh: Perbaikan JTR',
+  ROW: 'Contoh: Pembersihan ROW',
+}
 
 function initialDeadlineFor(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) return null
@@ -207,6 +213,7 @@ export default function SLALembur({
   const isWork = !!workCategory
   const isAdministrasi = workCategory === 'ADMINISTRASI'
   const isMultiWork = workCategory && workCategory !== 'ADMINISTRASI'
+  const formLayoutClass = isReplacement ? 'is-replacement' : isAdministrasi ? 'is-administrasi' : 'is-technical'
 
   const replacementDescription = automaticReplacementDescription({
     type: draft.lemburType,
@@ -815,10 +822,10 @@ export default function SLALembur({
               <fieldset disabled={formReadOnly} className="lembur-form-fieldset">
                 <section className="lembur-form-section">
                   <div className="lembur-section-heading"><span>A</span><div><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
-                  <div className="lembur-form-grid">
+                   <div className={`lembur-form-grid ${formLayoutClass}`}>
                      <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} /></label>
-                     {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder="Contoh: JTM — Tiang Tumbang" /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
+                     {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
                       {draft.date && !isRevision && (initialDeadlinePassed ? (
                         <Alert tone="danger" title="Batas pengajuan telah lewat" className="lembur-deadline-card">{initialDeadlineMessage(draft.date)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.</Alert>
                       ) : <Alert tone="info" className="lembur-deadline-helper">Batas pengajuan: {formatPontianakDate(initialDeadline)}, 23:59</Alert>)}
@@ -830,7 +837,7 @@ export default function SLALembur({
 
                 <section className="lembur-form-section">
                   <div className="lembur-section-heading"><span>B</span><div><h3>Pegawai & Waktu</h3><p>Peserta, jam kerja, dan durasi otomatis</p></div></div>
-                  {isReplacement && <div className="lembur-time-grid">
+                  {isReplacement && <div className="lembur-time-grid is-replacement">
                     <label className="sla-context-field"><span className="sla-context-label">Pegawai yang Digantikan *</span><select className="sla-context-select" value={draft.replacedEmployeeId} disabled={employeeLoading} onChange={e=>updateDraft({ replacedEmployeeId:e.target.value, participantEmployeeId:'' })}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
                     <label className="sla-context-field"><span className="sla-context-label">Pegawai Pengganti *</span><select className="sla-context-select" value={draft.participantEmployeeId} disabled={!replacedEmployee} onChange={e=>updateDraft({ participantEmployeeId:e.target.value })}><option value="">Pilih pegawai pengganti</option>{participantOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
                     <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={draft.startTime} onChange={e=>updateDraft({ startTime:e.target.value })} /></label>
