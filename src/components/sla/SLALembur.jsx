@@ -884,10 +884,7 @@ export default function SLALembur({
                 <option value="Pengganti Cuti">Pengganti Cuti</option>
                 <option value="Pengganti Sakit">Pengganti Sakit</option>
                 <option value="Pengganti Izin">Pengganti Izin</option>
-                <option value="Administrasi">Administrasi</option>
-                <option value="Gardu">Gardu</option>
-                <option value="JTM">JTM</option>
-                <option value="JTR">JTR</option>
+                {Object.values(WORK_CATEGORIES).map((category)=><option key={category.label} value={category.label}>{category.label}</option>)}
               </Select>
             </FilterField>
             <FilterField label="Pegawai" className="lembur-filter-field lembur-filter-search">
