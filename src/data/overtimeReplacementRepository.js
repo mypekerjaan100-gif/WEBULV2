@@ -181,6 +181,9 @@ export async function rejectOvertime(activityId, reason) {
 export async function resubmitOvertime(activityId) {
   return rpc('resubmit_overtime_l5', { p_activity_id: activityId })
 }
+export async function softDeleteOvertimeActivity(activityId, reason) {
+  return rpc('soft_delete_overtime_activity', { p_activity_id: activityId, p_reason: reason })
+}
 export async function listOvertimeHistory(activityId) {
   return rpc('list_overtime_history_l5', { p_activity_id: activityId })
 }

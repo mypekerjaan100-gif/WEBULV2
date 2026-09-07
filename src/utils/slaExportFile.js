@@ -883,11 +883,11 @@ function buildEmployeeSheetXml(columns, rows) {
   )
 }
 
-export function buildMasterPegawaiXlsx(columns, rows) {
+export function buildTableXlsx(columns, rows, sheetName = 'Data') {
   const workbook =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-    '<sheets><sheet name="Master Pegawai" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    `<sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`
   return buildZip([
     { name: '[Content_Types].xml', data: encode(CONTENT_TYPES_XML) },
     { name: '_rels/.rels', data: encode(ROOT_RELS_XML) },
@@ -896,6 +896,10 @@ export function buildMasterPegawaiXlsx(columns, rows) {
     { name: 'xl/styles.xml', data: encode(EMPLOYEE_EXPORT_STYLES_XML) },
     { name: 'xl/worksheets/sheet1.xml', data: encode(buildEmployeeSheetXml(columns, rows)) },
   ])
+}
+
+export function buildMasterPegawaiXlsx(columns, rows) {
+  return buildTableXlsx(columns, rows, 'Master Pegawai')
 }
 
 // ---------- PDF (base-14 fonts, no dependencies) ----------

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { listReplacementEmployees, approveOvertime, rejectOvertime, resubmitOvertime, listOvertimeHistory } from '../../data/overtimeReplacementRepository.js'
+import { listReplacementEmployees, approveOvertime, rejectOvertime, resubmitOvertime, softDeleteOvertimeActivity, listOvertimeHistory } from '../../data/overtimeReplacementRepository.js'
 import {
   automaticReplacementDescription,
   buildPontianakRange,
@@ -8,6 +8,7 @@ import {
   REPLACEMENT_TYPES,
 } from '../../data/overtimeReplacementL2.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
+import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 import Icon from '../Icon.jsx'
 import {
   Alert,
@@ -185,6 +186,11 @@ export default function SLALembur({
   const [detailEvidenceUrls, setDetailEvidenceUrls] = useState({})
   const [detailFinancial, setDetailFinancial] = useState([])
   const [evidencePreview, setEvidencePreview] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [toast, setToast] = useState('')
   const handledApprovalToken = useRef(null)
 
   useEffect(() => {
@@ -200,6 +206,12 @@ export default function SLALembur({
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previousOverflow }
   }, [formOpen])
+
+  useEffect(() => {
+    if (!toast) return undefined
+    const timeoutId = window.setTimeout(() => setToast(''), 3500)
+    return () => window.clearTimeout(timeoutId)
+  }, [toast])
 
   const range = buildPontianakRange(draft.date, draft.startTime, draft.endTime)
   const replacedEmployee = employeeOptions.find((e) => e.id === draft.replacedEmployeeId)
@@ -652,6 +664,25 @@ export default function SLALembur({
     }catch(e){ setMessage(e.message || 'Gagal menolak') } finally{ setSubmitting(false) }
   }
 
+  const handleDelete = async () => {
+    if (!isSuperAdmin || !deleteTarget) return
+    const reason = deleteReason.trim()
+    if (!reason) { setDeleteError('Alasan hapus wajib diisi.'); return }
+    setDeleteBusy(true)
+    setDeleteError('')
+    try {
+      await softDeleteOvertimeActivity(deleteTarget.id, reason)
+      setDeleteTarget(null)
+      setDeleteReason('')
+      setToast('Data Lembur berhasil dihapus.')
+      await onRefresh?.()
+    } catch (error) {
+      setDeleteError(error.message || 'Data Lembur gagal dihapus.')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   const sorted = [...records].sort((a,b)=> String(b.startedAt).localeCompare(String(a.startedAt)))
   const jenisLabel = (record) => record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
   const uniquePeriods = [...new Set(sorted.map(r=> r.periodMonth || String(r.date||'').slice(0,7)))].filter(Boolean).sort()
@@ -670,6 +701,45 @@ export default function SLALembur({
     if (filters.periode && String(r.periodMonth||'').slice(0,7) !== filters.periode && String(r.date||'').slice(0,7) !== filters.periode) return false
     return true
   })
+  const exportExcel = () => {
+    if (!filtered.length) {
+      setMessage('Tidak ada data Rekap Lembur sesuai filter aktif untuk diexport.')
+      return
+    }
+    const columns = [
+      { label: 'No', width: 7 },
+      { label: 'Tanggal', width: 14 },
+      { label: 'Jenis Lembur', width: 24 },
+      { label: 'Pegawai', width: 28 },
+      { label: 'Waktu/Jam', width: 22 },
+      { label: 'Durasi', width: 14 },
+      { label: 'Total Rp', width: 18 },
+      { label: 'Keterangan', width: 42 },
+      { label: 'Status', width: 26 },
+      { label: 'Unit/ULP', width: 28 },
+    ]
+    const rows = filtered.map((record, index) => {
+      const time = pontianakFormValues(record.startedAt, record.endedAt)
+      return [
+        { value: String(index + 1) },
+        { value: record.date ?? '', type: 'date' },
+        { value: jenisLabel(record) },
+        { value: record.participantName ?? '' },
+        { value: `${time.startTime}-${time.endTime}${time.endTime <= time.startTime ? ' (+1 hari)' : ''}` },
+        { value: formatDurationMinutes(Number(record.durationHours ?? 0) * 60) },
+        { value: `Rp ${formatRp(record.total)}` },
+        { value: record.description ?? '' },
+        { value: displayStatus(record) },
+        { value: getUlpName(record.unitId) ?? '' },
+      ]
+    })
+    const periodKey = filters.periode || String(periodMonth ?? '').slice(0, 7) || String(filtered[0]?.date ?? '').slice(0, 7)
+    const [year, month] = periodKey.split('-')
+    const monthName = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][Number(month) - 1]
+    const periodLabel = monthName && year ? `${monthName}_${year}` : 'Semua_Periode'
+    downloadExportFile(buildTableXlsx(columns, rows, 'Rekap Lembur'), `rekap_lembur_${periodLabel}.xlsx`)
+    setMessage(null)
+  }
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const paginated = filtered.slice((currentPage-1)*rowsPerPage, currentPage*rowsPerPage)
   useEffect(()=>{ setCurrentPage(1) }, [filters, rowsPerPage, records.length])
@@ -760,6 +830,9 @@ export default function SLALembur({
   const photoDetailEvidence = activeDetailEvidence.filter(isImageEvidence)
   const ulpCount = (orgUnits ?? []).filter((unit) => unit.type === 'ULP').length
   const up3ScopeName = (orgUnits ?? []).find((unit) => unit.uuid === up3Id || unit.legacyKey === up3Id)?.displayName
+  const deleteTargetRows = deleteTarget ? records.filter((record) => record.id === deleteTarget.id) : []
+  const deleteParticipants = [...new Set(deleteTargetRows.map((record) => record.participantName).filter(Boolean))]
+  const deleteTotal = deleteTargetRows.reduce((total, record) => total + Number(record.total ?? 0), 0)
 
   return (
     <section className="sla-module-panel lembur-l2">
@@ -774,6 +847,7 @@ export default function SLALembur({
           {canMutate && <Button variant="primary" onClick={openNewForm}>+ Tambah Lembur</Button>}
         </div>
       </div>
+      {toast && <div className="lembur-toast" role="status"><Icon name="check-circle" size={17} />{toast}</div>}
       {loadError ? (
         <StatePanel state="error" title="Data lembur gagal dimuat" action={<Button variant="secondary" onClick={onRetry}>Coba Lagi</Button>}>{loadError}</StatePanel>
       ) : loading ? (
@@ -916,7 +990,7 @@ export default function SLALembur({
             </FilterField>
           </FilterBar>
 
-          <div className="lembur-rekap-heading"><span className="lembur-kicker">Rekap Lembur</span><strong>{filtered.length} baris pegawai</strong></div>
+          <div className="lembur-rekap-heading"><span className="lembur-kicker">Rekap Lembur</span><div className="lembur-rekap-actions"><strong>{filtered.length} baris pegawai</strong><Button variant="secondary" size="small" onClick={exportExcel}>Export Excel</Button></div></div>
 
           <div className="sla-table-wrap lembur-table-wrap">
             <table className="sla-table lembur-table">
@@ -949,7 +1023,8 @@ export default function SLALembur({
                       <td className="lembur-table-actions-cell">
                         <div className="lembur-table-actions">
                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
-                          <Button variant="secondary" size="small" onClick={()=>setDetailActivityId(record.id)}>Lihat Detail</Button>
+                           <Button variant="secondary" size="small" onClick={()=>setDetailActivityId(record.id)}>Lihat Detail</Button>
+                           {isSuperAdmin && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus</Button>}
                         </div>
                       </td>
                     </tr>
@@ -958,6 +1033,18 @@ export default function SLALembur({
               </tbody>
             </table>
           </div>
+          {isSuperAdmin && deleteTarget && (
+            <div className="rekap-detail-overlay" onClick={()=>{if(!deleteBusy){setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}}>
+              <div className="rekap-detail-modal lembur-delete-modal" role="dialog" aria-modal="true" aria-labelledby="lembur-delete-title" onClick={event=>event.stopPropagation()}>
+                <div className="lembur-delete-header"><div><span className="lembur-kicker">SUPER ADMIN</span><h2 id="lembur-delete-title">Hapus Data Lembur</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}><Icon name="close" size={17} /></IconButton></div>
+                <Alert tone="danger" title="Konfirmasi soft delete">Data akan hilang dari Rekap Lembur normal, tetapi audit dan evidence tetap tersimpan.</Alert>
+                <dl className="lembur-delete-summary"><div><dt>Jenis</dt><dd>{jenisLabel(deleteTarget)}</dd></div><div><dt>Tanggal</dt><dd>{deleteTarget.date}</dd></div><div><dt>Peserta</dt><dd>{deleteParticipants.join(', ') || '-'}</dd></div><div><dt>Total</dt><dd>Rp {formatRp(deleteTotal)}</dd></div><div><dt>Keterangan</dt><dd>{deleteTarget.description}</dd></div></dl>
+                <label className="sla-context-field"><span className="sla-context-label">Alasan Hapus *</span><textarea className="sla-context-select" rows={3} value={deleteReason} disabled={deleteBusy} onChange={event=>{setDeleteReason(event.target.value);setDeleteError('')}} placeholder="Jelaskan alasan penghapusan data Lembur" /></label>
+                {deleteError && <Alert tone="danger">{deleteError}</Alert>}
+                <div className="lembur-delete-actions"><Button variant="ghost" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}>Batal</Button><Button variant="danger" disabled={deleteBusy||!deleteReason.trim()} onClick={handleDelete}>{deleteBusy?'Menghapus...':'Hapus Data'}</Button></div>
+              </div>
+            </div>
+          )}
           <div className="rekap-pagination">
             <span>{filtered.length} data · Halaman {currentPage} dari {totalPages}</span>
             <div className="lembur-pagination-actions">
