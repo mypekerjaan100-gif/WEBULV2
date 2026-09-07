@@ -332,8 +332,10 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
             <dl className="detail-grid">
               <dt>Nama</dt>
               <dd>{user.displayName}</dd>
-              <dt>Email</dt>
-              <dd>{user.email}</dd>
+              <dt>Username</dt>
+              <dd>{user.username || '-'}</dd>
+              <dt>Email Pemulihan</dt>
+              <dd>{user.email || 'Belum ada'}{user.email && !user.recoveryEmailVerified ? ' (belum terverifikasi)' : ''}</dd>
               <dt>Status</dt>
               <dd><StatusBadge status={user.status} /></dd>
               <dt>Dibuat</dt>
@@ -452,26 +454,74 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
   )
 }
 
-function InviteUserModal({ onClose, onSuccess }) {
+function CreateUserModal({ onClose, onSuccess }) {
   const [displayName, setDisplayName] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [email, setEmail] = useState('')
+  const [role, setRole] = useState('ADMIN_UP3')
+  const [options, setOptions] = useState({ contracts: [], scopes: [], internalOrganizationUnits: [] })
+  const [contractId, setContractId] = useState('')
+  const [up3Id, setUp3Id] = useState('')
+  const [ulpId, setUlpId] = useState('')
+  const [internalOrgUnitId, setInternalOrgUnitId] = useState('')
+  const [loadingOptions, setLoadingOptions] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    callUserManagement('access_options').then(({ data, error: optionsError }) => {
+      if (cancelled) return
+      if (optionsError) setError(optionsError)
+      else setOptions({
+        contracts: data?.contracts || [],
+        scopes: data?.scopes || [],
+        internalOrganizationUnits: data?.internalOrganizationUnits || [],
+      })
+      setLoadingOptions(false)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const contractRole = role === 'ADMIN_UP3' || role === 'ADMIN_ULP'
+  const organizationRole = MANAGEMENT_ROLE_LEVEL[role]
+  const scopes = options.scopes.filter((scope) => scope.contractId === contractId)
+  const selectedScope = scopes.find((scope) => scope.up3Id === up3Id)
+  const internalUnits = options.internalOrganizationUnits.filter((unit) => unit.type === organizationRole)
+  const scopeComplete = role === 'SUPER_ADMIN'
+    || (contractRole && contractId && up3Id && (role !== 'ADMIN_ULP' || ulpId))
+    || (organizationRole && internalOrgUnitId)
+
+  const changeRole = (nextRole) => {
+    setRole(nextRole)
+    setContractId(''); setUp3Id(''); setUlpId(''); setInternalOrgUnitId('')
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
     try {
-      const { data, error: fnError } = await callUserManagement('invite_user', {
-        payload: { email: email.trim(), displayName: displayName.trim() },
+      const { data, error: fnError } = await callUserManagement('create_user', {
+        payload: {
+          username: username.trim(),
+          password,
+          email: email.trim(),
+          displayName: displayName.trim(),
+          role,
+          internalOrgUnitId: organizationRole ? internalOrgUnitId : null,
+          contractId: contractRole ? contractId : null,
+          operationalUp3Id: contractRole ? up3Id : null,
+          operationalUnitId: role === 'ADMIN_ULP' ? ulpId : null,
+        },
       })
       if (fnError) {
         setError(fnError)
         return
       }
       if (data?.error) {
-        setError(data.message || 'Gagal mengirim undangan.')
+        setError(data.message || 'Gagal membuat akun.')
         return
       }
       onSuccess(data)
@@ -484,7 +534,7 @@ function InviteUserModal({ onClose, onSuccess }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>Tambah Pengguna</h3>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Tutup">
@@ -511,27 +561,54 @@ function InviteUserModal({ onClose, onSuccess }) {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="invite-email">Email</label>
+              <label htmlFor="create-username">Username *</label>
               <input
-                id="invite-email"
-                type="email"
+                id="create-username"
+                type="text"
                 className="input-field"
-                placeholder="email@contoh.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="contoh: admin.ulp1"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
+                minLength={3}
+                maxLength={32}
+                pattern="[A-Za-z0-9][A-Za-z0-9._-]*"
+                autoComplete="off"
               />
             </div>
+            <div className="form-group">
+              <label htmlFor="create-password">Password Awal *</label>
+              <input id="create-password" type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} autoComplete="new-password" />
+            </div>
+            <div className="form-group">
+              <label htmlFor="create-email">Email Pemulihan (opsional)</label>
+              <input id="create-email" type="email" className="input-field" placeholder="email@contoh.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+            </div>
+            <div className="form-group">
+              <label htmlFor="create-role">Role *</label>
+              <select id="create-role" className="input-select" value={role} onChange={(e) => changeRole(e.target.value)} required>
+                <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                <option value="ADMIN_UP3">ADMIN_UP3</option>
+                <option value="ADMIN_ULP">ADMIN_ULP</option>
+                {MANAGEMENT_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            {contractRole && <>
+              <div className="form-group"><label htmlFor="create-contract">Kontrak *</label><select id="create-contract" className="input-select" value={contractId} onChange={(e) => { setContractId(e.target.value); setUp3Id(''); setUlpId('') }} required><option value="">Pilih kontrak</option>{options.contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.title}</option>)}</select></div>
+              <div className="form-group"><label htmlFor="create-up3">UP3 *</label><select id="create-up3" className="input-select" value={up3Id} onChange={(e) => { setUp3Id(e.target.value); setUlpId('') }} required disabled={!contractId}><option value="">Pilih UP3</option>{scopes.map((scope) => <option key={scope.up3Id} value={scope.up3Id}>{scope.up3Name}</option>)}</select></div>
+              {role === 'ADMIN_ULP' && <div className="form-group"><label htmlFor="create-ulp">ULP *</label><select id="create-ulp" className="input-select" value={ulpId} onChange={(e) => setUlpId(e.target.value)} required disabled={!up3Id}><option value="">Pilih ULP</option>{(selectedScope?.ulps || []).map((ulp) => <option key={ulp.id} value={ulp.id}>{ulp.name}</option>)}</select></div>}
+            </>}
+            {organizationRole && <div className="form-group"><label htmlFor="create-internal-unit">Unit Organisasi *</label><select id="create-internal-unit" className="input-select" value={internalOrgUnitId} onChange={(e) => setInternalOrgUnitId(e.target.value)} required><option value="">Pilih unit</option>{internalUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></div>}
             <p className="invite-hint">
-              Akses organisasi dan role diberikan setelah user berhasil diundang.
+              Jika email diisi, pengguna harus menyelesaikan verifikasi Supabase sebelum login pertama dan sebelum email dapat digunakan untuk reset password.
             </p>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" onClick={onClose} disabled={submitting}>
               Batal
             </button>
-            <button type="submit" className="btn btn-primary" disabled={submitting || !displayName.trim() || !email.trim()}>
-              {submitting ? 'Mengirim...' : 'Kirim Undangan'}
+            <button type="submit" className="btn btn-primary" disabled={submitting || loadingOptions || !displayName.trim() || !username.trim() || password.length < 8 || !scopeComplete}>
+              {submitting ? 'Membuat...' : 'Buat Akun'}
             </button>
           </div>
         </form>
@@ -547,7 +624,8 @@ function UserListTable({ users, onSelect }) {
         <thead>
           <tr>
             <th>Nama</th>
-            <th>Email</th>
+            <th>Username</th>
+            <th>Email Pemulihan</th>
             <th>Role</th>
             <th>Organisasi</th>
             <th>Kontrak / Scope</th>
@@ -558,7 +636,7 @@ function UserListTable({ users, onSelect }) {
         <tbody>
           {users.length === 0 ? (
             <tr>
-              <td colSpan={7} className="empty-cell">Tidak ada data ditemukan.</td>
+              <td colSpan={8} className="empty-cell">Tidak ada data ditemukan.</td>
             </tr>
           ) : (
             users.map((u) => (
@@ -567,7 +645,8 @@ function UserListTable({ users, onSelect }) {
                   {u.displayName}
                   {u.isSuperAdmin && <span className="badge badge-super inline-badge">SUPER_ADMIN</span>}
                 </td>
-                <td>{u.email}</td>
+                <td>{u.username || '-'}</td>
+                <td>{u.email ? <>{u.email}{!u.recoveryEmailVerified && <span className="text-muted"> (belum terverifikasi)</span>}</> : <span className="text-muted">Belum ada</span>}</td>
                 <td>
                   {u.roles.length > 0 ? u.roles.join(', ') : <span className="text-muted">Belum Ditentukan</span>}
                 </td>
@@ -642,7 +721,8 @@ export default function UserListPage({ onBack }) {
     const matchSearch =
       !search ||
       u.displayName.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q)
+      String(u.username || '').toLowerCase().includes(q) ||
+      String(u.email || '').toLowerCase().includes(q)
     const matchStatus = !statusFilter || u.status === statusFilter
     const matchRole =
       !roleFilter ||
@@ -677,7 +757,7 @@ export default function UserListPage({ onBack }) {
         <input
           type="text"
           className="input-search"
-          placeholder="Cari nama atau email..."
+          placeholder="Cari nama, username, atau email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -739,7 +819,7 @@ export default function UserListPage({ onBack }) {
       )}
 
       {showInvite && (
-        <InviteUserModal onClose={() => setShowInvite(false)} onSuccess={handleInviteSuccess} />
+        <CreateUserModal onClose={() => setShowInvite(false)} onSuccess={handleInviteSuccess} />
       )}
     </div>
   )

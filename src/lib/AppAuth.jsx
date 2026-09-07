@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { supabase } from './supabaseClient.js'
 import { callUserManagement } from './userManagement.js'
+import { requestPasswordResetByUsername, signInWithUsername } from './usernameAuth.js'
 
 const AuthContext = createContext(null)
 const AUTHORITY_TIMEOUT_MS = 15000
@@ -36,7 +37,7 @@ export default function AppAuth({ children }) {
   const [session, setSession] = useState(null)
   const [view, setView] = useState('loading')
   const [error, setError] = useState(null)
-  const [recoveryEmail, setRecoveryEmail] = useState('')
+  const [recoveryUsername, setRecoveryUsername] = useState('')
   const [authority, setAuthority] = useState({ loading: true, actor: null, error: null })
 
   useEffect(() => {
@@ -101,19 +102,16 @@ export default function AppAuth({ children }) {
     return () => { cancelled = true }
   }, [session?.user?.id])
 
-  const signIn = async (email, password) => {
+  const signIn = async (username, password) => {
     setError(null)
     setAuthority({ loading: true, actor: null, error: null })
-    const { data, error: authErr } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { session: nextSession, error: authErr } = await signInWithUsername(username, password)
     if (authErr) {
-      setError(authErr.message)
+      setError(authErr)
       setAuthority({ loading: false, actor: null, error: null })
       return false
     }
-    setSession(data.session)
+    setSession(nextSession)
     setView('app')
     return true
   }
@@ -145,7 +143,7 @@ export default function AppAuth({ children }) {
   if (view === 'forgot-password') {
     return (
       <ForgotPasswordForm
-        initialEmail={recoveryEmail}
+        initialUsername={recoveryUsername}
         onBack={() => setView('signin')}
       />
     )
@@ -155,8 +153,8 @@ export default function AppAuth({ children }) {
     return (
       <SignInForm
         onSignIn={signIn}
-        onForgotPassword={(email) => {
-          setRecoveryEmail(email)
+        onForgotPassword={(username) => {
+          setRecoveryUsername(username)
           setView('forgot-password')
         }}
         error={error}
@@ -325,8 +323,8 @@ function UpdatePasswordForm() {
   )
 }
 
-function ForgotPasswordForm({ initialEmail, onBack }) {
-  const [email, setEmail] = useState(initialEmail)
+function ForgotPasswordForm({ initialUsername, onBack }) {
+  const [username, setUsername] = useState(initialUsername)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -335,36 +333,32 @@ function ForgotPasswordForm({ initialEmail, onBack }) {
     event.preventDefault()
     setSubmitting(true)
     setError('')
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    })
+    await requestPasswordResetByUsername(username)
     setSubmitting(false)
-    if (resetError) {
-      setError(resetError.message)
-      return
-    }
+    setError('')
     setSuccess(true)
   }
 
   return (
     <AuthFormShell title="Reset Password">
       <p className="auth-help">
-        Masukkan email untuk menerima tautan reset password.
+        Masukkan username. Jika email pemulihan telah terverifikasi, tautan reset akan dikirim.
       </p>
       {error && <p className="auth-message auth-message-danger">{error}</p>}
       {success ? (
         <p className="auth-message auth-message-success">
-          Jika email terdaftar, tautan reset password telah dikirim.
+          Jika akun memiliki email pemulihan terverifikasi, tautan reset akan dikirim.
         </p>
       ) : (
         <form onSubmit={handleSubmit}>
           <div className="auth-field">
-            <label>Email</label>
+            <label>Username</label>
             <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              type="text"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
               required
+              autoComplete="username"
               className="ui-control"
             />
           </div>
@@ -390,14 +384,14 @@ function AuthFormShell({ title, children }) {
 }
 
 function SignInForm({ onSignIn, onForgotPassword, error }) {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSubmitting(true)
-    await onSignIn(email, password)
+    await onSignIn(username, password)
     setSubmitting(false)
   }
 
@@ -413,13 +407,14 @@ function SignInForm({ onSignIn, onForgotPassword, error }) {
         )}
         <div className="auth-field">
           <label>
-            Email
+            Username
           </label>
           <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             required
+            autoComplete="username"
             className="ui-control"
           />
         </div>
@@ -432,6 +427,7 @@ function SignInForm({ onSignIn, onForgotPassword, error }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            autoComplete="current-password"
             className="ui-control"
           />
         </div>
@@ -444,7 +440,7 @@ function SignInForm({ onSignIn, onForgotPassword, error }) {
         </button>
         <button
           type="button"
-          onClick={() => onForgotPassword(email)}
+          onClick={() => onForgotPassword(username)}
           className="ui-button ui-button-ghost auth-link"
         >
           Lupa Password?

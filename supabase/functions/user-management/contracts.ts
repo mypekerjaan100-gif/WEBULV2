@@ -1,6 +1,6 @@
 export const ACTION_TO_OPERATION = {
   list_users: "LIST_USERS",
-  invite_user: "INVITE_USER",
+  create_user: "INVITE_USER",
   access_options: "ASSIGN_MEMBERSHIP",
   assign_contract_access: "ASSIGN_MEMBERSHIP",
   assign_organization_access: "ASSIGN_MEMBERSHIP",

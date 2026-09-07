@@ -2,7 +2,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 interface UserSummary {
   id: string;
+  username: string;
   email: string;
+  recoveryEmailVerified: boolean;
   displayName: string;
   status: string;
   createdAt: string;
@@ -71,11 +73,12 @@ export async function handleListUsers(): Promise<{
     };
   }
 
-  const [{ data: profiles }, { data: memberships, error: membershipsError }, { data: employees }, { data: orgMembershipsRaw }, { data: contractMembershipsRaw }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] = await Promise.all([
+  const [{ data: profiles }, { data: usernames, error: usernamesError }, { data: memberships, error: membershipsError }, { data: employees }, { data: orgMembershipsRaw }, { data: contractMembershipsRaw }, { data: contracts }, { data: organizationNames }, { data: internalUnits }] = await Promise.all([
     adminClient
       .from("profiles")
       .select("id, display_name, status")
       .in("id", userIds),
+    adminClient.from("auth_usernames").select("user_id, username").in("user_id", userIds),
     adminClient
       .from("system_role_memberships")
       .select("user_id, status, effective_from, effective_to, authorization_roles!inner(code)")
@@ -106,12 +109,13 @@ export async function handleListUsers(): Promise<{
       p as { id: string; display_name: string; status: string },
     ]),
   );
+  const usernameMap = new Map((usernames || []).map((row) => [row.user_id as string, row.username as string]));
 
-  if (membershipsError) {
+  if (membershipsError || usernamesError) {
     console.error("System role membership query failed");
     return {
       status: 500,
-      body: { error: "system_role_query_failed", message: "Unable to load system roles" },
+      body: { error: usernamesError ? "username_query_failed" : "system_role_query_failed", message: "Unable to load user identities" },
     };
   }
 
@@ -217,7 +221,9 @@ export async function handleListUsers(): Promise<{
 
     return {
       id: authUser.id,
-      email: authUser.email || "",
+      username: usernameMap.get(authUser.id) || "",
+      email: authUser.email?.endsWith(".invalid") ? "" : (authUser.email || ""),
+      recoveryEmailVerified: Boolean(authUser.email_confirmed_at) && !authUser.email?.endsWith(".invalid"),
       displayName: profile?.display_name || authUser.email || "Unknown",
       status: profile?.status || "ACTIVE",
       createdAt: authUser.created_at,

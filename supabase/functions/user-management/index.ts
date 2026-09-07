@@ -6,7 +6,7 @@ import {
   type UserManagementAction,
 } from "./contracts.ts";
 import { handleListUsers } from "./handlers/listUsers.ts";
-import { handleInviteUser } from "./handlers/inviteUser.ts";
+import { handleCreateUser } from "./handlers/createUser.ts";
 import { handleSessionContext } from "./handlers/sessionContext.ts";
 import { handleAccessOptions } from "./handlers/accessOptions.ts";
 import { handleAssignContractAccess } from "./handlers/assignContractAccess.ts";
@@ -97,8 +97,8 @@ Deno.serve(async (request: Request) => {
       return jsonResponse(result.status, result.body);
     }
 
-    if (body.action === "invite_user") {
-      const result = await handleInviteUser(callerClient, body.payload, user.id);
+    if (body.action === "create_user") {
+      const result = await handleCreateUser(body.payload, user.id);
       return jsonResponse(result.status, result.body);
     }
 
