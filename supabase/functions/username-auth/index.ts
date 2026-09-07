@@ -14,7 +14,7 @@ function requiredEnv(name: string): string {
 
 function allowedOrigins(): Set<string> {
   const configured = Deno.env.get("ALLOWED_ORIGINS") ??
-    "https://laporanharian.vercel.app,http://localhost:5173,http://127.0.0.1:5173";
+    "https://laporanharian-iota.vercel.app,https://laporanharian.vercel.app,http://localhost:5173,http://127.0.0.1:5173";
   return new Set(configured.split(",").map((value) => value.trim()).filter(Boolean));
 }
 
@@ -134,7 +134,7 @@ Deno.serve(async (request: Request) => {
       if (hasVerifiedRecoveryEmail) {
         const origin = request.headers.get("Origin") ?? "";
         const developmentOrigin = origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173";
-        const redirectTo = developmentOrigin ? origin : (Deno.env.get("APP_URL") ?? "https://laporanharian.vercel.app");
+        const redirectTo = developmentOrigin ? origin : (Deno.env.get("APP_URL") ?? "https://laporanharian-iota.vercel.app");
         await authClient.auth.resetPasswordForEmail(email, { redirectTo });
       }
       await waitForMinimumDuration(startedAt);
