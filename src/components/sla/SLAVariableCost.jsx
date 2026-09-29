@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry, listVariableActualRevenue, listVariableRevenueTargets } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry, listVariableActualRevenue, listVariableRevenueTargets, listVariableManualWo, setVariableManualWo } from '../../data/variableCostRepository.js'
+import { fetchSpreadsheetSummary, fetchSpreadsheetDetail, isSpreadsheetSourced, normalizeSpreadsheetUlp, realizationForUnit } from '../../data/spreadsheetVariableCost.js'
 import { supabase } from '../../lib/supabaseClient.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 import TargetPendapatanVariable from './TargetPendapatanVariable.jsx'
@@ -91,6 +92,22 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [rejectedList, setRejectedList] = useState([])
   const [rejectedLoading, setRejectedLoading] = useState(false)
   const [editingRejectionReason, setEditingRejectionReason] = useState('')
+  // Spreadsheet read-only (Apps Script) + WO manual ULP
+  const [sheetSummary, setSheetSummary] = useState(null)
+  const [sheetLoading, setSheetLoading] = useState(false)
+  const [sheetError, setSheetError] = useState('')
+  const [sheetSyncedAt, setSheetSyncedAt] = useState('')
+  const [sheetRequestId, setSheetRequestId] = useState(0)
+  const [manualWo, setManualWo] = useState([])
+  const [woDrafts, setWoDrafts] = useState({})
+  const [woSavingUnit, setWoSavingUnit] = useState('')
+  const [woError, setWoError] = useState('')
+  const [woMessage, setWoMessage] = useState('')
+  const [sheetDetailOpen, setSheetDetailOpen] = useState(false)
+  const [sheetDetailIndicator, setSheetDetailIndicator] = useState(null)
+  const [sheetDetailUlp, setSheetDetailUlp] = useState('')
+  const [sheetDetailData, setSheetDetailData] = useState(null)
+  const [sheetDetailLoading, setSheetDetailLoading] = useState(false)
   const monthlyRequestId = useRef(0)
   const dailyRequestId = useRef(0)
   const handledApprovalToken = useRef(null)
@@ -142,6 +159,103 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, activeTab, targetUnitId, canViewVariableFinancial, childUlps.map((u) => u.uuid).join(',')])
 
   useEffect(() => { loadMonthly() }, [loadMonthly])
+
+  // --- Spreadsheet 2.1a (read-only, realtime dari Google Sheets) + WO manual ---
+  const loadSheetSummary = useCallback(async () => {
+    if (!periodMonth) return
+    const requestId = sheetRequestId + 1
+    setSheetRequestId(requestId)
+    setSheetLoading(true)
+    setSheetError('')
+    try {
+      const [summary, woRows] = await Promise.all([
+        fetchSpreadsheetSummary({ indicator: '2.1a', period: periodMonth }),
+        contractId && up3Uuid
+          ? listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode: '2.1a' }).catch(() => [])
+          : Promise.resolve([]),
+      ])
+      setSheetSummary(summary)
+      setSheetSyncedAt(summary.syncedAt ?? new Date().toISOString())
+      setManualWo(woRows ?? [])
+      setWoDrafts((current) => {
+        const next = { ...current }
+        for (const row of woRows ?? []) {
+          if (next[row.unit_id] === undefined) next[row.unit_id] = String(row.wo_value ?? '')
+        }
+        return next
+      })
+    } catch (err) {
+      setSheetError(err.message || 'Gagal membaca spreadsheet.')
+    } finally {
+      setSheetLoading(false)
+    }
+  }, [periodMonth, contractId, up3Uuid]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (activeTab === 'rekap') loadSheetSummary()
+  }, [activeTab, loadSheetSummary])
+
+  useEffect(() => {
+    if (activeTab !== 'rekap') return undefined
+    const timer = setInterval(() => { loadSheetSummary() }, 120000)
+    return () => clearInterval(timer)
+  }, [activeTab, loadSheetSummary])
+
+  const openSheetDetail = useCallback(async (indicator, ulpName, page = 1) => {
+    setSheetDetailIndicator(indicator)
+    setSheetDetailUlp(ulpName ?? '')
+    setSheetDetailOpen(true)
+    setSheetDetailLoading(true)
+    try {
+      const data = await fetchSpreadsheetDetail({
+        indicator: indicator.code ?? indicator.point,
+        period: periodLabelToMonth(period),
+        ulp: ulpName ?? '',
+        page,
+        pageSize: 100,
+      })
+      setSheetDetailData(data)
+    } catch (err) {
+      setSheetDetailData({ success: false, error: err.message, rows: [], pagination: null })
+    } finally {
+      setSheetDetailLoading(false)
+    }
+  }, [period])
+
+  const handleSaveManualWo = async (unitUuid) => {
+    const raw = woDrafts[unitUuid] ?? ''
+    const value = raw === '' ? null : Number(raw)
+    if (value == null || !Number.isFinite(value) || value < 0) {
+      setWoError('WO harus berupa angka nol atau lebih.')
+      return
+    }
+    if (!contractId || !up3Uuid) {
+      setWoError('Scope kontrak/UP3 belum siap.')
+      return
+    }
+    setWoSavingUnit(unitUuid)
+    setWoError('')
+    setWoMessage('')
+    try {
+      await setVariableManualWo({
+        contractId,
+        up3Id: up3Uuid,
+        unitId: unitUuid,
+        periodMonth,
+        indicatorCode: '2.1a',
+        woValue: value,
+      })
+      setWoMessage('WO tersimpan.')
+      const rows = await listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode: '2.1a' }).catch(() => [])
+      setManualWo(rows ?? [])
+    } catch (err) {
+      setWoError(err.message || 'Gagal menyimpan WO.')
+    } finally {
+      setWoSavingUnit('')
+    }
+  }
+
+  const manualWoByUnit = new Map((manualWo ?? []).map((row) => [row.unit_id, Number(row.wo_value ?? 0)]))
 
   const [feeders, setFeeders] = useState([])
   const [feederLoading, setFeederLoading] = useState(false)
@@ -715,6 +829,119 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       ? 'Konsolidasi UP3'
       : (childUlps.find((unit) => (unit.legacyKey ?? unit.uuid) === selectedUlpLegacy)?.displayName ?? '—')
 
+  // --- Baris rekap khusus indikator spreadsheet (2.1a) ---
+  function sheetUlpNameFor(unit) {
+    return normalizeSpreadsheetUlp(unit?.displayName ?? '')
+  }
+
+  function renderSheetRow(ind) {
+    const code = ind.code ?? ind.point
+    const syncedLabel = sheetSyncedAt
+      ? new Date(sheetSyncedAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })
+      : '—'
+    const sourceBadge = (
+      <div>
+        <span className="sla-badge sla-badge-variable-cost">Spreadsheet</span>
+        <div className="sla-table-sub" title={sheetSyncedAt ?? ''}>
+          {sheetLoading ? 'Memuat…' : `Sinkron: ${syncedLabel}`}
+        </div>
+      </div>
+    )
+    if (sheetError && !sheetSummary) {
+      return (
+        <tr key={ind.id}>
+          <td>{getShortLabel(ind)}<div className="sla-table-sub">Spreadsheet</div></td>
+          <td>{ind.unit ?? '—'}</td>
+          <td colSpan={rekapColumnCount - 2} className="sla-blocked-note">
+            {sheetError}{' '}
+            <button type="button" className="sla-btn" onClick={loadSheetSummary}>Coba lagi</button>
+          </td>
+        </tr>
+      )
+    }
+    if (isConsolidated) {
+      const up3TargetRow = up3Targets.find((t) => {
+        const uuid = pointToUuids.get(ind.point)
+        return uuid ? t.indicator_id === uuid : false
+      })
+      const up3Target = up3TargetRow?.target_value ?? null
+      const totalWo = childUlps.reduce((sum, ulp) => sum + (manualWoByUnit.get(ulp.uuid) ?? 0), 0)
+      const hasWo = childUlps.some((ulp) => manualWoByUnit.has(ulp.uuid))
+      const realisasi = Number(sheetSummary?.realization ?? 0)
+      let pencapaian = '—'
+      if (up3Target != null && totalWo > 0) {
+        const denom = Math.min(Number(up3Target), totalWo)
+        if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
+      }
+      return (
+        <tr key={ind.id}>
+          <td>{getShortLabel(ind)}<div className="sla-table-sub">Spreadsheet · {childUlps.length} ULP</div></td>
+          <td>{ind.unit ?? '—'}</td>
+          <td>{ind.slaLinked ? (up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)) : EMPTY_VALUE}</td>
+          <td>{hasWo ? formatNumber(totalWo) : <span className="text-muted">Belum diisi ULP</span>}</td>
+          <td>{sheetLoading && !sheetSummary ? '…' : formatNumber(realisasi)}</td>
+          <td>{ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
+          {canViewVariableFinancial && <td>{EMPTY_VALUE}</td>}
+          <td>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button>
+              <button type="button" className="sla-btn" onClick={loadSheetSummary}>Refresh</button>
+            </div>
+            {sourceBadge}
+          </td>
+        </tr>
+      )
+    }
+    const unitUuid = effectiveUnitUuid
+    const woVal = unitUuid ? manualWoByUnit.get(unitUuid) : undefined
+    const target = targetByPoint.get(ind.point) ?? null
+    const realisasi = realizationForUnit(sheetSummary, effectiveUnit?.displayName)
+    let pencapaian = '—'
+    if (target != null && woVal != null && woVal > 0) {
+      const denom = Math.min(Number(target), woVal)
+      if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
+    }
+    const canEditWo = isAdminUlpView && unitUuid && !isManagementReadOnly
+    return (
+      <tr key={ind.id} style={{ cursor: 'pointer' }} onClick={() => openSheetDetail(ind, sheetUlpNameFor(effectiveUnit))}>
+        <td>{getShortLabel(ind)}<div className="sla-table-sub">Spreadsheet</div></td>
+        <td>{ind.unit ?? '—'}</td>
+        <td>{ind.slaLinked ? (target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)) : EMPTY_VALUE}</td>
+        <td onClick={(e) => { if (canEditWo) e.stopPropagation() }}>
+          {canEditWo ? (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input
+                className="input-number"
+                inputMode="numeric"
+                style={{ width: 90 }}
+                value={woDrafts[unitUuid] ?? ''}
+                placeholder="WO"
+                onChange={(e) => setWoDrafts((current) => ({ ...current, [unitUuid]: e.target.value.replace(/\D/g, '') }))}
+              />
+              <button
+                type="button"
+                className="sla-btn sla-btn-primary"
+                disabled={woSavingUnit === unitUuid}
+                onClick={() => handleSaveManualWo(unitUuid)}
+              >
+                {woSavingUnit === unitUuid ? '…' : 'Simpan'}
+              </button>
+            </div>
+          ) : (woVal == null ? <span className="text-muted">Belum diisi</span> : formatNumber(woVal))}
+        </td>
+        <td>{sheetLoading && !sheetSummary ? '…' : formatNumber(realisasi)}</td>
+        <td>{ind.slaLinked && target != null ? pencapaian : EMPTY_VALUE}</td>
+        {canViewVariableFinancial && <td>{EMPTY_VALUE}</td>}
+        {showRekapAction && (
+          <td>
+            <button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>Lihat Detail</button>
+            <div className="sla-table-sub" style={{ marginTop: 4 }}>Sinkron: {sheetLoading ? '…' : syncedLabel}</div>
+          </td>
+        )}
+      </tr>
+    )
+  }
+
   return (
     <section className="sla-module-panel vc-module">
       <nav className="vc-breadcrumb" aria-label="Breadcrumb">
@@ -811,6 +1038,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                 ) : variableCostIndicators.length === 0 ? (
                   <tr><td colSpan={rekapColumnCount}>Belum ada data Variable Cost pada periode ini.</td></tr>
                 ) : variableCostIndicators.map((ind) => {
+                  if (isSpreadsheetSourced(ind.code ?? ind.point)) {
+                    return renderSheetRow(ind)
+                  }
                   const isKonstruksi = ind.id === 'A-3.1c'
                   if (!ind.workflowEnabled) {
                     return (
@@ -948,6 +1178,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             )}
             {!isConsolidated && isUp3Role && null}
             {!isConsolidated && !isUp3Role && <span className="text-muted" style={{ alignSelf: 'center' }}>{activeFeeders.length} Penyulang aktif</span>}
+            {sheetError && sheetSummary && <span className="sla-blocked-note" style={{ alignSelf: 'center' }}>{sheetError}</span>}
+            {woError && <span className="sla-blocked-note" style={{ alignSelf: 'center' }}>{woError}</span>}
+            {woMessage && <span className="vc-inline-success" style={{ alignSelf: 'center' }}>{woMessage}</span>}
           </div>
           {drillIndicator && (
             <div className="modal-backdrop" onClick={() => setDrillIndicator(null)}>
@@ -961,7 +1194,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                     <thead>
                       <tr>
                         <th>ULP</th>
-                        {drillIndicator.id === 'A-3.1c' ? (
+                        {isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point) ? (
+                          <><th>Target Operasional</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th><th>Aksi</th></>
+                        ) : drillIndicator.id === 'A-3.1c' ? (
                           <><th>Target Pendapatan</th><th>Aktual</th><th>Selisih</th><th>Pencapaian</th></>
                         ) : (
                           <><th>Target Operasional</th><th>WO</th><th>Realisasi</th><th>Pencapaian Operasional</th>{canViewVariableFinancial && <><th>Target Pendapatan</th><th>Pendapatan Aktual</th><th>Selisih</th><th>Pencapaian Pendapatan</th><th>Aksi</th></>}</>
@@ -969,7 +1204,22 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       </tr>
                     </thead>
                     <tbody>
-                      {(drillIndicator.id === 'A-3.1c' ? konstruksiEditorUnits : childUlps).map((ulp) => {
+                      {(isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point)
+                        ? childUlps.map((ulp) => {
+                            const sheetName = sheetUlpNameFor(ulp)
+                            const realisasi = realizationForUnit(sheetSummary, ulp.displayName)
+                            const woVal = manualWoByUnit.get(ulp.uuid)
+                            const uuid = pointToUuids.get(drillIndicator.point)
+                            const tRow = targets.find((t) => t.unit_id === ulp.uuid && (uuid ? t.indicator_id === uuid : false))
+                            const tgt = tRow?.target_value ?? null
+                            let pencapaian = '—'
+                            if (tgt != null && woVal != null && woVal > 0) {
+                              const denom = Math.min(Number(tgt), woVal)
+                              if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
+                            }
+                            return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{woVal == null ? <span className="text-muted">Belum diisi</span> : formatNumber(woVal)}</td><td>{formatNumber(realisasi)}</td><td>{pencapaian}</td><td><button type="button" className="sla-btn" onClick={() => { setDrillIndicator(null); openSheetDetail(drillIndicator, sheetName) }}>Baris</button></td></tr>
+                          })
+                        : (drillIndicator.id === 'A-3.1c' ? konstruksiEditorUnits : childUlps).map((ulp) => {
                         const uuid = pointToUuids.get(drillIndicator.point)
                         const row = entries.find((e) => e.unit_id === ulp.uuid && (uuid ? e.indicator_id === uuid : false))
                         const tRow = targets.find((t) => t.unit_id === ulp.uuid && (uuid ? t.indicator_id === uuid : false))
@@ -1000,8 +1250,14 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                         const financial = getFinancialComparison(drillIndicator.point, ulp.uuid)
                         const isRowFix = drillIndicator.point === '3.1a'
                         return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{formatNumber(wo)}</td><td>{formatNumber(real)}</td><td>{pencapaian}</td>{canViewVariableFinancial && <><td>{isRowFix ? 'Tidak Ditagihkan' : (financial.missing > 0 ? 'Target belum diatur' : formatRp(financial.target))}</td><td>{renderFinancialValue(drillIndicator.point, ulp.uuid)}</td><td>{isRowFix ? EMPTY_VALUE : formatSignedRp(financial.difference)}</td><td>{isRowFix ? EMPTY_VALUE : formatPercent(financial.achievement)}</td><td><button type="button" className="sla-btn" onClick={() => { setSelectedUlpLegacy(ulp.legacyKey ?? ulp.uuid); setDrillIndicator(null) }}>Transaksi</button></td></>}</tr>
-                      })}
-                      {drillIndicator.id === 'A-3.1c' ? (
+                      }))}
+                      {isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point) ? (
+                        (() => {
+                          const totalWo = childUlps.reduce((sum, ulp) => sum + (manualWoByUnit.get(ulp.uuid) ?? 0), 0)
+                          const totalReal = Number(sheetSummary?.realization ?? 0)
+                          return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{EMPTY_VALUE}</td><td>{formatNumber(totalWo)}</td><td>{formatNumber(totalReal)}</td><td>{EMPTY_VALUE}</td><td>{EMPTY_VALUE}</td></tr>
+                        })()
+                      ) : drillIndicator.id === 'A-3.1c' ? (
                         (() => {
                           const totalTarget = canManageKonstruksiMonthly
                             ? konstruksiEditorUnits.reduce((sum, unit) => {
@@ -1052,17 +1308,61 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
               </div>
             </div>
           )}
+          {sheetDetailOpen && sheetDetailIndicator && (
+            <div className="modal-backdrop" onClick={() => { setSheetDetailOpen(false); setSheetDetailData(null) }}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900 }}>
+                <div className="modal-header">
+                  <h3>{getShortLabel(sheetDetailIndicator)} — Baris Spreadsheet · {period}{sheetDetailUlp ? ` · ${sheetDetailUlp}` : ''}</h3>
+                  <button type="button" className="modal-close" onClick={() => { setSheetDetailOpen(false); setSheetDetailData(null) }}>×</button>
+                </div>
+                <div className="modal-body">
+                  <p className="text-muted" style={{ fontSize: 12 }}>Sumber: Google Spreadsheet tab JTM T1 (read-only). Realisasi = jumlah baris.</p>
+                  {sheetDetailLoading ? <p>Memuat…</p> : !sheetDetailData || sheetDetailData.success === false ? (
+                    <p className="sla-blocked-note">{sheetDetailData?.error ?? 'Gagal memuat detail.'} <button type="button" className="sla-btn" onClick={() => openSheetDetail(sheetDetailIndicator, sheetDetailUlp, sheetDetailData?.pagination?.page ?? 1)}>Coba lagi</button></p>
+                  ) : (
+                    <>
+                      <p className="text-muted" style={{ fontSize: 12 }}>
+                        Total {Number(sheetDetailData.realization ?? 0).toLocaleString('id-ID')} baris
+                        {sheetDetailData.pagination ? ` · Halaman ${sheetDetailData.pagination.page} dari ${sheetDetailData.pagination.totalPages}` : ''}
+                      </p>
+                      <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>ID Temuan</th><th>ULP</th><th>Penyulang</th><th>Section</th><th>Jenis Temuan</th><th>Koordinat</th><th>Petugas</th></tr></thead><tbody>
+                        {(sheetDetailData.rows ?? []).map((row, idx) => (
+                          <tr key={`${row.sourceRowNumber ?? idx}-${row.idTemuan ?? idx}`}>
+                            <td>{row.tanggalInspeksi ?? '—'}</td>
+                            <td>{row.idTemuan ?? '—'}</td>
+                            <td>{row.ulp ?? '—'}</td>
+                            <td>{row.penyulang ?? '—'}</td>
+                            <td style={{ maxWidth: 220, whiteSpace: 'normal' }}>{row.section ?? '—'}</td>
+                            <td style={{ maxWidth: 200, whiteSpace: 'normal' }}>{row.jenisTemuan ?? '—'}</td>
+                            <td style={{ maxWidth: 180, whiteSpace: 'normal' }}>{row.koordinatTemuan ?? '—'}</td>
+                            <td>{row.petugasInspeksi ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody></table></div>
+                      {sheetDetailData.pagination && sheetDetailData.pagination.totalPages > 1 && (
+                        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <button type="button" className="sla-btn" disabled={sheetDetailData.pagination.page <= 1} onClick={() => openSheetDetail(sheetDetailIndicator, sheetDetailUlp, sheetDetailData.pagination.page - 1)}>‹ Sebelumnya</button>
+                          <span className="text-muted" style={{ fontSize: 12 }}>Halaman {sheetDetailData.pagination.page} / {sheetDetailData.pagination.totalPages}</span>
+                          <button type="button" className="sla-btn" disabled={sheetDetailData.pagination.page >= sheetDetailData.pagination.totalPages} onClick={() => openSheetDetail(sheetDetailIndicator, sheetDetailUlp, sheetDetailData.pagination.page + 1)}>Berikutnya ›</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           {showInputPicker && (
             <div className="modal-backdrop" onClick={() => setShowInputPicker(false)}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
                 <div className="modal-header"><h3>Pilih Jenis Kegiatan</h3><button type="button" className="modal-close" onClick={() => setShowInputPicker(false)}>×</button></div>
                 <div className="modal-body" style={{ display: 'grid', gap: 10 }}>
-                  {INPUT_INDICATORS.map((ind) => (
+                  {INPUT_INDICATORS.filter((ind) => !isSpreadsheetSourced(ind.code ?? ind.point)).map((ind) => (
                     <button key={ind.id} type="button" className="sla-btn" style={{ textAlign: 'left', padding: 12, justifyContent: 'flex-start' }} onClick={() => chooseIndicator(ind)}>
                       <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope ?? 'Variable Cost'}</small></div>
                     </button>
                   ))}
-                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi dikelola sebagai pendapatan bulanan langsung oleh management.</div>
+                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi dikelola sebagai pendapatan bulanan langsung oleh management. Inspeksi SUTM Tier 1 dibaca dari spreadsheet (read-only).</div>
                 </div>
               </div>
             </div>

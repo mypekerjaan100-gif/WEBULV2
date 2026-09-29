@@ -498,6 +498,25 @@ export async function listVariableRevenueTargets({ contractId, up3Id, periodMont
   })
 }
 
+export async function listVariableManualWo({ contractId, up3Id, periodMonth, indicatorCode }) {
+  let query = supabase.from('variable_cost_manual_wo').select('unit_id,indicator_code,period_month,wo_value,updated_at').eq('contract_id', contractId).eq('up3_id', up3Id).eq('period_month', periodMonth)
+  if (indicatorCode) query = query.eq('indicator_code', indicatorCode)
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function setVariableManualWo({ contractId, up3Id, unitId, periodMonth, indicatorCode, woValue }) {
+  return rpc('set_variable_manual_wo', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId,
+    p_period_month: periodMonth,
+    p_indicator_code: indicatorCode,
+    p_wo_value: woValue,
+  }, 'WO_MANUAL_SAVE')
+}
+
 export async function setVariableRevenueTargets({ contractId, up3Id, periodMonth, values }) {
   return rpc('set_variable_revenue_targets', {
     p_contract_id: contractId,
