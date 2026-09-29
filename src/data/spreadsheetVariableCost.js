@@ -80,14 +80,21 @@ export async function fetchSpreadsheetHealth(indicatorCode) {
  * Ringkasan realisasi per periode.
  * @returns { realization, units: [{ulp, realization}], syncedAt, ... }
  */
+function toSpreadsheetPeriod(period) {
+  // Web memakai YYYY-MM-01, Apps Script memakai YYYY-MM.
+  const month = String(period ?? '').slice(0, 7)
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    throw new Error('Periode tidak valid (gunakan YYYY-MM).')
+  }
+  return month
+}
+
 export async function fetchSpreadsheetSummary({ indicator, period }) {
   const source = SPREADSHEET_SOURCES[indicator]
   if (!source) throw new Error(`Indikator ${indicator} belum terhubung ke spreadsheet.`)
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period ?? '')) {
-    throw new Error('Periode tidak valid (gunakan YYYY-MM).')
-  }
+  const month = toSpreadsheetPeriod(period)
   const data = await fetchJson(
-    buildUrl({ action: 'summary', indicator, period }),
+    buildUrl({ action: 'summary', indicator, period: month }),
     { timeoutMs: 90000 },
   )
   const units = (data.units ?? []).map((row) => ({
@@ -103,8 +110,9 @@ export async function fetchSpreadsheetSummary({ indicator, period }) {
 export async function fetchSpreadsheetDetail({ indicator, period, ulp = '', page = 1, pageSize = 100 }) {
   const source = SPREADSHEET_SOURCES[indicator]
   if (!source) throw new Error(`Indikator ${indicator} belum terhubung ke spreadsheet.`)
+  const month = toSpreadsheetPeriod(period)
   return fetchJson(
-    buildUrl({ action: 'detail', indicator, period, ulp, page, pageSize }),
+    buildUrl({ action: 'detail', indicator, period: month, ulp, page, pageSize }),
     { timeoutMs: 90000 },
   )
 }
