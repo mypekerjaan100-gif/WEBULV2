@@ -43,12 +43,29 @@ function toNumberOrZero(value) {
   return parsed
 }
 
+export function positionNameOf(positionUuid, { positions = [], jabatanById = new Map() } = {}) {
+  if (!isUuid(positionUuid)) return null
+  const found = positions.find((p) => p.id === positionUuid)
+  if (found?.name) return found.name
+  const jabatan = jabatanById.get(positionUuid)
+  if (jabatan?.name) return jabatan.name
+  return null
+}
+
 export function resolvePositionUuid(positionIdOrName, { positions = [], jabatanById = new Map() } = {}) {
   const raw = norm(positionIdOrName)
   if (!raw) return null
   if (isUuid(raw)) {
+    // Ketat: UUID yang tidak ada di master DITOLAK (null) agar tidak
+    // tersimpan sebagai orphan yang tampil "Belum Ditentukan".
     if (positions.some((p) => p.id === raw)) return raw
-    return raw
+    const jabatan = jabatanById.get(raw)
+    if (jabatan) {
+      const again = positions.find((p) => normLower(p.name) === normLower(jabatan.name))
+      if (again) return again.id
+      return null
+    }
+    return null
   }
   const legacyName = LEGACY_POSITION_TO_NAME[raw]
   const targetName = legacyName ?? raw
@@ -106,6 +123,11 @@ export function toRpcProposed(frontProposed, ctx = {}) {
       unitId: unitUuid,
     }) ?? (isUuid(frontProposed.workLocationId) ? frontProposed.workLocationId : null)
 
+  // source_position selalu nama jabatan yang mudah dibaca, bukan UUID.
+  const rawPositionText = norm(frontProposed.sourcePosition ?? frontProposed.jabatan ?? frontProposed.positionId ?? '')
+  const sourcePositionName = positionUuid
+    ? (positionNameOf(positionUuid, ctx) ?? (isUuid(rawPositionText) ? '' : rawPositionText))
+    : (isUuid(rawPositionText) ? '' : rawPositionText)
   return {
     nip: norm(frontProposed.nip),
     name: norm(frontProposed.name),
@@ -118,7 +140,7 @@ export function toRpcProposed(frontProposed, ctx = {}) {
     birth_date: norm(frontProposed.birthDate ?? frontProposed.tanggal_lahir ?? frontProposed.birth_date),
     retirement_date_override: norm(frontProposed.retirementDateOverride ?? frontProposed.override_tanggal_pensiun ?? ''),
     pension_override_reason: norm(frontProposed.pensionOverrideReason ?? frontProposed.keterangan_override_pensiun ?? ''),
-    source_position: norm(frontProposed.sourcePosition ?? frontProposed.jabatan ?? ''),
+    source_position: sourcePositionName,
     employment_status: norm(frontProposed.employmentStatus ?? frontProposed.status ?? 'Aktif') || 'Aktif',
     status_reason: norm(frontProposed.statusReason ?? frontProposed.alasan_nonaktif ?? frontProposed.status_reason ?? '') || null,
     status_reason_note: norm(frontProposed.statusReasonNote ?? frontProposed.keterangan_nonaktif ?? '') || null,
@@ -483,7 +505,8 @@ export function normalizeImportRow(raw, ctx = {}) {
   const name = get('nama', 'name')
   const unitRaw = get('unit_id', 'unit')
   const lokasiRaw = get('lokasi_id', 'lokasi_penempatan', 'lokasi')
-  const jabatanRaw = get('jabatan_id', 'jabatan', 'position')
+  const jabatanIdRaw = get('jabatan_id')
+  const jabatanNameRaw = get('jabatan', 'position')
   const birthRaw = get('tanggal_lahir', 'birth_date', 'tgl_lahir')
   const bank = get('bank')
   const account = get('no_rekening', 'account_number', 'no rekening')
@@ -513,11 +536,17 @@ export function normalizeImportRow(raw, ctx = {}) {
   if (!unitRaw) errors.push('Unit wajib (nama/ID)')
   else if (!unitUuid) errors.push(`Unit tidak dikenal: ${unitRaw}`)
 
+  // Prioritas: jabatan_id (UUID master) dulu, fallback ke kolom nama jabatan.
   let positionUuid = null
-  if (jabatanRaw) {
-    positionUuid = resolvePositionUuid(jabatanRaw, ctx)
-    if (!positionUuid) errors.push(`Jabatan tidak dikenal: ${jabatanRaw}`)
+  if (jabatanIdRaw) positionUuid = resolvePositionUuid(jabatanIdRaw, ctx)
+  if (!positionUuid && jabatanNameRaw) positionUuid = resolvePositionUuid(jabatanNameRaw, ctx)
+  if ((jabatanIdRaw || jabatanNameRaw) && !positionUuid) {
+    errors.push(`Jabatan tidak dikenal: ${jabatanIdRaw || jabatanNameRaw}`)
   }
+  // source_position selalu nama jabatan, tidak pernah UUID.
+  const sourcePositionName = positionUuid
+    ? (positionNameOf(positionUuid, ctx) ?? '')
+    : (isUuid(jabatanNameRaw) ? '' : jabatanNameRaw)
 
   let locationUuid = null
   if (lokasiRaw) {
@@ -540,7 +569,7 @@ export function normalizeImportRow(raw, ctx = {}) {
     birth_date: birth || '',
     retirement_date_override: get('override_tanggal_pensiun') || '',
     pension_override_reason: get('keterangan_override_pensiun'),
-    source_position: jabatanRaw,
+    source_position: sourcePositionName,
     employment_status: st,
     status_reason: get('alasan_nonaktif') || null,
     status_reason_note: get('keterangan_nonaktif') || null,

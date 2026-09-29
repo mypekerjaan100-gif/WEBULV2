@@ -269,9 +269,17 @@ export default function SLAPelayananTeknikPage({
               id: p.id,
               name: p.name,
               contractId: p.contract_id,
+              up3Id: p.up3_id ?? null,
+              legacyKey: p.legacy_key ?? null,
+              status: p.status ?? 'Aktif',
+              order: p.sort_order ?? 0,
+              fromSupabase: true,
             }))
             const newPositions = supabasePositions.filter((p) => !existing.has(p.id))
-            return newPositions.length ? [...prev, ...newPositions] : prev
+            if (!newPositions.length) return prev
+            // Refresh data Supabase yang sudah ada (nama/status bisa berubah)
+            const incomingById = new Map(supabasePositions.map((p) => [p.id, p]))
+            return prev.map((j) => (incomingById.has(j.id) ? { ...j, ...incomingById.get(j.id) } : j)).concat(newPositions)
           })
         }
         setEmployeesLoaded(true)

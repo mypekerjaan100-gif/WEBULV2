@@ -159,6 +159,15 @@ export default function SLADatabasePegawai({
   const scopedUnitIds = scopeUnitIds.filter(Boolean)
   const scopedJabatan = jabatanOfScope(jabatan, contractScope.contractId, up3Id)
   const jabatanById = new Map(scopedJabatan.map((j) => [j.id, j]))
+  // Positions dari Supabase memakai UUID + contract_id/up3_id UUID sehingga
+  // lolos dari filter scope string lokal. Lookup khusus agar position_id
+  // yang tersimpan di DB tetap terresolve ke nama jabatan.
+  const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const supabaseJabatan = (jabatan ?? [])
+    .filter((j) => UUID_LIKE.test(j.id ?? '') && (j.status ?? 'Aktif') === 'Aktif')
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.name < b.name ? -1 : 1))
+  const supabaseJabatanById = new Map(supabaseJabatan.map((j) => [j.id, j]))
+  const jabatanOptions = [...supabaseJabatan, ...scopedJabatan.filter((j) => !UUID_LIKE.test(j.id ?? ''))]
   const scopedLocations = locations.filter(
     (l) =>
       l.contractId === resolvedContractUuid &&
@@ -176,7 +185,14 @@ export default function SLADatabasePegawai({
     if (localUnit) return currentNameOf(localUnit) || id
     return id
   }
-  const positionName = (posId) => jabatanById.get(posId)?.name ?? null
+  const positionName = (posId) => {
+    if (!posId) return null
+    if (UUID_LIKE.test(String(posId))) return supabaseJabatanById.get(posId)?.name ?? null
+    return jabatanById.get(posId)?.name ?? null
+  }
+  const isUuidLike = (value) => UUID_LIKE.test(String(value ?? ''))
+  const displaySourcePosition = (source) =>
+    source && !isUuidLike(source) ? source : ''
   const locationName = (locId) => {
     const location = locationById.get(locId)
     if (!location) return null
@@ -436,9 +452,9 @@ export default function SLADatabasePegawai({
   })
 
   const buildRpcCtx = () => {
-    const positions = scopedJabatan
-      .filter((j) => /^[0-9a-f]{8}-/i.test(j.id))
-      .map((j) => ({ id: j.id, name: j.name }))
+    // Hanya UUID positions (master Supabase) yang valid untuk server.
+    // ID legacy lokal tidak bisa dikirim sebagai position_id (kolom UUID).
+    const positions = supabaseJabatan.map((j) => ({ id: j.id, name: j.name }))
     return {
       positions,
       jabatanById,
@@ -782,7 +798,7 @@ export default function SLADatabasePegawai({
             value={form.positionId ?? ''}
             onChange={(e) => setForm((prev) => ({ ...prev, positionId: e.target.value }))}
           >
-            {scopedJabatan.map((j) => (
+            {jabatanOptions.map((j) => (
               <option key={j.id} value={j.id}>
                 {j.name}
               </option>
@@ -1094,7 +1110,6 @@ export default function SLADatabasePegawai({
   }
 
   const handleDownloadTemplateWithData = () => {
-    const isUuidLike = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? ''))
     const rows = filtered.map((row) => {
       const data = row.employee ?? row.request.proposed
       const rate = data.hourlyRateHistory ? hourlyRateFor(data, today()) : (data.hourlyRate ?? '')
@@ -1106,7 +1121,7 @@ export default function SLADatabasePegawai({
         lokasi_id: isUuidLike(data.workLocationId) ? data.workLocationId : '',
         lokasi_penempatan: data.workLocationId ? (locationName(data.workLocationId) ?? '') : '',
         jabatan_id: isUuidLike(data.positionId) ? data.positionId : '',
-        jabatan: positionName(data.positionId) ?? data.sourcePosition ?? '',
+        jabatan: positionName(data.positionId) ?? displaySourcePosition(data.sourcePosition),
         tanggal_lahir: data.birthDate ?? '',
         bank: data.bank ?? '',
         no_rekening: data.accountNumber ?? '',
@@ -1467,7 +1482,7 @@ export default function SLADatabasePegawai({
               }}
             >
               <option value="">Semua</option>
-              {scopedJabatan.map((j) => (
+              {jabatanOptions.map((j) => (
                 <option key={j.id} value={j.id}>
                   {j.name}
                 </option>
@@ -1613,8 +1628,8 @@ export default function SLADatabasePegawai({
                     {positionName(data.positionId) ?? (
                       <span className="sla-status-badge sla-status-draft">Belum Ditentukan</span>
                     )}
-                    {data.sourcePosition && data.sourcePosition !== (positionName(data.positionId) ?? '') && (
-                      <div className="sla-table-sub">CSV: {data.sourcePosition}</div>
+                    {displaySourcePosition(data.sourcePosition) && displaySourcePosition(data.sourcePosition) !== (positionName(data.positionId) ?? '') && (
+                      <div className="sla-table-sub">CSV: {displaySourcePosition(data.sourcePosition)}</div>
                     )}
                   </td>
                   <td>{data.birthDate || '\u2014'}</td>
