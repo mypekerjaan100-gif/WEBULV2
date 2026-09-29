@@ -35,7 +35,9 @@ async function rpc(name, parameters) {
   if (error) {
     const message = error.message || `${name} gagal.`
     if (/submission deadline has passed|batas pengajuan telah lewat/i.test(message)) {
-      throw new Error('Batas pengajuan telah lewat. Pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.')
+      if (/batas pengajuan/i.test(message)) throw new Error(message)
+      const days = message.match(/(\d+)\s*days?/i)?.[1]
+      throw new Error(`Batas pengajuan${days ? ` ${days} hari` : ''} telah lewat. Pilih tanggal lembur yang masih berada dalam batas pengajuan.`)
     }
     if (/revision deadline has expired|batas revisi telah/i.test(message)) {
       throw new Error('Batas revisi telah lewat. Transaksi Lembur sudah kedaluwarsa.')
@@ -43,6 +45,57 @@ async function rpc(name, parameters) {
     throw new Error(message)
   }
   return data
+}
+
+function mapInitialDeadlineConfig(row) {
+  if (!row) return null
+  return {
+    contractId: row.contract_id,
+    up3Id: row.up3_id,
+    configExists: Boolean(row.config_exists),
+    initialSubmissionDays: Number(row.initial_submission_days),
+    temporarySubmissionDays: row.temporary_submission_days == null
+      ? null
+      : Number(row.temporary_submission_days),
+    temporaryEffectiveUntil: row.temporary_effective_until,
+    temporaryReason: row.temporary_reason,
+    temporaryIsActive: Boolean(row.temporary_is_active),
+    effectiveSubmissionDays: Number(row.effective_submission_days),
+    overtimeDate: row.overtime_date,
+    effectiveDeadlineDate: row.effective_deadline_date,
+    effectiveDeadlineAt: row.effective_deadline_at,
+    asOf: row.as_of,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+    revision: row.revision == null ? null : Number(row.revision),
+  }
+}
+
+export async function getOvertimeInitialDeadlineConfig({ contractId, up3Id, overtimeDate }) {
+  const rows = await rpc('get_overtime_initial_deadline_config', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_overtime_date: overtimeDate,
+  })
+  return mapInitialDeadlineConfig((rows ?? [])[0])
+}
+
+export async function setOvertimeInitialDeadlineConfig({
+  contractId,
+  up3Id,
+  initialSubmissionDays,
+  temporarySubmissionDays = null,
+  temporaryEffectiveUntil = null,
+  temporaryReason = null,
+}) {
+  return rpc('set_overtime_initial_deadline_config', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_initial_submission_days: initialSubmissionDays,
+    p_temporary_submission_days: temporarySubmissionDays,
+    p_temporary_effective_until: temporaryEffectiveUntil,
+    p_temporary_reason: temporaryReason,
+  })
 }
 
 export async function expireInitialOvertimeDrafts({ contractId, up3Id, unitId }) {

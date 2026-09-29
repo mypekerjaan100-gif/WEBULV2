@@ -773,6 +773,7 @@ export const pelayananTeknikModules = [
   { id: 'master-jabatan', name: 'Master Jabatan', adminOnly: true },
   { id: 'database-pegawai', name: 'Master Pegawai' },
   { id: 'pengaturan-sla', name: 'Pengaturan SLA', adminOnly: true },
+  { id: 'pengaturan-lembur', name: 'Pengaturan Lembur', adminOnly: true },
   { id: 'master-penandatangan', name: 'Master Penandatangan', adminOnly: true },
 ]
 

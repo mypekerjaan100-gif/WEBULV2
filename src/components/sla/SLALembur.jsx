@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { listReplacementEmployees, approveOvertime, rejectOvertime, resubmitOvertime, softDeleteOvertimeActivity, listOvertimeHistory } from '../../data/overtimeReplacementRepository.js'
+import {
+  approveOvertime,
+  getOvertimeInitialDeadlineConfig,
+  listOvertimeHistory,
+  listReplacementEmployees,
+  rejectOvertime,
+  resubmitOvertime,
+  softDeleteOvertimeActivity,
+} from '../../data/overtimeReplacementRepository.js'
 import {
   automaticReplacementDescription,
   buildPontianakRange,
@@ -23,17 +31,12 @@ import {
 } from '../ui/Primitives.jsx'
 
 const formatRp = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })
-const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_TIMEOUT_MS = 2147483647
 const WORK_TITLE_PLACEHOLDERS = {
   GARDU: 'Contoh: Pemeliharaan Gardu',
   JTM: 'Contoh: Penanganan Tiang Tumbang',
   JTR: 'Contoh: Perbaikan JTR',
   ROW: 'Contoh: Pembersihan ROW',
-}
-
-function initialDeadlineFor(date) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) return null
-  return new Date(new Date(`${date}T00:00:00+07:00`).getTime() + (8 * DAY_MS) - 1)
 }
 
 function formatPontianakDate(value) {
@@ -45,17 +48,13 @@ function formatPontianakDate(value) {
   }).format(value)
 }
 
-function initialDeadlineMessage(date) {
-  const deadline = initialDeadlineFor(date)
-  if (!deadline) return ''
-  return `Batas D+7 lembur ${formatPontianakDate(new Date(`${date}T12:00:00+07:00`))}: ${formatPontianakDate(deadline)}, pukul 23:59.`
+function initialDeadlineMessage(date, deadlineInfo) {
+  if (!deadlineInfo?.effectiveDeadlineAt || deadlineInfo.overtimeDate !== date) return ''
+  return `Batas H+${deadlineInfo.effectiveSubmissionDays} lembur ${formatPontianakDate(new Date(`${date}T12:00:00+07:00`))}: ${formatPontianakDate(new Date(deadlineInfo.effectiveDeadlineAt))}, pukul 23:59 WITA.`
 }
 
 function recordIsExpired(record) {
   if (record.status === 'CLOSED' && record.closureReason === 'EXPIRED') return true
-  if (record.status === 'DRAFT' && record.submissionDeadlineAt) {
-    return new Date(record.submissionDeadlineAt) < new Date()
-  }
   return record.status === 'CORRECTION_REQUIRED'
     && record.revisionDeadlineAt
     && new Date(record.revisionDeadlineAt) < new Date()
@@ -165,7 +164,7 @@ export default function SLALembur({
   const [evidence, setEvidence] = useState([])
   const [files, setFiles] = useState({})
   const [message, setMessage] = useState(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [isSubmitting, setSubmitting] = useState(false)
   const [dirty, setDirty] = useState(true)
   const activeActivityIdRef = useRef(activeActivityId)
   activeActivityIdRef.current = activeActivityId
@@ -191,6 +190,12 @@ export default function SLALembur({
   const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [toast, setToast] = useState('')
+  const [deadlineInfo, setDeadlineInfo] = useState(null)
+  const [deadlineLoadStatus, setDeadlineLoadStatus] = useState('idle')
+  const [deadlineLoadError, setDeadlineLoadError] = useState('')
+  const [deadlineReloadToken, setDeadlineReloadToken] = useState(0)
+  const [deadlineClock, setDeadlineClock] = useState(() => Date.now())
+  const [deadlineServerOffset, setDeadlineServerOffset] = useState(0)
   const handledApprovalToken = useRef(null)
 
   useEffect(() => {
@@ -212,6 +217,66 @@ export default function SLALembur({
     const timeoutId = window.setTimeout(() => setToast(''), 3500)
     return () => window.clearTimeout(timeoutId)
   }, [toast])
+
+  useEffect(() => {
+    if (!formOpen || formStep !== 'form' || !/^\d{4}-\d{2}-\d{2}$/.test(draft.date ?? '') || !contractScope.contractId || !up3Id) {
+      setDeadlineInfo(null)
+      setDeadlineLoadStatus('idle')
+      setDeadlineLoadError('')
+      return undefined
+    }
+    let cancelled = false
+    const requestedAt = Date.now()
+    setDeadlineInfo(null)
+    setDeadlineLoadStatus('loading')
+    setDeadlineLoadError('')
+    getOvertimeInitialDeadlineConfig({
+      contractId: contractScope.contractId,
+      up3Id,
+      overtimeDate: draft.date,
+    })
+      .then((next) => {
+        if (cancelled) return
+        if (!next) throw new Error('Deadline pengajuan tidak tersedia.')
+        const receivedAt = Date.now()
+        const serverOffset = new Date(next.asOf).getTime() - Math.round((requestedAt + receivedAt) / 2)
+        setDeadlineInfo(next)
+        setDeadlineServerOffset(serverOffset)
+        setDeadlineClock(Date.now() + serverOffset)
+        setDeadlineLoadStatus('ready')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setDeadlineLoadError(error.message || 'Gagal memverifikasi deadline pengajuan.')
+        setDeadlineLoadStatus('error')
+      })
+    return () => { cancelled = true }
+  }, [formOpen, formStep, draft.date, contractScope.contractId, up3Id, deadlineReloadToken])
+
+  useEffect(() => {
+    if (!deadlineInfo?.temporaryIsActive || !deadlineInfo.temporaryEffectiveUntil) return undefined
+    const delay = new Date(deadlineInfo.temporaryEffectiveUntil).getTime() - (Date.now() + deadlineServerOffset) + 1000
+    if (delay <= 0) {
+      setDeadlineReloadToken((value) => value + 1)
+      return undefined
+    }
+    const timeoutId = window.setTimeout(
+      () => setDeadlineReloadToken((value) => value + 1),
+      Math.min(delay, MAX_TIMEOUT_MS),
+    )
+    return () => window.clearTimeout(timeoutId)
+  }, [deadlineInfo?.temporaryIsActive, deadlineInfo?.temporaryEffectiveUntil, deadlineServerOffset])
+
+  useEffect(() => {
+    if (!deadlineInfo?.effectiveDeadlineAt) return undefined
+    const delay = new Date(deadlineInfo.effectiveDeadlineAt).getTime() - (Date.now() + deadlineServerOffset) + 1
+    if (delay <= 0) return undefined
+    const timeoutId = window.setTimeout(() => {
+      if (delay > MAX_TIMEOUT_MS) setDeadlineReloadToken((value) => value + 1)
+      else setDeadlineClock(Date.now() + deadlineServerOffset)
+    }, Math.min(delay, MAX_TIMEOUT_MS))
+    return () => window.clearTimeout(timeoutId)
+  }, [deadlineInfo?.effectiveDeadlineAt, deadlineServerOffset])
 
   const range = buildPontianakRange(draft.date, draft.startTime, draft.endTime)
   const replacedEmployee = employeeOptions.find((e) => e.id === draft.replacedEmployeeId)
@@ -241,9 +306,14 @@ export default function SLALembur({
   const evidenceRequirements = isWork ? workEvidenceReq : replacementEvidenceReq
   const activeRecord = activeActivityId ? records.find((record) => record.id === activeActivityId) : null
   const isRevision = activeRecord?.status === 'CORRECTION_REQUIRED'
-  const initialDeadline = initialDeadlineFor(draft.date)
-  const initialDeadlinePassed = !isRevision && initialDeadline && initialDeadline < new Date()
-  const activeInitialExpired = activeRecord?.status === 'DRAFT' && recordIsExpired(activeRecord)
+  const initialDeadline = deadlineInfo?.overtimeDate === draft.date && deadlineInfo.effectiveDeadlineAt
+    ? new Date(deadlineInfo.effectiveDeadlineAt)
+    : null
+  const deadlineReady = deadlineLoadStatus === 'ready' && deadlineInfo?.overtimeDate === draft.date
+  const initialDeadlinePassed = Boolean(!isRevision && initialDeadline && initialDeadline.getTime() < deadlineClock)
+  const deadlineUnavailable = Boolean(!isRevision && draft.date && !deadlineReady)
+  const submitting = isSubmitting || deadlineUnavailable
+  const activeInitialExpired = activeRecord?.status === 'DRAFT' && initialDeadlinePassed
   const activeRevisionExpired = isRevision && recordIsExpired(activeRecord)
   const formReadOnly = activeInitialExpired || activeRevisionExpired
 
@@ -450,7 +520,8 @@ export default function SLALembur({
   }
 
   const validateDraft = () => {
-    if (initialDeadlinePassed) return `Batas pengajuan telah lewat. ${initialDeadlineMessage(draft.date)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan 7 hari.`
+    if (!isRevision && draft.date && !deadlineReady) return deadlineLoadError || 'Deadline pengajuan masih diverifikasi. Coba lagi setelah proses selesai.'
+    if (initialDeadlinePassed) return `Batas pengajuan telah lewat. ${initialDeadlineMessage(draft.date, deadlineInfo)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan H+${deadlineInfo.effectiveSubmissionDays}.`
     if (isReplacement) return validateReplacement()
     if (isWork) return validateWork()
     return 'Pilih jenis lembur.'
@@ -503,7 +574,7 @@ export default function SLALembur({
   }
 
   const stageEvidence = async (requirement, file) => {
-    if (!file || initialDeadlinePassed || formReadOnly) return
+    if (!file || initialDeadlinePassed || deadlineUnavailable || formReadOnly) return
     setSubmitting(true)
     try {
       const { prepareOvertimeEvidenceFile } = await import('../../data/overtimeEvidenceRepository.js')
@@ -904,9 +975,15 @@ export default function SLALembur({
                      {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
                       {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea className="sla-context-select" value={draft.description} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
                      {replacementDescription && <div className="lembur-description-preview lembur-grid-full"><span>Keterangan otomatis</span>{replacementDescription}</div>}
-                       {draft.date && !isRevision && (initialDeadlinePassed ? (
-                         <Alert tone="danger" title="Batas pengajuan telah lewat" className="lembur-deadline-card">{initialDeadlineMessage(draft.date)} Pilih tanggal yang masih dalam batas D+7.</Alert>
-                       ) : <Alert tone="info" className="lembur-deadline-helper">Batas pengajuan: {formatPontianakDate(initialDeadline)}, 23:59</Alert>)}
+                        {draft.date && !isRevision && !deadlineReady && deadlineLoadStatus !== 'error' && (
+                          <Alert tone="info" className="lembur-deadline-helper">Memverifikasi batas pengajuan dari server...</Alert>
+                        )}
+                        {draft.date && !isRevision && deadlineLoadStatus === 'error' && (
+                          <Alert tone="danger" title="Batas pengajuan tidak dapat diverifikasi" className="lembur-deadline-card">{deadlineLoadError}</Alert>
+                        )}
+                        {draft.date && !isRevision && deadlineReady && (initialDeadlinePassed ? (
+                          <Alert tone="danger" title="Batas pengajuan telah lewat" className="lembur-deadline-card">{initialDeadlineMessage(draft.date, deadlineInfo)} Pilih tanggal yang masih dalam batas H+{deadlineInfo.effectiveSubmissionDays}.</Alert>
+                        ) : <Alert tone="info" className="lembur-deadline-helper">Batas pengajuan H+{deadlineInfo.effectiveSubmissionDays}: {formatPontianakDate(initialDeadline)}, pukul 23:59 WITA{deadlineInfo.temporaryIsActive ? ' · toleransi sementara aktif' : ''}</Alert>)}
                        {activeRevisionExpired && <Alert tone="danger" title="Batas revisi telah lewat" className="lembur-deadline-card">Transaksi Lembur sudah kedaluwarsa.</Alert>}
                   </div>
                 </section>
@@ -932,7 +1009,7 @@ export default function SLALembur({
                 </div>
 
                  {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <Alert tone="info" className="lembur-message">{message}</Alert>}
-                 <div className="lembur-form-actions"><Button variant="secondary" disabled={submitting||initialDeadlinePassed||formReadOnly} onClick={saveDraft}>{submitting?'Memproses...':'Simpan Draft'}</Button><div className="lembur-form-actions-right"><Button variant="ghost" onClick={closeForm}>Batal</Button><Button variant="primary" disabled={submitting||initialDeadlinePassed||formReadOnly||!evidenceComplete} onClick={submitDraft}>Ajukan Lembur</Button></div></div>
+                  <div className="lembur-form-actions"><Button variant="secondary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly} onClick={saveDraft}>{isSubmitting?'Memproses...':'Simpan Draft'}</Button><div className="lembur-form-actions-right"><Button variant="ghost" onClick={closeForm}>Batal</Button><Button variant="primary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly||!evidenceComplete} onClick={submitDraft}>Ajukan Lembur</Button></div></div>
               </fieldset>
               </>
               )}

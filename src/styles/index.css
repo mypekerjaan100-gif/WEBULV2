@@ -9421,3 +9421,211 @@ summary:focus-visible {
   .fin-ref-period-head,
   .fin-ref-period-insight { align-items: flex-start; flex-direction: column; }
 }
+
+/* ---------- Pengaturan Lembur ---------- */
+.overtime-deadline-settings {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.overtime-deadline-settings-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.overtime-deadline-settings-kicker {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.overtime-deadline-settings-header h2 {
+  margin: 3px 0 2px;
+  color: var(--heading);
+  font-size: 22px;
+  line-height: 30px;
+}
+.overtime-deadline-settings-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.overtime-deadline-access {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.overtime-deadline-access.is-editable {
+  border-color: var(--tone-success-border);
+  background: var(--tone-success-bg);
+  color: var(--tone-success-text);
+}
+.overtime-deadline-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.overtime-deadline-summary article {
+  display: grid;
+  gap: 4px;
+  min-height: 108px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-subtle);
+}
+.overtime-deadline-summary article.is-temporary {
+  border-color: var(--tone-warning-border);
+  background: var(--tone-warning-bg);
+}
+.overtime-deadline-summary span,
+.overtime-deadline-summary small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.overtime-deadline-summary strong {
+  align-self: end;
+  color: var(--heading);
+  font-size: 20px;
+  line-height: 26px;
+}
+.overtime-deadline-form {
+  display: grid;
+  gap: 12px;
+}
+.overtime-deadline-form-section {
+  display: grid;
+  gap: 15px;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.overtime-deadline-form-heading {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.overtime-deadline-form-heading > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--primary-subtle);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 800;
+}
+.overtime-deadline-form-heading h3 {
+  margin: 0;
+  color: var(--heading);
+  font-size: 15px;
+}
+.overtime-deadline-form-heading p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.overtime-deadline-field {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.overtime-deadline-field > small {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+.overtime-deadline-days-input {
+  display: grid;
+  grid-template-columns: auto 90px auto;
+  gap: 8px;
+  align-items: center;
+  width: max-content;
+}
+.overtime-deadline-days-input strong {
+  color: var(--heading);
+  font-size: 17px;
+}
+.overtime-deadline-days-input small {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.overtime-deadline-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: fit-content;
+  cursor: pointer;
+}
+.overtime-deadline-toggle input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+}
+.overtime-deadline-toggle span { display: grid; gap: 2px; }
+.overtime-deadline-toggle strong { color: var(--text-primary); font-size: 12px; }
+.overtime-deadline-toggle small { color: var(--text-muted); font-size: 10px; }
+.overtime-deadline-temporary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.overtime-deadline-temporary-grid .is-wide { grid-column: 1 / -1; }
+.overtime-deadline-form-footer {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 2px;
+}
+.overtime-deadline-form-footer > div {
+  display: flex;
+  max-width: 720px;
+  gap: 7px;
+  align-items: flex-start;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 15px;
+}
+.overtime-deadline-form-footer .ui-icon { flex: 0 0 auto; margin-top: 1px; }
+.overtime-deadline-audit-note {
+  margin: -4px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: right;
+}
+@media (max-width: 760px) {
+  .overtime-deadline-settings { padding: 15px; }
+  .overtime-deadline-settings-header,
+  .overtime-deadline-form-footer { align-items: stretch; flex-direction: column; }
+  .overtime-deadline-access { align-self: flex-start; }
+  .overtime-deadline-summary,
+  .overtime-deadline-temporary-grid { grid-template-columns: 1fr; }
+  .overtime-deadline-temporary-grid .is-wide { grid-column: auto; }
+  .overtime-deadline-form-footer .ui-button { width: 100%; }
+}
