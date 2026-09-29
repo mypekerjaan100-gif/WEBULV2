@@ -25,6 +25,19 @@ import {
 } from '../../data/pensiunPelayananTeknik.js'
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 import { buildMasterPegawaiXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
+import {
+  approveEmployeeChange,
+  downloadImportTemplate,
+  importEmployeesBulk,
+  normalizeImportRow,
+  parseImportFile,
+  rejectEmployeeChange,
+  resolvePositionUuid,
+  setPensionPolicy,
+  submitAddWithSnapshot,
+  submitEditWithSnapshot,
+  toRpcProposed,
+} from '../../data/employeeMutationRepository.js'
 
 const inputClass = 'sla-input sla-input-text'
 const PAGE_SIZE = 20
@@ -82,6 +95,9 @@ export default function SLADatabasePegawai({
   onPensionPoliciesChange,
   locations,
   orgMap,
+  onRefreshEmployees,
+  onRefreshChangeRequests,
+  onRefreshPensionPolicies,
 }) {
   const [search, setSearch] = useState('')
   const [filterJabatan, setFilterJabatan] = useState('')
@@ -109,6 +125,15 @@ export default function SLADatabasePegawai({
   )
   const [formError, setFormError] = useState('')
   const [rejectNotes, setRejectNotes] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [actionMessage, setActionMessage] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importRows, setImportRows] = useState([])
+  const [importFileName, setImportFileName] = useState('')
+  const [importParsing, setImportParsing] = useState(false)
+  const [importProcessing, setImportProcessing] = useState(false)
+  const [importResult, setImportResult] = useState(null)
 
   const unitById = new Map(units.map((u) => [u.id, u]))
   const orgUnitByUuid = orgMap
@@ -401,7 +426,20 @@ export default function SLADatabasePegawai({
     statusEffectiveDate: form.employmentStatus === 'Nonaktif' ? form.statusEffectiveDate : null,
   })
 
-  const submitChange = (mode) => {
+  const buildRpcCtx = () => {
+    const positions = scopedJabatan
+      .filter((j) => /^[0-9a-f]{8}-/i.test(j.id))
+      .map((j) => ({ id: j.id, name: j.name }))
+    return {
+      positions,
+      jabatanById,
+      locations: scopedLocations,
+      orgMap,
+      units,
+    }
+  }
+
+  const submitChange = async (mode) => {
     const error = validate()
     if (error) {
       setFormError(error)
@@ -411,162 +449,108 @@ export default function SLADatabasePegawai({
       setFormError('Pegawai berada di luar scope UP3 yang dipilih.')
       return
     }
-    const proposed = proposedOf()
-    const now = today()
-    if (role === 'ulp') {
-      onChangeRequestsChange([
-        ...changeRequests,
-        {
-          id: `req-${Date.now().toString(36)}`,
-          type: mode,
-          employeeId: mode === 'edit' ? detail.row.employee.id : null,
-          proposed,
-          old: mode === 'edit' ? snapshotOf(detail.row.employee) : null,
-          status: 'Pending',
-          note: '',
-          contractId: resolvedContractUuid,
-          up3Id: resolvedUp3Uuid,
-          sourceUnitId: mode === 'edit' ? detail.row.employee.unitId : unitId,
-          targetUnitId: proposed.unitId,
-          createdBy: 'Admin ULP',
-          createdAt: now,
-          decidedBy: null,
-          decidedAt: null,
-        },
-      ])
-      setDetail(null)
+    if (!resolvedContractUuid || !resolvedUp3Uuid) {
+      setFormError('Scope kontrak/UP3 belum siap. Muat ulang halaman.')
       return
     }
-    if (mode === 'add') {
-      const employee = buildNewEmployee({
-        ...proposed,
-        contractId: resolvedContractUuid,
-        effectiveDate: now,
-      })
-      onEmployeesChange([...employees, employee])
-      onChangeRequestsChange([
-        ...changeRequests,
-        {
-          id: `req-${Date.now().toString(36)}`,
-          type: 'add',
-          employeeId: null,
-          proposed,
-          old: null,
-          status: 'Approved',
-          note: '',
-          contractId: resolvedContractUuid,
-          up3Id: resolvedUp3Uuid,
-          sourceUnitId: null,
-          targetUnitId: proposed.unitId,
-          createdBy: 'Admin UP3',
-          createdAt: now,
-          decidedBy: 'Admin UP3',
-          decidedAt: now,
-        },
-      ])
-    } else {
-      const employee = applyProposedChange(detail.row.employee, proposed, now)
-      onEmployeesChange(
-        employees.map((item) => (item.id === employee.id ? employee : item)),
-      )
-      onChangeRequestsChange([
-        ...changeRequests,
-        {
-          id: `req-${Date.now().toString(36)}`,
-          type: 'edit',
-          employeeId: employee.id,
-          proposed,
-          old: snapshotOf(detail.row.employee),
-          status: 'Approved',
-          note: '',
-          contractId: resolvedContractUuid,
-          up3Id: resolvedUp3Uuid,
-          sourceUnitId: detail.row.employee.unitId,
-          targetUnitId: proposed.unitId,
-          createdBy: 'Admin UP3',
-          createdAt: now,
-          decidedBy: 'Admin UP3',
-          decidedAt: now,
-        },
-      ])
+    const proposed = proposedOf()
+    const rpcProposed = toRpcProposed(proposed, buildRpcCtx())
+    if (!rpcProposed.unit_id) {
+      setFormError('Unit tidak valid.')
+      return
     }
-    setDetail(null)
+    setSaving(true)
+    setFormError('')
+    setActionError('')
+    setActionMessage('')
+    try {
+      if (mode === 'add') {
+        await submitAddWithSnapshot({
+          proposedRpc: rpcProposed,
+          contractId: resolvedContractUuid,
+          up3Id: resolvedUp3Uuid,
+        })
+        setActionMessage(role === 'ulp' ? 'Pengajuan tambah pegawai dikirim (Pending).' : 'Pegawai baru tersimpan ke Supabase.')
+      } else {
+        await submitEditWithSnapshot({
+          employee: detail.row.employee,
+          proposedRpc: rpcProposed,
+          contractId: resolvedContractUuid,
+          up3Id: resolvedUp3Uuid,
+        })
+        setActionMessage(role === 'ulp' ? 'Pengajuan edit dikirim (Pending).' : 'Perubahan pegawai tersimpan ke Supabase.')
+      }
+      setDetail(null)
+      await onRefreshEmployees?.()
+    } catch (e) {
+      setFormError(e.message || 'Gagal menyimpan pegawai.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const submitPensionPolicy = () => {
+  const submitPensionPolicy = async () => {
     const age = Number(pensionForm.retirementAge)
     const start = pensionForm.periodStart.trim()
     if (!Number.isFinite(age) || age < 1) return
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return
-    onPensionPoliciesChange(
-      changePensionPolicy(
-        pensionPolicies,
-        contractScope.contractId,
-        up3Id,
-        {
-          retirementAge: age,
-          periodStart: start,
-          keterangan: pensionForm.keterangan.trim(),
-        },
-        pensionPolicy,
-      ),
-    )
-    setPensionForm({ retirementAge: '', periodStart: start, keterangan: '' })
-  }
-
-  const approveRequest = (req) => {
-    if (
-      role !== 'up3' ||
-      req.status !== 'Pending' ||
-      req.contractId !== resolvedContractUuid ||
-      req.up3Id !== resolvedUp3Uuid
-    ) {
+    if (!resolvedContractUuid || !resolvedUp3Uuid) {
+      setActionError('Scope kontrak/UP3 belum siap.')
       return
     }
-    const now = today()
-    if (req.type === 'add') {
-      const employee = buildNewEmployee({
-        ...req.proposed,
-        contractId: req.contractId ?? resolvedContractUuid,
-        up3Id: req.up3Id ?? resolvedUp3Uuid,
-        effectiveDate: now,
+    setSaving(true)
+    setActionError('')
+    try {
+      await setPensionPolicy({
+        contractId: resolvedContractUuid,
+        up3Id: resolvedUp3Uuid,
+        retirementAge: age,
+        periodStart: start,
+        note: pensionForm.keterangan.trim(),
       })
-      onEmployeesChange([...employees, employee])
-    } else {
-      const employee = applyProposedChange(
-        employees.find((item) => item.id === req.employeeId),
-        req.proposed,
-        now,
-      )
-      onEmployeesChange(employees.map((item) => (item.id === employee.id ? employee : item)))
+      setPensionForm({ retirementAge: '', periodStart: start, keterangan: '' })
+      setActionMessage('Kebijakan pensiun tersimpan ke Supabase.')
+      await onRefreshPensionPolicies?.()
+    } catch (e) {
+      setActionError(e.message || 'Gagal menyimpan kebijakan pensiun.')
+    } finally {
+      setSaving(false)
     }
-    onChangeRequestsChange(
-      changeRequests.map((item) =>
-        item.id === req.id
-          ? { ...item, status: 'Approved', decidedBy: 'Admin UP3', decidedAt: now }
-          : item,
-      ),
-    )
   }
 
-  const rejectRequest = (req) => {
-    if (
-      role !== 'up3' ||
-      req.status !== 'Pending' ||
-      req.contractId !== resolvedContractUuid ||
-      req.up3Id !== resolvedUp3Uuid
-    ) {
+  const approveRequest = async (req) => {
+    if (role !== 'up3' || req.status !== 'Pending') return
+    setSaving(true)
+    setActionError('')
+    try {
+      await approveEmployeeChange(req.id)
+      setActionMessage(`Pengajuan ${req.proposed?.nip ?? ''} disetujui dan tersimpan.`)
+      await onRefreshEmployees?.()
+    } catch (e) {
+      setActionError(e.message || 'Gagal approve.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const rejectRequest = async (req) => {
+    if (role !== 'up3' || req.status !== 'Pending') return
+    const note = rejectNotes[req.id]?.trim()
+    if (!note) {
+      setActionError('Catatan wajib diisi untuk Reject.')
       return
     }
-    const note = rejectNotes[req.id]?.trim()
-    if (!note) return
-    onChangeRequestsChange(
-      changeRequests.map((item) =>
-        item.id === req.id
-          ? { ...item, status: 'Rejected', note, decidedBy: 'Admin UP3', decidedAt: today() }
-          : item,
-      ),
-    )
+    setSaving(true)
+    setActionError('')
+    try {
+      await rejectEmployeeChange(req.id, note)
+      setActionMessage(`Pengajuan ${req.proposed?.nip ?? ''} ditolak.`)
+      await onRefreshChangeRequests?.()
+    } catch (e) {
+      setActionError(e.message || 'Gagal reject.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const pendingRequests = changeRequests
@@ -1078,6 +1062,65 @@ export default function SLADatabasePegawai({
     </div>
   )
 
+  const handleImportFile = async (file) => {
+    if (!file) return
+    setImportParsing(true)
+    setImportResult(null)
+    setActionError('')
+    try {
+      const rawRows = await parseImportFile(file)
+      const ctx = buildRpcCtx()
+      const parsed = rawRows.map((raw) => {
+        const { rpc, errors } = normalizeImportRow(raw, ctx)
+        return { row: raw.__row, rpc, errors, raw }
+      })
+      setImportRows(parsed)
+      setImportFileName(file.name)
+    } catch (e) {
+      setActionError(e.message || 'Gagal membaca file import.')
+      setImportRows([])
+    } finally {
+      setImportParsing(false)
+    }
+  }
+
+  const handleProcessImport = async () => {
+    const valid = importRows.filter((r) => r.errors.length === 0)
+    if (!valid.length) {
+      setActionError('Tidak ada baris valid untuk diimport.')
+      return
+    }
+    if (!resolvedContractUuid || !resolvedUp3Uuid) {
+      setActionError('Scope kontrak/UP3 belum siap.')
+      return
+    }
+    setImportProcessing(true)
+    setActionError('')
+    try {
+      const result = await importEmployeesBulk({
+        contractId: resolvedContractUuid,
+        up3Id: resolvedUp3Uuid,
+        rows: valid.map((r) => r.rpc),
+      })
+      setImportResult(result)
+      setActionMessage(
+        role === 'ulp'
+          ? `Import selesai: ${result.pending ?? 0} pengajuan Pending.`
+          : `Import selesai: ${result.inserted ?? 0} baru, ${result.updated ?? 0} update.`,
+      )
+      await onRefreshEmployees?.()
+      if ((result.errors ?? []).length === 0) {
+        setImportOpen(false)
+        setImportRows([])
+        setImportFileName('')
+      }
+    } catch (e) {
+      setActionError(e.message || 'Gagal import.')
+    } finally {
+      setImportProcessing(false)
+    }
+  }
+
   return (
     <section className="sla-settings">
       <div className="sla-settings-toolbar">
@@ -1097,6 +1140,12 @@ export default function SLADatabasePegawai({
               Export Excel
             </button>
           )}
+          <button type="button" className="sla-btn" onClick={downloadImportTemplate}>
+            Template Import
+          </button>
+          <button type="button" className="sla-btn" onClick={() => { setImportOpen(true); setImportResult(null) }}>
+            Import Data
+          </button>
           <button type="button" className="sla-btn sla-btn-primary" onClick={openAdd}>
             + Tambah Pegawai
           </button>
@@ -1104,13 +1153,15 @@ export default function SLADatabasePegawai({
         </div>
       </div>
       <p className="sla-flat-note">
-        Data TAD Pelayanan Teknik (Data tersinkron, NIP sebagai kunci stabil) untuk kontrak{' '}
+        Data TAD Pelayanan Teknik (Data tersinkron Supabase, NIP sebagai kunci stabil) untuk kontrak{' '}
         {contractScope.contractName}. Unit/jabatan di-resolve dari Master
         Organisasi/Master Jabatan via unitId/positionId. Tarif Lembur/Jam
         disimpan sebagai histori. Admin ULP hanya mengelola unit sendiri dan
         perubahannya menjadi Pending Approval; perpindahan antar-ULP hanya Admin
-        UP3. Penambahan/edit pegawai masih disimpan di state lokal (prototype).
+        UP3. Tambah/edit/approval kini tersimpan ke Supabase.
       </p>
+      {actionMessage && <p className="sla-flat-note" style={{ color: 'var(--sla-success, #1a7f37)' }}>{actionMessage}</p>}
+      {actionError && <p className="sla-blocked-note">{actionError}</p>}
       {orgMap?.warning && (
         <p className="sla-blocked-note">
           Nama organisasi tidak dapat dimuat — Data tersinkron: {orgMap.warning}
@@ -1230,9 +1281,10 @@ export default function SLADatabasePegawai({
                   <button
                     type="button"
                     className="sla-btn sla-btn-primary"
+                    disabled={saving}
                     onClick={() => submitChange(detail.mode)}
                   >
-                    {detail.mode === 'add' ? 'Simpan Pegawai' : 'Simpan Perubahan'}
+                    {saving ? 'Menyimpan...' : detail.mode === 'add' ? 'Simpan Pegawai' : 'Simpan Perubahan'}
                   </button>
                 </>
               )}
@@ -1271,15 +1323,83 @@ export default function SLADatabasePegawai({
                     }
                   />
                 </div>
-                <button type="button" className="sla-btn sla-btn-primary" onClick={() => approveRequest(req)}>
-                  Approve
+                <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={() => approveRequest(req)}>
+                  {saving ? 'Memproses...' : 'Approve'}
                 </button>
-                <button type="button" className="sla-btn" onClick={() => rejectRequest(req)}>
+                <button type="button" className="sla-btn" disabled={saving} onClick={() => rejectRequest(req)}>
                   Reject
                 </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {importOpen && (
+        <div className="sla-modal-overlay" onClick={() => setImportOpen(false)}>
+          <div className="sla-modal sp-pegawai-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="sla-modal-header">
+              <h3 className="sla-modal-title">Import Data Pegawai (.xlsx / .csv)</h3>
+              <button type="button" className="sla-modal-close" onClick={() => setImportOpen(false)}>×</button>
+            </div>
+            <div className="sla-modal-body">
+              <p className="sla-flat-note">
+                Kunci: <strong>NIP</strong>. NIP baru = tambah, NIP existing = update.
+                Tanggal lahir format <strong>YYYY-MM-DD</strong>.
+                {role === 'ulp' ? ' Import ULP masuk Pending Approval.' : ' Import UP3 langsung tersimpan ke Supabase.'}
+              </p>
+              <div className="sla-master-actions" style={{ marginBottom: 12 }}>
+                <button type="button" className="sla-btn" onClick={downloadImportTemplate}>
+                  Download Template CSV
+                </button>
+                <label className="sla-btn" style={{ cursor: 'pointer' }}>
+                  Pilih File
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleImportFile(e.target.files?.[0])}
+                  />
+                </label>
+                {importFileName && <span className="sla-table-hint">{importFileName}</span>}
+              </div>
+              {importParsing && <p className="sla-flat-note">Membaca file...</p>}
+              {importRows.length > 0 && (
+                <div className="sla-history-list">
+                  <strong>Preview: {importRows.length} baris ({importRows.filter((r) => r.errors.length === 0).length} valid, {importRows.filter((r) => r.errors.length > 0).length} error)</strong>
+                  {importRows.slice(0, 20).map((r) => (
+                    <div key={r.row}>
+                      Baris {r.row}: {r.rpc.nip} — {r.rpc.name}{' '}
+                      {r.errors.length ? <span className="sla-status-badge sla-status-rejected">{r.errors.join('; ')}</span> : <span className="sla-status-badge sla-status-active">Valid</span>}
+                    </div>
+                  ))}
+                  {importRows.length > 20 && <div>... {importRows.length - 20} baris lain</div>}
+                </div>
+              )}
+              {importResult && (
+                <div className="sla-history-list">
+                  <strong>Hasil import</strong>
+                  <div>Baru: {importResult.inserted ?? 0} · Update: {importResult.updated ?? 0} · Pending: {importResult.pending ?? 0}</div>
+                  {(importResult.errors ?? []).slice(0, 10).map((e, i) => (
+                    <div key={i}>Baris {e.row} ({e.nip}): {e.error}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="sla-modal-actions">
+              <button type="button" className="sla-btn" onClick={() => setImportOpen(false)}>
+                Tutup
+              </button>
+              <button
+                type="button"
+                className="sla-btn sla-btn-primary"
+                disabled={importProcessing || !importRows.some((r) => r.errors.length === 0)}
+                onClick={handleProcessImport}
+              >
+                {importProcessing ? 'Mengimport...' : 'Proses Import'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -7,6 +7,10 @@ import {
   fetchPositionsFromSupabase,
 } from '../../data/employeeRepository.js'
 import {
+  fetchEmployeeChangeRequests,
+  fetchPensionPolicies,
+} from '../../data/employeeMutationRepository.js'
+import {
   createKantorJaga,
   deleteKantorJaga,
   fetchLocationsFromSupabase,
@@ -24,6 +28,7 @@ import SLAMasterJabatan from '../../components/sla/SLAMasterJabatan.jsx'
 import SLADatabasePegawai from '../../components/sla/SLADatabasePegawai.jsx'
 import SLAMasterPenandatangan from '../../components/sla/SLAMasterPenandatangan.jsx'
 import SLAPengaturanSLA from '../../components/sla/SLAPengaturanSLA.jsx'
+import SLAPengaturanLembur from '../../components/sla/SLAPengaturanLembur.jsx'
 import SLAVariableCost from '../../components/sla/SLAVariableCost.jsx'
 import SLALembur from '../../components/sla/SLALembur.jsx'
 import {
@@ -316,6 +321,45 @@ export default function SLAPelayananTeknikPage({
       })
     return () => { cancelled = true }
   }, [authUserId, up3Id, units])
+
+  const refreshEmployeeChangeRequests = useCallback(async () => {
+    if (!orgMap?.contractUuid || !orgMap?.up3Uuid) return
+    try {
+      const rows = await fetchEmployeeChangeRequests({
+        contractId: orgMap.contractUuid,
+        up3Id: orgMap.up3Uuid,
+      })
+      setChangeRequests(rows)
+    } catch {
+      // biarkan state lama agar UI tidak kosong saat RLS menolak
+    }
+  }, [orgMap?.contractUuid, orgMap?.up3Uuid])
+
+  useEffect(() => {
+    refreshEmployeeChangeRequests().catch(() => {})
+  }, [refreshEmployeeChangeRequests])
+
+  const refreshPensionPolicies = useCallback(async () => {
+    if (!orgMap?.contractUuid || !orgMap?.up3Uuid) return
+    try {
+      const rows = await fetchPensionPolicies({
+        contractId: orgMap.contractUuid,
+        up3Id: orgMap.up3Uuid,
+      })
+      if (rows.length) setPensionPolicies(rows)
+    } catch {
+      // fallback ke policy lokal
+    }
+  }, [orgMap?.contractUuid, orgMap?.up3Uuid])
+
+  useEffect(() => {
+    refreshPensionPolicies().catch(() => {})
+  }, [refreshPensionPolicies])
+
+  const refreshEmployees = useCallback(async () => {
+    setEmployeeReloadToken((t) => t + 1)
+    await refreshEmployeeChangeRequests()
+  }, [refreshEmployeeChangeRequests])
   const [pensionPolicies, setPensionPolicies] = useState(() =>
     initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id),
   )
@@ -880,7 +924,20 @@ export default function SLAPelayananTeknikPage({
         </label>
       )}
 
-      {moduleId === 'pengaturan-sla' ? (
+      {moduleId === 'pengaturan-lembur' && orgMapStatus === 'loading' ? (
+        <StatePanel state="loading" title="Memuat pengaturan Lembur" />
+      ) : moduleId === 'pengaturan-lembur' && (orgMapStatus === 'error' || !orgMap) ? (
+        <StatePanel state="error" title="Pengaturan Lembur tidak tersedia">
+          {orgMapError || 'Organisasi tidak tersedia.'}
+        </StatePanel>
+      ) : moduleId === 'pengaturan-lembur' ? (
+        <SLAPengaturanLembur
+          contractId={orgMap.contractUuid}
+          up3Id={orgMap.up3Uuid}
+          up3Name={orgMap.units.find((unit) => unit.uuid === orgMap.up3Uuid)?.displayName}
+          isSuperAdmin={isSuperAdmin}
+        />
+      ) : moduleId === 'pengaturan-sla' ? (
         <SLAPengaturanSLA
           versions={scopedVersions}
           units={scopedUnits}
@@ -1019,6 +1076,9 @@ export default function SLAPelayananTeknikPage({
           onPensionPoliciesChange={setPensionPolicies}
           locations={employeeLocations}
           orgMap={orgMap}
+          onRefreshEmployees={refreshEmployees}
+          onRefreshChangeRequests={refreshEmployeeChangeRequests}
+          onRefreshPensionPolicies={refreshPensionPolicies}
         />
       ) : moduleId === 'sla' ? (
         role === 'ulp' && !effectiveUnitId ? (
