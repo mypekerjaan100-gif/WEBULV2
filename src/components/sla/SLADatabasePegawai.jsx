@@ -24,7 +24,7 @@ import {
   retirementEffectiveDateFor,
 } from '../../data/pensiunPelayananTeknik.js'
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
-import { buildMasterPegawaiXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
+import { downloadExportFile } from '../../utils/slaExportFile.js'
 import {
   approveEmployeeChange,
   downloadImportTemplate,
@@ -79,6 +79,11 @@ const emptyForm = (defaultUnitId, up3Id) => ({
 
 const formatPeriod = (from, to) =>
   `${from ?? 'sejak awal'} \u2014 ${to == null ? 'sekarang' : to}`
+
+const csvEscape = (value) => {
+  const text = String(value ?? '')
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
 
 export default function SLADatabasePegawai({
   contractScope,
@@ -317,9 +322,13 @@ export default function SLADatabasePegawai({
       ? `ULP_${unitName(selectedPreviewUnitUuid)}`
       : `UP3_${unitName(resolvedUp3Uuid)}`
     const filenameScope = scopeName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+    const csv = [
+      columns.map((column) => csvEscape(column.label)).join(','),
+      ...rows.map((row) => row.map((cell) => csvEscape(cell.value)).join(',')),
+    ].join('\r\n')
     downloadExportFile(
-      buildMasterPegawaiXlsx(columns, rows),
-      `Master_Pegawai_${filenameScope}_${todayStr}.xlsx`,
+      new TextEncoder().encode(`\uFEFF${csv}`),
+      `Master_Pegawai_${filenameScope}_${todayStr}.csv`,
     )
   }
 
@@ -1137,11 +1146,11 @@ export default function SLADatabasePegawai({
           )}
           {scopedUnitIds.length > 0 && (
             <button type="button" className="sla-btn" onClick={exportMasterPegawai}>
-              Export Excel
+              Export CSV
             </button>
           )}
           <button type="button" className="sla-btn" onClick={downloadImportTemplate}>
-            Template Import
+            Template Excel
           </button>
           <button type="button" className="sla-btn" onClick={() => { setImportOpen(true); setImportResult(null) }}>
             Import Data
@@ -1350,7 +1359,7 @@ export default function SLADatabasePegawai({
               </p>
               <div className="sla-master-actions" style={{ marginBottom: 12 }}>
                 <button type="button" className="sla-btn" onClick={downloadImportTemplate}>
-                  Download Template CSV
+                  Download Template Excel
                 </button>
                 <label className="sla-btn" style={{ cursor: 'pointer' }}>
                   Pilih File

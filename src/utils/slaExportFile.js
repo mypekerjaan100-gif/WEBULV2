@@ -384,8 +384,13 @@ export function exportFileName(doc, extension) {
 }
 
 export function downloadExportFile(bytes, filename) {
+  const type = filename.endsWith('.pdf')
+    ? 'application/pdf'
+    : filename.endsWith('.csv')
+      ? 'text/csv;charset=utf-8'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   const blob = new Blob([bytes], {
-    type: filename.endsWith('.pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    type,
   })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

@@ -361,38 +361,42 @@ const IMPORT_HEADERS = [
   'keterangan_override_pensiun',
 ]
 
-export function buildImportTemplateCsv() {
-  const header = IMPORT_HEADERS.join(',')
-  const example = [
-    '00210547PTK',
-    'Nama Contoh',
-    '',
-    'ULP Singkawang',
-    '',
-    'ULP Singkawang',
-    '',
-    'Petugas Pelayanan Teknik',
-    '1990-05-12',
-    'BRI',
-    '1234567890',
-    '21000',
-    'Aktif',
-    '',
-    '',
-    '',
-    '',
-    '',
-  ].join(',')
-  return `${header}\n${example}\n`
+const IMPORT_TEMPLATE_EXAMPLE = {
+  nip: '00210547PTK',
+  nama: 'Nama Contoh',
+  unit_id: '',
+  unit: 'ULP Singkawang',
+  lokasi_id: '',
+  lokasi_penempatan: 'ULP Singkawang',
+  jabatan_id: '',
+  jabatan: 'Petugas Pelayanan Teknik',
+  tanggal_lahir: '1990-05-12',
+  bank: 'BRI',
+  no_rekening: '1234567890',
+  tarif_lembur_jam: 21000,
+  status: 'Aktif',
+  alasan_nonaktif: '',
+  keterangan_nonaktif: '',
+  tanggal_efektif_status: '',
+  override_tanggal_pensiun: '',
+  keterangan_override_pensiun: '',
 }
 
-export function downloadImportTemplate() {
-  const csv = buildImportTemplateCsv()
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+export async function downloadImportTemplate() {
+  const XLSX = await import('xlsx')
+  const sheet = XLSX.utils.json_to_sheet([IMPORT_TEMPLATE_EXAMPLE], { header: IMPORT_HEADERS })
+  XLSX.utils.sheet_add_aoa(sheet, [IMPORT_HEADERS], { origin: 'A1' })
+  sheet['!cols'] = IMPORT_HEADERS.map((header) => ({ wch: Math.max(14, header.length + 2) }))
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Template Import')
+  const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'Template_Import_Pegawai.csv'
+  a.download = 'Template_Import_Pegawai.xlsx'
   document.body.appendChild(a)
   a.click()
   a.remove()
