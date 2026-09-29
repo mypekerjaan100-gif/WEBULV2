@@ -1093,6 +1093,35 @@ export default function SLADatabasePegawai({
     }
   }
 
+  const handleDownloadTemplateWithData = () => {
+    const isUuidLike = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? ''))
+    const rows = filtered.map((row) => {
+      const data = row.employee ?? row.request.proposed
+      const rate = data.hourlyRateHistory ? hourlyRateFor(data, today()) : (data.hourlyRate ?? '')
+      return {
+        nip: data.nip ?? '',
+        nama: data.name ?? '',
+        unit_id: isUuidLike(data.unitId) ? data.unitId : '',
+        unit: unitName(data.unitId),
+        lokasi_id: isUuidLike(data.workLocationId) ? data.workLocationId : '',
+        lokasi_penempatan: data.workLocationId ? (locationName(data.workLocationId) ?? '') : '',
+        jabatan_id: isUuidLike(data.positionId) ? data.positionId : '',
+        jabatan: positionName(data.positionId) ?? data.sourcePosition ?? '',
+        tanggal_lahir: data.birthDate ?? '',
+        bank: data.bank ?? '',
+        no_rekening: data.accountNumber ?? '',
+        tarif_lembur_jam: rate === '' || rate == null ? '' : rate,
+        status: data.employmentStatus ?? 'Aktif',
+        alasan_nonaktif: data.statusReason ?? '',
+        keterangan_nonaktif: data.statusReasonNote ?? '',
+        tanggal_efektif_status: data.statusEffectiveDate ?? '',
+        override_tanggal_pensiun: data.retirementDateOverride ?? '',
+        keterangan_override_pensiun: data.pensionOverrideReason ?? '',
+      }
+    })
+    downloadImportTemplate(rows)
+  }
+
   const handleProcessImport = async () => {
     const valid = importRows.filter((r) => r.errors.length === 0)
     if (!valid.length) {
@@ -1149,8 +1178,8 @@ export default function SLADatabasePegawai({
               Export CSV
             </button>
           )}
-          <button type="button" className="sla-btn" onClick={downloadImportTemplate}>
-            Template Excel
+          <button type="button" className="sla-btn" onClick={handleDownloadTemplateWithData}>
+            Template Excel ({filtered.length} data)
           </button>
           <button type="button" className="sla-btn" onClick={() => { setImportOpen(true); setImportResult(null) }}>
             Import Data
@@ -1353,13 +1382,14 @@ export default function SLADatabasePegawai({
             </div>
             <div className="sla-modal-body">
               <p className="sla-flat-note">
+                Template sudah berisi <strong>{filtered.length} data lama</strong> sesuai filter — tinggal edit lalu import ulang.
                 Kunci: <strong>NIP</strong>. NIP baru = tambah, NIP existing = update.
                 Tanggal lahir format <strong>YYYY-MM-DD</strong>.
                 {role === 'ulp' ? ' Import ULP masuk Pending Approval.' : ' Import UP3 langsung tersimpan ke Supabase.'}
               </p>
               <div className="sla-master-actions" style={{ marginBottom: 12 }}>
-                <button type="button" className="sla-btn" onClick={downloadImportTemplate}>
-                  Download Template Excel
+                <button type="button" className="sla-btn" onClick={handleDownloadTemplateWithData}>
+                  Download Template Excel ({filtered.length} data)
                 </button>
                 <label className="sla-btn" style={{ cursor: 'pointer' }}>
                   Pilih File

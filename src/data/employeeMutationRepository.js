@@ -382,9 +382,15 @@ const IMPORT_TEMPLATE_EXAMPLE = {
   keterangan_override_pensiun: '',
 }
 
-export async function downloadImportTemplate() {
+export async function downloadImportTemplate(existingRows = null) {
   const XLSX = await import('xlsx')
-  const sheet = XLSX.utils.json_to_sheet([IMPORT_TEMPLATE_EXAMPLE], { header: IMPORT_HEADERS })
+  const body = Array.isArray(existingRows) && existingRows.length ? existingRows : [IMPORT_TEMPLATE_EXAMPLE]
+  const normalized = body.map((row) => {
+    const out = {}
+    for (const header of IMPORT_HEADERS) out[header] = row[header] ?? ''
+    return out
+  })
+  const sheet = XLSX.utils.json_to_sheet(normalized, { header: IMPORT_HEADERS })
   XLSX.utils.sheet_add_aoa(sheet, [IMPORT_HEADERS], { origin: 'A1' })
   sheet['!cols'] = IMPORT_HEADERS.map((header) => ({ wch: Math.max(14, header.length + 2) }))
   const workbook = XLSX.utils.book_new()
@@ -393,10 +399,14 @@ export async function downloadImportTemplate() {
   const blob = new Blob([bytes], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
+  const hasData = Array.isArray(existingRows) && existingRows.length > 0
+  const stamp = new Date().toISOString().slice(0, 10)
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'Template_Import_Pegawai.xlsx'
+  a.download = hasData
+    ? `Template_Import_Pegawai_${stamp}_${existingRows.length}_data.xlsx`
+    : 'Template_Import_Pegawai.xlsx'
   document.body.appendChild(a)
   a.click()
   a.remove()
