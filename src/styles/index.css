@@ -6698,6 +6698,240 @@ summary:focus-visible {
   transition: background-color 0.12s;
 }
 
+/* ---------- VC sheet sync (manual refresh, professional status) ---------- */
+.vc-sheet-bar {
+  align-items: center;
+}
+
+.vc-unit-static {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vc-sync-zone {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vc-sync-status {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.vc-refresh-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface);
+  color: var(--pln-blue);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.vc-refresh-btn:hover:not(:disabled) {
+  border-color: var(--pln-blue);
+  background: var(--pln-blue-soft, #eef6fc);
+}
+
+.vc-refresh-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.vc-refresh-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.vc-refresh-btn:focus-visible {
+  outline: 2px solid var(--pln-blue);
+  outline-offset: 2px;
+}
+
+/* ---------- VC skeleton shimmer ---------- */
+.vc-skeleton {
+  min-width: 48px;
+  height: 14px;
+  display: inline-block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #e8edf2 25%, #f4f7fa 50%, #e8edf2 75%);
+  background-size: 200% 100%;
+  animation: vc-shimmer 1.2s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+@keyframes vc-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.vc-detail-period {
+  margin: 0 0 12px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.vc-detail-loading {
+  padding: 12px 0 4px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  color: var(--color-text);
+}
+
+.vc-detail-loading > strong {
+  font-size: 14px;
+}
+
+.vc-skeleton-table {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.vc-skeleton-row {
+  display: flex;
+  gap: 8px;
+}
+
+.vc-skeleton-row .vc-skeleton {
+  height: 16px;
+}
+
+/* ---------- Reusable process modal ---------- */
+.ui-process-backdrop {
+  background: rgba(7, 26, 51, 0.45);
+  backdrop-filter: blur(3px);
+  place-items: center;
+}
+
+.ui-process-modal {
+  width: min(360px, calc(100vw - 48px));
+  padding: 28px 24px 24px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.ui-process-icon {
+  color: var(--pln-blue);
+}
+
+.ui-process-success .ui-process-icon {
+  color: #1a7f4b;
+}
+
+.ui-process-error .ui-process-icon {
+  color: #c04545;
+}
+
+.ui-process-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.ui-process-subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ui-process-progress {
+  width: 100%;
+  height: 5px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e3eaf1;
+  position: relative;
+}
+
+.ui-process-progress > span {
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pln-blue);
+  position: absolute;
+  top: 0;
+  left: -40%;
+  animation: vc-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes vc-progress-slide {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+.ui-process-error {
+  margin: 0;
+  color: #a73737;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.ui-process-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .vc-sheet-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vc-sheet-bar .ui-field {
+    min-width: 0;
+  }
+
+  .vc-sync-zone {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-skeleton,
+  .ui-process-progress > span {
+    animation: none;
+  }
+
+  .vc-refresh-btn {
+    transition: none;
+  }
+}
+
+:root[data-theme='dark'] .vc-skeleton {
+  background: linear-gradient(90deg, #2a3441 25%, #384354 50%, #2a3441 75%);
+  background-size: 200% 100%;
+}
+
+:root[data-theme='dark'] .ui-process-progress {
+  background: #2a3441;
+}
+
+:root[data-theme='dark'] .vc-refresh-btn:hover:not(:disabled) {
+  background: rgba(8, 121, 189, 0.18);
+}
+
 .vc-subpage {
   display: grid;
   gap: 12px;

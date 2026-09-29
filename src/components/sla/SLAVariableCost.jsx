@@ -6,7 +6,8 @@ import { supabase } from '../../lib/supabaseClient.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 import TargetPendapatanVariable from './TargetPendapatanVariable.jsx'
 import VariableFinancialDashboard from './VariableFinancialDashboard.jsx'
-import { Alert, Button, DataTable, FilterBar, FilterField, StatePanel, StatusBadge, Tabs } from '../ui/Primitives.jsx'
+import { Alert, Button, DataTable, FilterBar, FilterField, StatePanel, StatusBadge, Tabs, ProcessModal } from '../ui/Primitives.jsx'
+import Icon from '../Icon.jsx'
 
 const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
 const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
@@ -41,6 +42,12 @@ function formatPercent(value) {
 }
 function formatApprovalStatus(status) {
   return status === 'SUBMITTED' ? 'Menunggu Persetujuan' : status === 'APPROVED' ? 'Disetujui' : status === 'REJECTED' ? 'Ditolak' : status ?? '—'
+}
+function formatSyncTime(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return `${date.toLocaleString('id-ID', { timeZone: 'Asia/Pontianak', hour: '2-digit', minute: '2-digit' })} WIB`
 }
 
 export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange, isManagementReadOnly = false, canManageKonstruksiMonthly = false, canViewVariableFinancial = false }) {
@@ -97,12 +104,14 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [sheetLoading, setSheetLoading] = useState(false)
   const [sheetError, setSheetError] = useState('')
   const [sheetSyncedAt, setSheetSyncedAt] = useState('')
-  const [sheetRequestId, setSheetRequestId] = useState(0)
   const [manualWo, setManualWo] = useState([])
   const [woDrafts, setWoDrafts] = useState({})
   const [woSavingUnit, setWoSavingUnit] = useState('')
   const [woError, setWoError] = useState('')
   const [woMessage, setWoMessage] = useState('')
+  // Modal proses: null | { mode: 'load'|'period'|'refresh'|'wo', status: 'loading'|'success'|'error', error }
+  const [processState, setProcessState] = useState(null)
+  const [woPendingUnit, setWoPendingUnit] = useState('')
   const [sheetDetailOpen, setSheetDetailOpen] = useState(false)
   const [sheetDetailIndicator, setSheetDetailIndicator] = useState(null)
   const [sheetDetailUlp, setSheetDetailUlp] = useState('')
@@ -160,12 +169,17 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
 
   useEffect(() => { loadMonthly() }, [loadMonthly])
 
-  // --- Spreadsheet 2.1a (read-only, realtime dari Google Sheets) + WO manual ---
-  const loadSheetSummary = useCallback(async () => {
+  // --- Spreadsheet 2.1a (read-only dari Google Sheets, sinkron manual) + WO manual ---
+  // mode: 'load' (buka halaman) | 'period' (ganti periode) | 'refresh' (ikon refresh)
+  const loadSheetSummary = useCallback(async (mode = 'load') => {
     if (!periodMonth) return
-    const requestId = sheetRequestId + 1
-    setSheetRequestId(requestId)
-    setSheetLoading(true)
+    const showModal = mode !== 'silent'
+    const hasData = Boolean(sheetSummary)
+    if (showModal) {
+      setProcessState({ mode, status: 'loading', error: '' })
+    } else {
+      setSheetLoading(true)
+    }
     setSheetError('')
     try {
       const [summary, woRows] = await Promise.all([
@@ -184,22 +198,34 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         }
         return next
       })
+      if (showModal) {
+        // Load awal / ganti periode langsung tampil tanpa flash sukses.
+        // Refresh manual menampilkan konfirmasi singkat.
+        if (mode === 'refresh') {
+          setProcessState({ mode, status: 'success', error: '' })
+        } else {
+          setProcessState(null)
+        }
+      }
     } catch (err) {
-      setSheetError(err.message || 'Gagal membaca spreadsheet.')
+      const message = err.message || 'Data gagal dimuat.'
+      setSheetError(message)
+      if (showModal) {
+        // Jika sudah ada data lama, tetap tampil di belakang modal error.
+        setProcessState(hasData ? { mode, status: 'error', error: message } : null)
+      }
     } finally {
       setSheetLoading(false)
     }
-  }, [periodMonth, contractId, up3Uuid]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [periodMonth, contractId, up3Uuid, sheetSummary])
 
+  const sheetLoadedPeriod = useRef('')
   useEffect(() => {
-    if (activeTab === 'rekap') loadSheetSummary()
-  }, [activeTab, loadSheetSummary])
-
-  useEffect(() => {
-    if (activeTab !== 'rekap') return undefined
-    const timer = setInterval(() => { loadSheetSummary() }, 120000)
-    return () => clearInterval(timer)
-  }, [activeTab, loadSheetSummary])
+    if (activeTab !== 'rekap' || !periodMonth) return
+    if (sheetLoadedPeriod.current === periodMonth) return
+    sheetLoadedPeriod.current = periodMonth
+    loadSheetSummary(sheetSummary ? 'period' : 'load')
+  }, [activeTab, periodMonth, loadSheetSummary]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openSheetDetail = useCallback(async (indicator, ulpName, page = 1) => {
     setSheetDetailIndicator(indicator)
@@ -233,9 +259,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       setWoError('Scope kontrak/UP3 belum siap.')
       return
     }
+    setWoPendingUnit(unitUuid)
     setWoSavingUnit(unitUuid)
     setWoError('')
     setWoMessage('')
+    setProcessState({ mode: 'wo', status: 'loading', error: '' })
     try {
       await setVariableManualWo({
         contractId,
@@ -248,10 +276,29 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       setWoMessage('WO tersimpan.')
       const rows = await listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode: '2.1a' }).catch(() => [])
       setManualWo(rows ?? [])
+      setProcessState({ mode: 'wo', status: 'success', error: '' })
     } catch (err) {
-      setWoError(err.message || 'Gagal menyimpan WO.')
+      const message = err.message || 'Gagal menyimpan WO.'
+      setWoError(message)
+      setProcessState({ mode: 'wo', status: 'error', error: message })
     } finally {
       setWoSavingUnit('')
+    }
+  }
+
+  const PROCESS_TITLES = {
+    load: 'Memuat data',
+    period: 'Memuat periode',
+    refresh: 'Memperbarui data',
+    wo: 'Menyimpan WO',
+  }
+
+  const handleProcessRetry = () => {
+    if (!processState) return
+    if (processState.mode === 'wo' && woPendingUnit) {
+      handleSaveManualWo(woPendingUnit)
+    } else {
+      loadSheetSummary(processState.mode === 'wo' ? 'refresh' : processState.mode)
     }
   }
 
@@ -835,26 +882,15 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   }
 
   function renderSheetRow(ind) {
-    const code = ind.code ?? ind.point
-    const syncedLabel = sheetSyncedAt
-      ? new Date(sheetSyncedAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })
-      : '—'
-    const sourceBadge = (
-      <div>
-        <span className="sla-badge sla-badge-variable-cost">Spreadsheet</span>
-        <div className="sla-table-sub" title={sheetSyncedAt ?? ''}>
-          {sheetLoading ? 'Memuat…' : `Sinkron: ${syncedLabel}`}
-        </div>
-      </div>
-    )
+    const firstLoad = sheetLoading && !sheetSummary
     if (sheetError && !sheetSummary) {
       return (
         <tr key={ind.id}>
-          <td>{getShortLabel(ind)}<div className="sla-table-sub">Spreadsheet</div></td>
+          <td>{getShortLabel(ind)}</td>
           <td>{ind.unit ?? '—'}</td>
           <td colSpan={rekapColumnCount - 2} className="sla-blocked-note">
-            {sheetError}{' '}
-            <button type="button" className="sla-btn" onClick={loadSheetSummary}>Coba lagi</button>
+            Data gagal dimuat.{' '}
+            <button type="button" className="sla-btn" onClick={() => loadSheetSummary('refresh')}>Coba lagi</button>
           </td>
         </tr>
       )
@@ -874,20 +910,16 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
       }
       return (
-        <tr key={ind.id}>
-          <td>{getShortLabel(ind)}<div className="sla-table-sub">Spreadsheet · {childUlps.length} ULP</div></td>
+        <tr key={ind.id} aria-busy={sheetLoading || undefined}>
+          <td>{getShortLabel(ind)}</td>
           <td>{ind.unit ?? '—'}</td>
           <td>{ind.slaLinked ? (up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)) : EMPTY_VALUE}</td>
-          <td>{hasWo ? formatNumber(totalWo) : <span className="text-muted">Belum diisi ULP</span>}</td>
-          <td>{sheetLoading && !sheetSummary ? '…' : formatNumber(realisasi)}</td>
-          <td>{ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
+          <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : hasWo ? formatNumber(totalWo) : <span className="text-muted">Belum diisi ULP</span>}</td>
+          <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : formatNumber(realisasi)}</td>
+          <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 56 }} /> : ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
           {canViewVariableFinancial && <td>{EMPTY_VALUE}</td>}
           <td>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button>
-              <button type="button" className="sla-btn" onClick={loadSheetSummary}>Refresh</button>
-            </div>
-            {sourceBadge}
+            <button type="button" className="sla-btn" disabled={firstLoad} onClick={() => setDrillIndicator(ind)}>Detail</button>
           </td>
         </tr>
       )
@@ -903,8 +935,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     }
     const canEditWo = isAdminUlpView && unitUuid && !isManagementReadOnly
     return (
-      <tr key={ind.id} style={{ cursor: 'pointer' }} onClick={() => openSheetDetail(ind, sheetUlpNameFor(effectiveUnit))}>
-        <td>{getShortLabel(ind)}<div className="sla-table-sub">Spreadsheet</div></td>
+      <tr key={ind.id} style={{ cursor: firstLoad ? undefined : 'pointer' }} aria-busy={sheetLoading || undefined} onClick={() => { if (!firstLoad) openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>
+        <td>{getShortLabel(ind)}</td>
         <td>{ind.unit ?? '—'}</td>
         <td>{ind.slaLinked ? (target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)) : EMPTY_VALUE}</td>
         <td onClick={(e) => { if (canEditWo) e.stopPropagation() }}>
@@ -929,13 +961,12 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             </div>
           ) : (woVal == null ? <span className="text-muted">Belum diisi</span> : formatNumber(woVal))}
         </td>
-        <td>{sheetLoading && !sheetSummary ? '…' : formatNumber(realisasi)}</td>
-        <td>{ind.slaLinked && target != null ? pencapaian : EMPTY_VALUE}</td>
+        <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : formatNumber(realisasi)}</td>
+        <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 56 }} /> : ind.slaLinked && target != null ? pencapaian : EMPTY_VALUE}</td>
         {canViewVariableFinancial && <td>{EMPTY_VALUE}</td>}
         {showRekapAction && (
           <td>
-            <button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>Lihat Detail</button>
-            <div className="sla-table-sub" style={{ marginTop: 4 }}>Sinkron: {sheetLoading ? '…' : syncedLabel}</div>
+            <button type="button" className="sla-btn" disabled={firstLoad} onClick={(e) => { e.stopPropagation(); openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>Lihat Detail</button>
           </td>
         )}
       </tr>
@@ -975,14 +1006,41 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         </details>
       </div>
 
-      {isUp3Role && !isAdminUlpView && activeTab === 'rekap' && (
-        <FilterBar className="vc-filter-bar">
-          <FilterField label="Unit layanan">
-            <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
-              <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
-              {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
-            </select>
-          </FilterField>
+      {activeTab === 'rekap' && (
+        <FilterBar className="vc-filter-bar vc-sheet-bar">
+          {isUp3Role && !isAdminUlpView ? (
+            <FilterField label="Unit layanan">
+              <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
+                <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
+                {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
+              </select>
+            </FilterField>
+          ) : (
+            <FilterField label="Unit layanan">
+              <span className="vc-unit-static">{effectiveUnit?.displayName ?? '—'}</span>
+            </FilterField>
+          )}
+          <div className="vc-sync-zone">
+            <span className="vc-sync-status" role="status" aria-live="polite">
+              {sheetLoading
+                ? 'Memperbarui...'
+                : sheetError && !sheetSummary
+                  ? 'Data gagal dimuat'
+                  : sheetSyncedAt
+                    ? `Diperbarui ${formatSyncTime(sheetSyncedAt)}`
+                    : 'Belum ada data'}
+            </span>
+            <button
+              type="button"
+              className="vc-refresh-btn"
+              onClick={() => loadSheetSummary('refresh')}
+              disabled={sheetLoading || !periodMonth}
+              title="Perbarui data"
+              aria-label="Perbarui data"
+            >
+              <Icon name="refresh-cw" size={17} className={sheetLoading ? 'ui-icon-spin' : ''} />
+            </button>
+          </div>
         </FilterBar>
       )}
 
@@ -1312,12 +1370,28 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <div className="modal-backdrop" onClick={() => { setSheetDetailOpen(false); setSheetDetailData(null) }}>
               <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900 }}>
                 <div className="modal-header">
-                  <h3>{getShortLabel(sheetDetailIndicator)} — Baris Spreadsheet · {period}{sheetDetailUlp ? ` · ${sheetDetailUlp}` : ''}</h3>
+                  <h3>Detail {getShortLabel(sheetDetailIndicator)}</h3>
                   <button type="button" className="modal-close" onClick={() => { setSheetDetailOpen(false); setSheetDetailData(null) }}>×</button>
                 </div>
                 <div className="modal-body">
-                  <p className="text-muted" style={{ fontSize: 12 }}>Sumber: Google Spreadsheet tab JTM T1 (read-only). Realisasi = jumlah baris.</p>
-                  {sheetDetailLoading ? <p>Memuat…</p> : !sheetDetailData || sheetDetailData.success === false ? (
+                  <p className="text-muted vc-detail-period">{period}{sheetDetailUlp ? ` · ${sheetDetailUlp}` : ''}</p>
+                  {sheetDetailLoading ? (
+                    <div className="vc-detail-loading" role="status" aria-live="polite" aria-label="Memuat data">
+                      <Icon name="loader" size={34} className="ui-icon-spin" />
+                      <strong>Memuat data</strong>
+                      <div className="vc-skeleton-table" aria-hidden="true">
+                        {[0, 1, 2, 3, 4].map((row) => (
+                          <div key={row} className="vc-skeleton-row">
+                            <span className="vc-skeleton" style={{ width: '12%' }} />
+                            <span className="vc-skeleton" style={{ width: '18%' }} />
+                            <span className="vc-skeleton" style={{ width: '22%' }} />
+                            <span className="vc-skeleton" style={{ width: '28%' }} />
+                            <span className="vc-skeleton" style={{ width: '20%' }} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : !sheetDetailData || sheetDetailData.success === false ? (
                     <p className="sla-blocked-note">{sheetDetailData?.error ?? 'Gagal memuat detail.'} <button type="button" className="sla-btn" onClick={() => openSheetDetail(sheetDetailIndicator, sheetDetailUlp, sheetDetailData?.pagination?.page ?? 1)}>Coba lagi</button></p>
                   ) : (
                     <>
@@ -1362,7 +1436,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope ?? 'Variable Cost'}</small></div>
                     </button>
                   ))}
-                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi dikelola sebagai pendapatan bulanan langsung oleh management. Inspeksi SUTM Tier 1 dibaca dari spreadsheet (read-only).</div>
+                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi dikelola sebagai pendapatan bulanan langsung oleh management.</div>
                 </div>
               </div>
             </div>
@@ -1696,6 +1770,17 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
           {isAdminUlpView && <p className="text-muted" style={{ marginTop: 8 }}>Usulan baru berstatus Menunggu Persetujuan. Approve/Reject hanya oleh Admin UP3.</p>}
         </div>
       )}
+      <ProcessModal
+        open={Boolean(processState)}
+        status={processState?.status ?? 'loading'}
+        title={processState ? (PROCESS_TITLES[processState.mode] ?? 'Memproses') : ''}
+        subtitle={`${period} · ${scopeLabel}`}
+        successMessage={processState?.mode === 'wo' ? 'WO berhasil disimpan.' : 'Data berhasil diperbarui.'}
+        error={processState?.error}
+        onClose={() => setProcessState(null)}
+        onRetry={handleProcessRetry}
+        allowClose={processState?.status !== 'loading'}
+      />
     </section>
   )
 }

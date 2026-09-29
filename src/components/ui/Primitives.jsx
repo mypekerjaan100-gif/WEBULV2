@@ -242,3 +242,80 @@ export function Modal({ open, onClose, title, size = 'medium', children, footer,
 export function ModalSection({ title, className = '', children }) {
   return <section className={classes('ui-modal-section', className)}>{title && <h3>{title}</h3>}{children}</section>
 }
+
+/**
+ * Modal proses yang konsisten: loading / sukses / gagal.
+ * - Loading memakai progress bar indeterminate + spinner (tanpa persen palsu).
+ * - Sukses menutup otomatis setelah autoCloseMs.
+ * - Gagal menyediakan Tutup + Coba lagi.
+ */
+export function ProcessModal({
+  open,
+  status = 'loading',
+  title,
+  subtitle,
+  error,
+  onClose,
+  onRetry,
+  allowClose = true,
+  autoCloseMs = 800,
+  retryLabel = 'Coba lagi',
+  closeLabel = 'Tutup',
+  successTitle = 'Berhasil',
+  successMessage,
+  className = '',
+}) {
+  useEffect(() => {
+    if (!open || status !== 'success' || !(autoCloseMs > 0)) return undefined
+    const timer = setTimeout(() => { onClose?.() }, autoCloseMs)
+    return () => clearTimeout(timer)
+  }, [open, status, autoCloseMs, onClose])
+
+  if (!open) return null
+
+  const loading = status === 'loading'
+  const success = status === 'success'
+  const iconName = loading ? 'loader' : success ? 'check-circle' : 'x-circle'
+
+  return (
+    <div
+      className={classes('ui-modal-backdrop', 'ui-process-backdrop', className)}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (allowClose && !loading && event.target === event.currentTarget) onClose?.()
+      }}
+    >
+      <div
+        className={classes('ui-modal', 'ui-process-modal', `ui-process-${status}`)}
+        role={status === 'error' ? 'alertdialog' : 'dialog'}
+        aria-modal="true"
+        aria-label={title}
+        aria-busy={loading || undefined}
+      >
+        <div className="ui-process-icon" aria-hidden="true">
+          <Icon name={iconName} size={44} className={loading ? 'ui-icon-spin' : ''} />
+        </div>
+        <h2 className="ui-process-title">
+          {loading ? title : success ? successTitle : title}
+        </h2>
+        {(loading || success) && (successMessage || subtitle) && (
+          <p className="ui-process-subtitle">{success ? (successMessage ?? subtitle) : subtitle}</p>
+        )}
+        {loading && (
+          <div className="ui-process-progress" role="status" aria-label="Proses sedang berjalan">
+            <span />
+          </div>
+        )}
+        {status === 'error' && (
+          <>
+            {error && <p className="ui-process-error">{error}</p>}
+            <div className="ui-process-actions">
+              <Button variant="secondary" onClick={onClose}>{closeLabel}</Button>
+              {onRetry && <Button variant="primary" onClick={onRetry}>{retryLabel}</Button>}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
