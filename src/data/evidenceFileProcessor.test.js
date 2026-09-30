@@ -22,6 +22,14 @@ const processedPdf = await processEvidenceFile(pdfFile, 'SPK')
 assert(processedPdf.stored.sizeBytes <= EVIDENCE_MAX_BYTES, 'PDF <= 1 MB')
 assert(processedPdf.stored.checksum.length === 64, 'SHA-256 generated')
 
+const extensionOnlyPdf = new File(
+  [await pdf.save({ useObjectStreams: false })],
+  'scan-form-cuti.pdf',
+  { type: '' },
+)
+const processedExtensionOnlyPdf = await processEvidenceFile(extensionOnlyPdf, 'SPK')
+assert(processedExtensionOnlyPdf.stored.mimeType === 'application/pdf', 'PDF detected from extension')
+
 const oversizedDocBytes = new Uint8Array(EVIDENCE_MAX_BYTES + 1)
 oversizedDocBytes.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
 const oversizedDoc = new File(

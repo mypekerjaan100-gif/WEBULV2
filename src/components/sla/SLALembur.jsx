@@ -584,6 +584,7 @@ export default function SLALembur({
   const stageEvidence = async (requirement, file) => {
     if (!file || initialDeadlinePassed || deadlineUnavailable || formReadOnly) return
     setSubmitting(true)
+    setMessage(`Memproses ${requirement.label}...`)
     try {
       const { prepareOvertimeEvidenceFile } = await import('../../data/overtimeEvidenceRepository.js')
       const processed = await prepareOvertimeEvidenceFile(file, requirement.type)
@@ -603,9 +604,10 @@ export default function SLALembur({
               return [staged]
             })(),
       }))
-      setMessage(`${requirement.label} siap disimpan (${Math.ceil(processed.stored.sizeBytes / 1024)} KB).`)
+      setMessage(`${requirement.label} siap disimpan. Klik Simpan Draft atau Ajukan Lembur.`)
     } catch (error) {
-      setMessage(error.message || `Gagal memproses ${requirement.label}.`)
+      const text = error.message || `Gagal memproses ${requirement.label}.`
+      setMessage(text)
     } finally {
       setSubmitting(false)
     }
@@ -1011,7 +1013,7 @@ export default function SLALembur({
 
                 </div>
                  <section className="lembur-form-section lembur-evidence-section">
-                   <div className="lembur-section-heading"><span>C</span><div><h3>Evidence</h3><p>File diproses sebelum disimpan, maksimum 1 MB</p></div></div>
+                   <div className="lembur-section-heading"><span>C</span><div><h3>Evidence</h3><p>Upload PDF, JPG/JPEG, PNG, atau WebP. File siap upload setelah dipilih, lalu klik Simpan Draft atau Ajukan Lembur.</p></div></div>
                   <div className="lembur-upload-grid">{evidenceRequirements.map((requirement)=>{ const existingList=(evidenceByType[requirement.type]||[]).filter(entry=>entry.status==='ACTIVE'); const stagedList=files[requirement.type]??[]; const hasTimeMark=requirement.helpers?.[0]==='TimeMark Wajib'; return <div className="lembur-upload-card" key={requirement.type}><div className="lembur-upload-card-heading"><strong>{requirement.label} *</strong>{hasTimeMark&&<span className="lembur-timemark-badge">TimeMark Wajib</span>}</div>{requirement.helpers?.slice(hasTimeMark?1:0).map((helper)=><small key={helper}>{helper}</small>)}<label className="lembur-dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();stageEvidence(requirement,e.dataTransfer.files?.[0])}}><input key={`${requirement.type}-${stagedList.length}-${existingList.length}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx" disabled={submitting||initialDeadlinePassed||formReadOnly} onChange={e=>stageEvidence(requirement,e.target.files?.[0])} /><span className="lembur-upload-icon">↑</span><strong>Pilih atau tarik {isImageEvidence({evidenceType:requirement.type})?'foto':'dokumen'} ke sini</strong><small>Maksimal 1 MB</small></label><div className="lembur-selected-files">{stagedList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{entry.previewUrl?<img src={entry.previewUrl} alt="" />:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.processed.original.filename}</strong><small>{Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</small></div><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeStagedEvidence(requirement.type,entry.id)}>Hapus</button></div>)}{existingList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{isImageEvidence(entry)&&evidenceUrls[entry.id]?<button type="button" className="lembur-thumb-button" onClick={()=>previewEvidence(entry,existingList)}><img src={evidenceUrls[entry.id]} alt={entry.originalFilename} /></button>:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.originalFilename}</strong><small>{(entry.storedSizeBytes/1024).toFixed(0)} KB · tersimpan</small></div><button type="button" className="sla-btn" onClick={()=>previewEvidence(entry,existingList)}>Preview</button><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button></div>)}</div></div>})}</div>
                  </section>
                 </div>

@@ -22,6 +22,28 @@ const SUPPORTED_DOCUMENT_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ])
 
+const EXTENSION_MIME_TYPES = new Map([
+  ['jpg', 'image/jpeg'],
+  ['jpeg', 'image/jpeg'],
+  ['png', 'image/png'],
+  ['webp', 'image/webp'],
+  ['pdf', 'application/pdf'],
+  ['doc', 'application/msword'],
+  ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+])
+
+function fileExtension(name) {
+  const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)
+  return match?.[1] ?? ''
+}
+
+function normalizeEvidenceFileType(file) {
+  if (SUPPORTED_IMAGE_TYPES.has(file.type) || SUPPORTED_DOCUMENT_TYPES.has(file.type)) return file
+  const fallbackType = EXTENSION_MIME_TYPES.get(fileExtension(file.name))
+  if (!fallbackType) return file
+  return new File([file], file.name, { type: fallbackType, lastModified: file.lastModified })
+}
+
 function processedName(name, extension) {
   const base = String(name || 'evidence').replace(/\.[^.]+$/, '') || 'evidence'
   return `${base}.${extension}`
@@ -210,22 +232,24 @@ export async function processEvidenceFile(file, evidenceType) {
     throw new Error('File evidence melebihi batas input aman 25 MB.')
   }
 
+  const normalizedFile = normalizeEvidenceFileType(file)
+
   const original = {
-    filename: file.name,
-    mimeType: file.type || 'application/octet-stream',
-    sizeBytes: file.size,
+    filename: normalizedFile.name,
+    mimeType: normalizedFile.type || 'application/octet-stream',
+    sizeBytes: normalizedFile.size,
   }
 
   let storedFile
-  if (SUPPORTED_IMAGE_TYPES.has(file.type)) {
-    storedFile = await compressImage(file)
-  } else if (file.type === 'application/pdf') {
-    storedFile = await optimizePdf(file)
-  } else if (SUPPORTED_DOCUMENT_TYPES.has(file.type)) {
-    await validateOfficeSignature(file)
-    storedFile = file
+  if (SUPPORTED_IMAGE_TYPES.has(normalizedFile.type)) {
+    storedFile = await compressImage(normalizedFile)
+  } else if (normalizedFile.type === 'application/pdf') {
+    storedFile = await optimizePdf(normalizedFile)
+  } else if (SUPPORTED_DOCUMENT_TYPES.has(normalizedFile.type)) {
+    await validateOfficeSignature(normalizedFile)
+    storedFile = normalizedFile
   } else {
-    throw new Error('Format evidence tidak didukung. Gunakan gambar, PDF, DOC, atau DOCX.')
+    throw new Error('Format evidence tidak didukung. Gunakan PDF, JPG/JPEG, PNG, WebP, DOC, atau DOCX.')
   }
 
   if (PHOTO_EVIDENCE_TYPES.has(evidenceType) && !storedFile.type.startsWith('image/')) {
