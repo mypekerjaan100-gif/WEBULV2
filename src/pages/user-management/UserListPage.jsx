@@ -541,7 +541,7 @@ function CreateUserModal({ onClose, onSuccess }) {
             &times;
           </button>
         </div>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="modal-form">
           <div className="modal-body">
             {error && (
               <div className="invite-error-box">
