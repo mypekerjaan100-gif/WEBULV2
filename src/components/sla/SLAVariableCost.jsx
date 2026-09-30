@@ -171,15 +171,23 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
 
   // --- Spreadsheet 2.1a (read-only dari Google Sheets, sinkron manual) + WO manual ---
   // mode: 'load' (buka halaman) | 'period' (ganti periode) | 'refresh' (ikon refresh)
+  const [sheetPeriod, setSheetPeriod] = useState('')
+  const sheetRequestRef = useRef(0)
+  const sheetLoadedPeriod = useRef('')
   const loadSheetSummary = useCallback(async (mode = 'load') => {
     if (!periodMonth) return
+    const requestId = ++sheetRequestRef.current
     const showModal = mode !== 'silent'
-    const hasData = Boolean(sheetSummary)
     if (showModal) {
       setProcessState({ mode, status: 'loading', error: '' })
-    } else {
-      setSheetLoading(true)
     }
+    // Ganti periode / load awal: jangan tampilkan angka periode lama.
+    // Refresh manual: angka lama tetap tampil sampai data baru tiba.
+    if (mode === 'period' || mode === 'load') {
+      setSheetSummary(null)
+      setSheetPeriod('')
+    }
+    setSheetLoading(true)
     setSheetError('')
     try {
       const [summary, woRows] = await Promise.all([
@@ -188,7 +196,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
           ? listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode: '2.1a' }).catch(() => [])
           : Promise.resolve([]),
       ])
+      if (requestId !== sheetRequestRef.current) return
       setSheetSummary(summary)
+      setSheetPeriod(periodMonth)
+      sheetLoadedPeriod.current = periodMonth
       setSheetSyncedAt(summary.syncedAt ?? new Date().toISOString())
       setManualWo(woRows ?? [])
       setWoDrafts((current) => {
@@ -208,22 +219,20 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         }
       }
     } catch (err) {
+      if (requestId !== sheetRequestRef.current) return
       const message = err.message || 'Data gagal dimuat.'
       setSheetError(message)
       if (showModal) {
-        // Jika sudah ada data lama, tetap tampil di belakang modal error.
-        setProcessState(hasData ? { mode, status: 'error', error: message } : null)
+        setProcessState({ mode, status: 'error', error: message })
       }
     } finally {
-      setSheetLoading(false)
+      if (requestId === sheetRequestRef.current) setSheetLoading(false)
     }
-  }, [periodMonth, contractId, up3Uuid, sheetSummary])
+  }, [periodMonth, contractId, up3Uuid])
 
-  const sheetLoadedPeriod = useRef('')
   useEffect(() => {
     if (activeTab !== 'rekap' || !periodMonth) return
     if (sheetLoadedPeriod.current === periodMonth) return
-    sheetLoadedPeriod.current = periodMonth
     loadSheetSummary(sheetSummary ? 'period' : 'load')
   }, [activeTab, periodMonth, loadSheetSummary]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -882,7 +891,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   }
 
   function renderSheetRow(ind) {
-    const firstLoad = sheetLoading && !sheetSummary
+    const periodMismatch = Boolean(sheetSummary) && sheetPeriod !== periodMonth
+    const firstLoad = sheetLoading && (!sheetSummary || periodMismatch)
     if (sheetError && !sheetSummary) {
       return (
         <tr key={ind.id}>
