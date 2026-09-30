@@ -184,6 +184,18 @@ export default function SLALembur({
   const [rowsPerPage, setRowsPerPage] = useState(30)
   const [currentPage, setCurrentPage] = useState(1)
   const [detailActivityId, setDetailActivityId] = useState(null)
+  const [detailEntryId, setDetailEntryId] = useState(null)
+
+  const openDetail = (record) => {
+    setDetailActivityId(record?.id ?? null)
+    setDetailEntryId(record?.entryId ?? null)
+  }
+  const closeDetail = () => {
+    setDetailActivityId(null)
+    setDetailEntryId(null)
+    setShowReject(null)
+    setRejectReason('')
+  }
   const [detailEvidence, setDetailEvidence] = useState([])
   const [detailHistory, setDetailHistory] = useState([])
   const [detailLoading, setDetailLoading] = useState(false)
@@ -214,6 +226,7 @@ export default function SLALembur({
     if (approvalTarget?.source !== 'lembur' || !approvalTarget.token || approvalTarget.token === handledApprovalToken.current) return
     handledApprovalToken.current = approvalTarget.token
     setDetailActivityId(approvalTarget.id)
+    setDetailEntryId(null)
     onApprovalTargetHandled?.()
   }, [approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -233,7 +246,7 @@ export default function SLALembur({
   useEffect(() => {
     setApprovalError('')
     setApprovalBusy(false)
-  }, [detailActivityId])
+  }, [detailActivityId, detailEntryId])
 
   useEffect(() => {
     if (!formOpen || formStep !== 'form' || !/^\d{4}-\d{2}-\d{2}$/.test(draft.date ?? '') || !contractScope.contractId || !up3Id) {
@@ -752,8 +765,7 @@ export default function SLALembur({
     setApprovalError('')
     try{
       await approveOvertime(activityId)
-      setShowReject(null); setRejectReason('')
-      setDetailActivityId(null)
+      closeDetail()
       setToast('Lembur berhasil disetujui.')
       if(onRefresh) await onRefresh()
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal disetujui.')) } finally{ setApprovalBusy(false) }
@@ -764,8 +776,7 @@ export default function SLALembur({
     setApprovalError('')
     try{
       const res = await rejectOvertime(activityId, rejectReason)
-      setShowReject(null); setRejectReason('')
-      setDetailActivityId(null)
+      closeDetail()
       setToast(res?.message || 'Lembur ditolak dan dikembalikan untuk revisi.')
       if(onRefresh) await onRefresh()
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
@@ -877,8 +888,13 @@ export default function SLALembur({
       .catch(() => { if (!cancelled) setDetailEvidenceUrls({}) })
     return () => { cancelled = true }
   }, [detailEvidence])
-  const detailRecords = detailActivityId ? sorted.filter(r=> r.id===detailActivityId) : []
+  const detailActivityRecords = detailActivityId ? sorted.filter(r=> r.id===detailActivityId) : []
+  const detailEntryRecords = detailEntryId != null
+    ? detailActivityRecords.filter(r=> r.entryId===detailEntryId)
+    : detailActivityRecords
+  const detailRecords = detailEntryRecords.length > 0 ? detailEntryRecords : detailActivityRecords
   const detailActivity = detailRecords[0] || null
+  const detailIsSingleParticipant = detailEntryId != null && detailActivityRecords.length > 1
 
   const changeType = (type) => {
     if (activeActivityId && evidence.length && type!==draft.lemburType) {
@@ -1136,7 +1152,7 @@ export default function SLALembur({
                       <td className="lembur-table-actions-cell">
                         <div className="lembur-table-actions">
                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
-                           <Button variant="secondary" size="small" onClick={()=>setDetailActivityId(record.id)}>Lihat Detail</Button>
+                           <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
                            {isSuperAdmin && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus</Button>}
                         </div>
                       </td>
@@ -1173,13 +1189,13 @@ export default function SLALembur({
             </div>
           </div>
           {detailActivityId && (
-            <div className="rekap-detail-overlay" data-approval-id={detailActivityId} onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}>
+            <div className="rekap-detail-overlay" data-approval-id={detailActivityId} onClick={closeDetail}>
               <div className="rekap-detail-modal lembur-detail-modal" onClick={e=>e.stopPropagation()}>
                 {detailActivity && (
                   <>
                      <div className="lembur-detail-header">
-                       <div><span className="lembur-kicker">Detail Lembur</span><h2>{jenisLabel(detailActivity)}</h2><p>{!canMutate ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}</p></div>
-                       <div className="lembur-detail-header-actions"><StatusBadge status={statusBadgeKey(detailActivity)} tone={statusTone(detailActivity)}>{displayStatus(detailActivity)}</StatusBadge><IconButton label="Tutup" className="lembur-icon-button" onClick={()=>{setDetailActivityId(null);setShowReject(null);setRejectReason('')}}><Icon name="close" size={17} /></IconButton></div>
+                       <div><span className="lembur-kicker">Detail Lembur{detailIsSingleParticipant ? ` · ${detailActivity.participantName}` : ''}</span><h2>{jenisLabel(detailActivity)}</h2><p>{!canMutate ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}{detailIsSingleParticipant ? ` · 1 dari ${detailActivityRecords.length} peserta` : ''}</p></div>
+                       <div className="lembur-detail-header-actions"><StatusBadge status={statusBadgeKey(detailActivity)} tone={statusTone(detailActivity)}>{displayStatus(detailActivity)}</StatusBadge><IconButton label="Tutup" className="lembur-icon-button" onClick={closeDetail}><Icon name="close" size={17} /></IconButton></div>
                      </div>
                      {detailActivity.revisionDeadlineAt && detailActivity.status==='CORRECTION_REQUIRED' && <Alert tone="warning" title="Batas Revisi" className="lembur-detail-alert"><span>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · sisa {Math.max(0,Math.ceil((new Date(detailActivity.revisionDeadlineAt)-new Date())/3600000))} jam</span>{detailActivity.rejectionCount===2&&<small>Revisi terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</small>}</Alert>}
                     <section className="lembur-detail-section">
@@ -1209,7 +1225,7 @@ export default function SLALembur({
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
                      {(isAdminUp3||isSuperAdmin) && detailActivity.status==='SUBMITTED' && (
-                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailActivity.id);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity.id)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
+                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivityRecords.length>1&&<p className="lembur-approval-scope-note">Persetujuan berlaku untuk seluruh {detailActivityRecords.length} peserta dalam form ini.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailActivity.id);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity.id)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
                      )}
                   </>
                 )}
