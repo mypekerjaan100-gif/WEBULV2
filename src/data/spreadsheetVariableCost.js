@@ -15,7 +15,24 @@ export const SPREADSHEET_SOURCES = Object.freeze({
     name: 'Inspeksi SUTM Tier 1',
     sheetName: 'JTM T1',
   }),
+  '2.1b': Object.freeze({
+    code: '2.1b',
+    name: 'Inspeksi SUTM Tier 2',
+    sheetName: 'JTM T2',
+  }),
+  '2.1c': Object.freeze({
+    code: '2.1c',
+    name: 'Inspeksi Gardu/Keypoint Tier 1',
+    sheetName: 'GARDU T1',
+  }),
+  '2.1d': Object.freeze({
+    code: '2.1d',
+    name: 'Inspeksi Gardu/Keypoint Tier 2',
+    sheetName: 'GARDU T2',
+  }),
 })
+
+export const SPREADSHEET_INDICATOR_CODES = Object.freeze(Object.keys(SPREADSHEET_SOURCES))
 
 const ULP_ALIASES = Object.freeze({
   'ULP SUI DURI': 'ULP SEI DURI',

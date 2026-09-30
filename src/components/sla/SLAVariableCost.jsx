@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
 import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry, listVariableActualRevenue, listVariableRevenueTargets, listVariableManualWo, setVariableManualWo } from '../../data/variableCostRepository.js'
-import { fetchSpreadsheetSummary, fetchSpreadsheetDetail, isSpreadsheetSourced, normalizeSpreadsheetUlp, realizationForUnit } from '../../data/spreadsheetVariableCost.js'
+import { fetchSpreadsheetSummary, fetchSpreadsheetDetail, isSpreadsheetSourced, normalizeSpreadsheetUlp, realizationForUnit, SPREADSHEET_INDICATOR_CODES } from '../../data/spreadsheetVariableCost.js'
 import { supabase } from '../../lib/supabaseClient.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 import TargetPendapatanVariable from './TargetPendapatanVariable.jsx'
@@ -13,6 +13,7 @@ const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicat
 const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
 const INPUT_INDICATORS = variableCostIndicators.filter((indicator) => indicator.ulpInputEnabled)
 const TEBANG_INDICATOR_IDS = variableCostIndicators.filter((indicator) => indicator.code?.startsWith('TEBANG_')).map((indicator) => indicator.id)
+const SPREADSHEET_CODES = SPREADSHEET_INDICATOR_CODES.filter((code) => variableCostIndicators.some((indicator) => (indicator.code ?? indicator.point) === code))
 const ALL_KEY = 'ALL'
 const EMPTY_VALUE = '—'
 
@@ -100,11 +101,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [rejectedLoading, setRejectedLoading] = useState(false)
   const [editingRejectionReason, setEditingRejectionReason] = useState('')
   // Spreadsheet read-only (Apps Script) + WO manual ULP
-  const [sheetSummary, setSheetSummary] = useState(null)
+  const [sheetSummaries, setSheetSummaries] = useState({})
   const [sheetLoading, setSheetLoading] = useState(false)
-  const [sheetError, setSheetError] = useState('')
+  const [sheetErrors, setSheetErrors] = useState({})
   const [sheetSyncedAt, setSheetSyncedAt] = useState('')
-  const [manualWo, setManualWo] = useState([])
+  const [manualWoByIndicator, setManualWoByIndicator] = useState({})
   const [woDrafts, setWoDrafts] = useState({})
   const [woSavingUnit, setWoSavingUnit] = useState('')
   const [woError, setWoError] = useState('')
@@ -112,6 +113,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   // Modal proses: null | { mode: 'load'|'period'|'refresh'|'wo', status: 'loading'|'success'|'error', error }
   const [processState, setProcessState] = useState(null)
   const [woPendingUnit, setWoPendingUnit] = useState('')
+  const [woPendingIndicator, setWoPendingIndicator] = useState('')
   const [sheetDetailOpen, setSheetDetailOpen] = useState(false)
   const [sheetDetailIndicator, setSheetDetailIndicator] = useState(null)
   const [sheetDetailUlp, setSheetDetailUlp] = useState('')
@@ -169,9 +171,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
 
   useEffect(() => { loadMonthly() }, [loadMonthly])
 
-  // --- Spreadsheet 2.1a (read-only dari Google Sheets, sinkron manual) + WO manual ---
+  // --- Spreadsheet read-only dari Google Sheets, sinkron manual + WO manual ---
   // mode: 'load' (buka halaman) | 'period' (ganti periode) | 'refresh' (ikon refresh)
-  const [sheetPeriod, setSheetPeriod] = useState('')
+  const [sheetPeriods, setSheetPeriods] = useState({})
   const sheetRequestRef = useRef(0)
   const sheetLoadedPeriod = useRef('')
   const loadSheetSummary = useCallback(async (mode = 'load') => {
@@ -184,28 +186,42 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     // Ganti periode / load awal: jangan tampilkan angka periode lama.
     // Refresh manual: angka lama tetap tampil sampai data baru tiba.
     if (mode === 'period' || mode === 'load') {
-      setSheetSummary(null)
-      setSheetPeriod('')
+      setSheetSummaries({})
+      setSheetPeriods({})
     }
     setSheetLoading(true)
-    setSheetError('')
+    setSheetErrors({})
     try {
-      const [summary, woRows] = await Promise.all([
-        fetchSpreadsheetSummary({ indicator: '2.1a', period: periodMonth }),
-        contractId && up3Uuid
-          ? listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode: '2.1a' }).catch(() => [])
-          : Promise.resolve([]),
-      ])
+      const results = await Promise.all(SPREADSHEET_CODES.map(async (indicatorCode) => {
+        const [summary, woRows] = await Promise.all([
+          fetchSpreadsheetSummary({ indicator: indicatorCode, period: periodMonth }),
+          contractId && up3Uuid
+            ? listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode }).catch(() => [])
+            : Promise.resolve([]),
+        ])
+        return { indicatorCode, summary, woRows: woRows ?? [] }
+      }))
       if (requestId !== sheetRequestRef.current) return
-      setSheetSummary(summary)
-      setSheetPeriod(periodMonth)
+      const nextSummaries = {}
+      const nextPeriods = {}
+      const nextManualWo = {}
+      for (const item of results) {
+        nextSummaries[item.indicatorCode] = item.summary
+        nextPeriods[item.indicatorCode] = periodMonth
+        nextManualWo[item.indicatorCode] = item.woRows
+      }
+      setSheetSummaries(nextSummaries)
+      setSheetPeriods(nextPeriods)
       sheetLoadedPeriod.current = periodMonth
-      setSheetSyncedAt(summary.syncedAt ?? new Date().toISOString())
-      setManualWo(woRows ?? [])
+      setSheetSyncedAt(results.map((item) => item.summary?.syncedAt).filter(Boolean).sort().at(-1) ?? new Date().toISOString())
+      setManualWoByIndicator(nextManualWo)
       setWoDrafts((current) => {
         const next = { ...current }
-        for (const row of woRows ?? []) {
-          if (next[row.unit_id] === undefined) next[row.unit_id] = String(row.wo_value ?? '')
+        for (const item of results) {
+          for (const row of item.woRows) {
+            const key = `${item.indicatorCode}:${row.unit_id}`
+            if (next[key] === undefined) next[key] = String(row.wo_value ?? '')
+          }
         }
         return next
       })
@@ -221,7 +237,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     } catch (err) {
       if (requestId !== sheetRequestRef.current) return
       const message = err.message || 'Data gagal dimuat.'
-      setSheetError(message)
+      setSheetErrors(Object.fromEntries(SPREADSHEET_CODES.map((code) => [code, message])))
       if (showModal) {
         setProcessState({ mode, status: 'error', error: message })
       }
@@ -233,7 +249,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   useEffect(() => {
     if (activeTab !== 'rekap' || !periodMonth) return
     if (sheetLoadedPeriod.current === periodMonth) return
-    loadSheetSummary(sheetSummary ? 'period' : 'load')
+    loadSheetSummary(Object.keys(sheetSummaries).length ? 'period' : 'load')
   }, [activeTab, periodMonth, loadSheetSummary]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openSheetDetail = useCallback(async (indicator, ulpName, page = 1) => {
@@ -257,8 +273,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     }
   }, [period])
 
-  const handleSaveManualWo = async (unitUuid) => {
-    const raw = woDrafts[unitUuid] ?? ''
+  const handleSaveManualWo = async (unitUuid, indicatorCode = '2.1a') => {
+    const draftKey = `${indicatorCode}:${unitUuid}`
+    const raw = woDrafts[draftKey] ?? ''
     const value = raw === '' ? null : Number(raw)
     if (value == null || !Number.isFinite(value) || value < 0) {
       setWoError('WO harus berupa angka nol atau lebih.')
@@ -269,7 +286,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       return
     }
     setWoPendingUnit(unitUuid)
-    setWoSavingUnit(unitUuid)
+    setWoPendingIndicator(indicatorCode)
+    setWoSavingUnit(draftKey)
     setWoError('')
     setWoMessage('')
     setProcessState({ mode: 'wo', status: 'loading', error: '' })
@@ -279,12 +297,12 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         up3Id: up3Uuid,
         unitId: unitUuid,
         periodMonth,
-        indicatorCode: '2.1a',
+        indicatorCode,
         woValue: value,
       })
       setWoMessage('WO tersimpan.')
-      const rows = await listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode: '2.1a' }).catch(() => [])
-      setManualWo(rows ?? [])
+      const rows = await listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode }).catch(() => [])
+      setManualWoByIndicator((current) => ({ ...current, [indicatorCode]: rows ?? [] }))
       setProcessState({ mode: 'wo', status: 'success', error: '' })
     } catch (err) {
       const message = err.message || 'Gagal menyimpan WO.'
@@ -305,13 +323,13 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const handleProcessRetry = () => {
     if (!processState) return
     if (processState.mode === 'wo' && woPendingUnit) {
-      handleSaveManualWo(woPendingUnit)
+      handleSaveManualWo(woPendingUnit, woPendingIndicator || '2.1a')
     } else {
       loadSheetSummary(processState.mode === 'wo' ? 'refresh' : processState.mode)
     }
   }
 
-  const manualWoByUnit = new Map((manualWo ?? []).map((row) => [row.unit_id, Number(row.wo_value ?? 0)]))
+  const manualWoMapFor = (indicatorCode) => new Map((manualWoByIndicator[indicatorCode] ?? []).map((row) => [row.unit_id, Number(row.wo_value ?? 0)]))
 
   const [feeders, setFeeders] = useState([])
   const [feederLoading, setFeederLoading] = useState(false)
@@ -885,15 +903,18 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       ? 'Konsolidasi UP3'
       : (childUlps.find((unit) => (unit.legacyKey ?? unit.uuid) === selectedUlpLegacy)?.displayName ?? '—')
 
-  // --- Baris rekap khusus indikator spreadsheet (2.1a) ---
+  // --- Baris rekap khusus indikator spreadsheet ---
   function sheetUlpNameFor(unit) {
     return normalizeSpreadsheetUlp(unit?.displayName ?? '')
   }
 
   function renderSheetRow(ind) {
-    const periodMismatch = Boolean(sheetSummary) && sheetPeriod !== periodMonth
+    const indicatorCode = ind.code ?? ind.point
+    const sheetSummary = sheetSummaries[indicatorCode] ?? null
+    const manualWoByUnit = manualWoMapFor(indicatorCode)
+    const periodMismatch = Boolean(sheetSummary) && sheetPeriods[indicatorCode] !== periodMonth
     const firstLoad = sheetLoading && (!sheetSummary || periodMismatch)
-    if (sheetError && !sheetSummary) {
+    if (sheetErrors[indicatorCode] && !sheetSummary) {
       return (
         <tr key={ind.id}>
           <td>{getShortLabel(ind)}</td>
@@ -944,6 +965,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
     }
     const canEditWo = isAdminUlpView && unitUuid && !isManagementReadOnly
+    const draftKey = `${indicatorCode}:${unitUuid}`
     return (
       <tr key={ind.id} style={{ cursor: firstLoad ? undefined : 'pointer' }} aria-busy={sheetLoading || undefined} onClick={() => { if (!firstLoad) openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>
         <td>{getShortLabel(ind)}</td>
@@ -956,17 +978,17 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                 className="input-number"
                 inputMode="numeric"
                 style={{ width: 90 }}
-                value={woDrafts[unitUuid] ?? ''}
+                value={woDrafts[draftKey] ?? ''}
                 placeholder="WO"
-                onChange={(e) => setWoDrafts((current) => ({ ...current, [unitUuid]: e.target.value.replace(/\D/g, '') }))}
+                onChange={(e) => setWoDrafts((current) => ({ ...current, [draftKey]: e.target.value.replace(/\D/g, '') }))}
               />
               <button
                 type="button"
                 className="sla-btn sla-btn-primary"
-                disabled={woSavingUnit === unitUuid}
-                onClick={() => handleSaveManualWo(unitUuid)}
+                disabled={woSavingUnit === draftKey}
+                onClick={() => handleSaveManualWo(unitUuid, indicatorCode)}
               >
-                {woSavingUnit === unitUuid ? '…' : 'Simpan'}
+                {woSavingUnit === draftKey ? '…' : 'Simpan'}
               </button>
             </div>
           ) : (woVal == null ? <span className="text-muted">Belum diisi</span> : formatNumber(woVal))}
@@ -1034,7 +1056,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <span className="vc-sync-status" role="status" aria-live="polite">
               {sheetLoading
                 ? 'Memperbarui...'
-                : sheetError && !sheetSummary
+                : Object.keys(sheetErrors).length && Object.keys(sheetSummaries).length === 0
                   ? 'Data gagal dimuat'
                   : sheetSyncedAt
                     ? `Diperbarui ${formatSyncTime(sheetSyncedAt)}`
@@ -1246,7 +1268,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             )}
             {!isConsolidated && isUp3Role && null}
             {!isConsolidated && !isUp3Role && <span className="text-muted" style={{ alignSelf: 'center' }}>{activeFeeders.length} Penyulang aktif</span>}
-            {sheetError && sheetSummary && <span className="sla-blocked-note" style={{ alignSelf: 'center' }}>{sheetError}</span>}
+            {Object.keys(sheetErrors).length > 0 && Object.keys(sheetSummaries).length > 0 && <span className="sla-blocked-note" style={{ alignSelf: 'center' }}>{Object.values(sheetErrors)[0]}</span>}
             {woError && <span className="sla-blocked-note" style={{ alignSelf: 'center' }}>{woError}</span>}
             {woMessage && <span className="vc-inline-success" style={{ alignSelf: 'center' }}>{woMessage}</span>}
           </div>
@@ -1273,7 +1295,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                     </thead>
                     <tbody>
                       {(isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point)
-                        ? childUlps.map((ulp) => {
+                        ? (() => {
+                          const indicatorCode = drillIndicator.code ?? drillIndicator.point
+                          const sheetSummary = sheetSummaries[indicatorCode] ?? null
+                          const manualWoByUnit = manualWoMapFor(indicatorCode)
+                          return childUlps.map((ulp) => {
                             const sheetName = sheetUlpNameFor(ulp)
                             const realisasi = realizationForUnit(sheetSummary, ulp.displayName)
                             const woVal = manualWoByUnit.get(ulp.uuid)
@@ -1287,6 +1313,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                             }
                             return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{woVal == null ? <span className="text-muted">Belum diisi</span> : formatNumber(woVal)}</td><td>{formatNumber(realisasi)}</td><td>{pencapaian}</td><td><button type="button" className="sla-btn" onClick={() => { setDrillIndicator(null); openSheetDetail(drillIndicator, sheetName) }}>Baris</button></td></tr>
                           })
+                        })()
                         : (drillIndicator.id === 'A-3.1c' ? konstruksiEditorUnits : childUlps).map((ulp) => {
                         const uuid = pointToUuids.get(drillIndicator.point)
                         const row = entries.find((e) => e.unit_id === ulp.uuid && (uuid ? e.indicator_id === uuid : false))
@@ -1321,6 +1348,9 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
                       }))}
                       {isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point) ? (
                         (() => {
+                          const indicatorCode = drillIndicator.code ?? drillIndicator.point
+                          const sheetSummary = sheetSummaries[indicatorCode] ?? null
+                          const manualWoByUnit = manualWoMapFor(indicatorCode)
                           const totalWo = childUlps.reduce((sum, ulp) => sum + (manualWoByUnit.get(ulp.uuid) ?? 0), 0)
                           const totalReal = Number(sheetSummary?.realization ?? 0)
                           return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{EMPTY_VALUE}</td><td>{formatNumber(totalWo)}</td><td>{formatNumber(totalReal)}</td><td>{EMPTY_VALUE}</td><td>{EMPTY_VALUE}</td></tr>
