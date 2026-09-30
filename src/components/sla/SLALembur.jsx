@@ -53,6 +53,14 @@ function initialDeadlineMessage(date, deadlineInfo) {
   return `Batas H+${deadlineInfo.effectiveSubmissionDays} lembur ${formatPontianakDate(new Date(`${date}T12:00:00+07:00`))}: ${formatPontianakDate(new Date(deadlineInfo.effectiveDeadlineAt))}, pukul 23:59 WITA.`
 }
 
+function friendlyDeadlineError(message) {
+  const text = String(message ?? '')
+  if (/schema cache|could not find the function|failed to fetch|networkerror|timeout|aborterror|http \d{3}/i.test(text)) {
+    return 'Konfigurasi batas pengajuan belum bisa dimuat dari server. Coba lagi sesaat.'
+  }
+  return text || 'Gagal memverifikasi deadline pengajuan.'
+}
+
 function recordIsExpired(record) {
   if (record.status === 'CLOSED' && record.closureReason === 'EXPIRED') return true
   return record.status === 'CORRECTION_REQUIRED'
@@ -247,7 +255,7 @@ export default function SLALembur({
       })
       .catch((error) => {
         if (cancelled) return
-        setDeadlineLoadError(error.message || 'Gagal memverifikasi deadline pengajuan.')
+        setDeadlineLoadError(friendlyDeadlineError(error?.message))
         setDeadlineLoadStatus('error')
       })
     return () => { cancelled = true }
@@ -979,7 +987,7 @@ export default function SLALembur({
                           <Alert tone="info" className="lembur-deadline-helper">Memverifikasi batas pengajuan dari server...</Alert>
                         )}
                         {draft.date && !isRevision && deadlineLoadStatus === 'error' && (
-                          <Alert tone="danger" title="Batas pengajuan tidak dapat diverifikasi" className="lembur-deadline-card">{deadlineLoadError}</Alert>
+                          <Alert tone="danger" title="Batas pengajuan tidak dapat diverifikasi" className="lembur-deadline-card">{deadlineLoadError} <button type="button" className="sla-btn" onClick={() => setDeadlineReloadToken((value) => value + 1)}>Coba lagi</button></Alert>
                         )}
                         {draft.date && !isRevision && deadlineReady && (initialDeadlinePassed ? (
                           <Alert tone="danger" title="Batas pengajuan telah lewat" className="lembur-deadline-card">{initialDeadlineMessage(draft.date, deadlineInfo)} Pilih tanggal yang masih dalam batas H+{deadlineInfo.effectiveSubmissionDays}.</Alert>
