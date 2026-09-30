@@ -172,6 +172,7 @@ function mapWorkRecord(row) {
     workLocation: row.work_location,
     description: row.description,
     status: row.status,
+    entryStatus: row.entry_approval_status ?? row.status,
     participantEmployeeId: row.participant_employee_id,
     participantName: row.participant_name,
     startedAt: row.started_at,
@@ -181,8 +182,10 @@ function mapWorkRecord(row) {
     submissionDeadlineAt: row.submission_deadline_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    rejectionCount: Number(row.rejection_count ?? 0),
-    revisionDeadlineAt: row.revision_deadline_at,
+    rejectionCount: Number(row.entry_rejection_count ?? row.rejection_count ?? 0),
+    activityRejectionCount: Number(row.rejection_count ?? 0),
+    revisionDeadlineAt: row.entry_revision_deadline_at ?? row.revision_deadline_at,
+    activityRevisionDeadlineAt: row.revision_deadline_at,
     closureReason: row.closure_reason,
   }
 }
@@ -228,8 +231,14 @@ export async function submitOvertimeWork(activityId) {
 export async function approveOvertime(activityId) {
   return rpc('approve_overtime_l5', { p_activity_id: activityId })
 }
+export async function approveOvertimeEntry(entryId) {
+  return rpc('approve_overtime_entry_l5', { p_entry_id: entryId })
+}
 export async function rejectOvertime(activityId, reason) {
   return rpc('reject_overtime_l5', { p_activity_id: activityId, p_reason: reason })
+}
+export async function rejectOvertimeEntry(entryId, reason) {
+  return rpc('reject_overtime_entry_l5', { p_entry_id: entryId, p_reason: reason })
 }
 export async function resubmitOvertime(activityId) {
   return rpc('resubmit_overtime_l5', { p_activity_id: activityId })

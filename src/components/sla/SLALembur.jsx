@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   approveOvertime,
+  approveOvertimeEntry,
   getOvertimeInitialDeadlineConfig,
   listOvertimeHistory,
   listReplacementEmployees,
   rejectOvertime,
+  rejectOvertimeEntry,
   resubmitOvertime,
   softDeleteOvertimeActivity,
 } from '../../data/overtimeReplacementRepository.js'
@@ -62,10 +64,17 @@ function friendlyDeadlineError(message) {
 }
 
 function recordIsExpired(record) {
-  if (record.status === 'CLOSED' && record.closureReason === 'EXPIRED') return true
-  return record.status === 'CORRECTION_REQUIRED'
+  const status = recordReviewStatus(record)
+  if (status === 'CLOSED' && record.closureReason === 'EXPIRED') return true
+  return status === 'CORRECTION_REQUIRED'
     && record.revisionDeadlineAt
     && new Date(record.revisionDeadlineAt) < new Date()
+}
+
+function recordReviewStatus(record) {
+  return record?.type === 'WORK'
+    ? record.entryStatus ?? record.status
+    : record?.status
 }
 
 const initialDraft = (periodMonth) => ({
@@ -82,37 +91,40 @@ const initialDraft = (periodMonth) => ({
 })
 
 function displayStatus(record){
+  const status = recordReviewStatus(record)
   if (recordIsExpired(record)) return 'Kedaluwarsa'
-  if (record.status==='DRAFT') return 'Draft'
-  if (record.status==='SUBMITTED'){
+  if (status==='DRAFT') return 'Draft'
+  if (status==='SUBMITTED'){
     if (record.rejectionCount===1) return 'Menunggu Approval — Revisi 1'
     if (record.rejectionCount===2) return 'Menunggu Approval — Revisi Terakhir'
     return 'Menunggu Approval'
   }
-  if (record.status==='CORRECTION_REQUIRED'){
+  if (status==='CORRECTION_REQUIRED'){
     if (record.rejectionCount===2) return 'Revisi Terakhir'
     return 'Perlu Revisi'
   }
-  if (record.status==='APPROVED') return 'Disetujui'
-  if (record.status==='CLOSED' && record.closureReason==='FINAL_REJECTED') return 'Ditolak Final'
-  if (record.status==='CLOSED' && record.closureReason==='EXPIRED') return 'Kedaluwarsa'
-  if (record.status==='CLOSED') return 'Ditutup'
-  return record.status
+  if (status==='APPROVED') return 'Disetujui'
+  if (status==='CLOSED' && record.closureReason==='FINAL_REJECTED') return 'Ditolak Final'
+  if (status==='CLOSED' && record.closureReason==='EXPIRED') return 'Kedaluwarsa'
+  if (status==='CLOSED') return 'Ditutup'
+  return status
 }
 
 function statusTone(record) {
+  const status = recordReviewStatus(record)
   if (recordIsExpired(record)) return 'neutral'
-  if (record.status === 'APPROVED') return 'success'
-  if (record.status === 'SUBMITTED') return 'info'
-  if (record.status === 'CORRECTION_REQUIRED') return 'warning'
-  if (record.status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'danger'
+  if (status === 'APPROVED') return 'success'
+  if (status === 'SUBMITTED') return 'info'
+  if (status === 'CORRECTION_REQUIRED') return 'warning'
+  if (status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'danger'
   return 'neutral'
 }
 
 function statusBadgeKey(record) {
+  const status = recordReviewStatus(record)
   if (recordIsExpired(record)) return 'EXPIRED'
-  if (record.status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'REJECTED'
-  return record.status
+  if (status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'REJECTED'
+  return status
 }
 
 function isWorkType(lemburType) {
@@ -334,8 +346,9 @@ export default function SLALembur({
   const workEvidenceReq = isWork ? (WORK_CATEGORIES[workCategory]?.evidence ?? []) : []
   const replacementEvidenceReq = isReplacement ? (REPLACEMENT_TYPES[draft.lemburType]?.evidence ?? []) : []
   const evidenceRequirements = isWork ? workEvidenceReq : replacementEvidenceReq
-  const activeRecord = activeActivityId ? records.find((record) => record.id === activeActivityId) : null
-  const isRevision = activeRecord?.status === 'CORRECTION_REQUIRED'
+  const activeRecords = activeActivityId ? records.filter((record) => record.id === activeActivityId) : []
+  const activeRecord = activeRecords.find((record) => recordReviewStatus(record) === 'CORRECTION_REQUIRED') ?? activeRecords[0] ?? null
+  const isRevision = recordReviewStatus(activeRecord) === 'CORRECTION_REQUIRED'
   const initialDeadline = deadlineInfo?.overtimeDate === draft.date && deadlineInfo.effectiveDeadlineAt
     ? new Date(deadlineInfo.effectiveDeadlineAt)
     : null
@@ -343,7 +356,7 @@ export default function SLALembur({
   const initialDeadlinePassed = Boolean(!isRevision && initialDeadline && initialDeadline.getTime() < deadlineClock)
   const deadlineUnavailable = Boolean(!isRevision && draft.date && !deadlineReady)
   const submitting = isSubmitting || deadlineUnavailable
-  const activeInitialExpired = activeRecord?.status === 'DRAFT' && initialDeadlinePassed
+  const activeInitialExpired = recordReviewStatus(activeRecord) === 'DRAFT' && initialDeadlinePassed
   const activeRevisionExpired = isRevision && recordIsExpired(activeRecord)
   const formReadOnly = activeInitialExpired || activeRevisionExpired
 
@@ -450,7 +463,7 @@ export default function SLALembur({
     const activityRecords = records.filter(r=>r.id===record.id)
     const first = activityRecords[0]
     if (!first) return
-    const canEdit = first.status==='DRAFT' || first.status==='CORRECTION_REQUIRED'
+    const canEdit = recordReviewStatus(first)==='DRAFT' || recordReviewStatus(first)==='CORRECTION_REQUIRED'
     if (!canEdit) return
     if (recordIsExpired(first)){
       setMessage(first.status === 'DRAFT'
@@ -759,23 +772,29 @@ export default function SLALembur({
     return text || fallback
   }
 
-  const handleApprove = async (activityId)=>{
-    if(!window.confirm('Setujui pengajuan lembur ini?')) return
+  const handleApprove = async (record)=>{
+    if(!record) return
+    const participantLabel = record.type === 'WORK' ? ` peserta ${record.participantName}` : ''
+    if(!window.confirm(`Setujui pengajuan lembur${participantLabel} ini?`)) return
     setApprovalBusy(true)
     setApprovalError('')
     try{
-      await approveOvertime(activityId)
+      if (record.type === 'WORK' && record.entryId) await approveOvertimeEntry(record.entryId)
+      else await approveOvertime(record.id)
       closeDetail()
       setToast('Lembur berhasil disetujui.')
       if(onRefresh) await onRefresh()
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal disetujui.')) } finally{ setApprovalBusy(false) }
   }
-  const handleReject = async (activityId)=>{
+  const handleReject = async (record)=>{
+    if(!record) return
     if(!rejectReason.trim()){ setApprovalError('Alasan penolakan wajib diisi.'); return }
     setApprovalBusy(true)
     setApprovalError('')
     try{
-      const res = await rejectOvertime(activityId, rejectReason)
+      const res = record.type === 'WORK' && record.entryId
+        ? await rejectOvertimeEntry(record.entryId, rejectReason)
+        : await rejectOvertime(record.id, rejectReason)
       closeDetail()
       setToast(res?.message || 'Lembur ditolak dan dikembalikan untuk revisi.')
       if(onRefresh) await onRefresh()
@@ -895,6 +914,8 @@ export default function SLALembur({
   const detailRecords = detailEntryRecords.length > 0 ? detailEntryRecords : detailActivityRecords
   const detailActivity = detailRecords[0] || null
   const detailIsSingleParticipant = detailEntryId != null && detailActivityRecords.length > 1
+  const detailApprovalKey = detailActivity ? `${detailActivity.id}:${detailActivity.entryId ?? 'activity'}` : ''
+  const detailCanApprove = detailActivity && recordReviewStatus(detailActivity) === 'SUBMITTED' && detailRecords.length === 1
 
   const changeType = (type) => {
     if (activeActivityId && evidence.length && type!==draft.lemburType) {
@@ -1136,7 +1157,8 @@ export default function SLALembur({
                   const time = pontianakFormValues(record.startedAt, record.endedAt)
                   const jenis = record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
                   const ulpName = !canMutate ? getUlpName(record.unitId) : null
-                  const canEdit = record.status==='DRAFT' || record.status==='CORRECTION_REQUIRED'
+                  const status = recordReviewStatus(record)
+                  const canEdit = status==='DRAFT' || status==='CORRECTION_REQUIRED'
                   const isExpired = recordIsExpired(record)
                   const display = displayStatus(record)
                   return (
@@ -1148,7 +1170,7 @@ export default function SLALembur({
                       <td className="lembur-table-time">{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''} · {formatDurationMinutes(record.durationHours*60)}</td>
                       <td className="lembur-table-money">Rp {formatRp(record.total)}</td>
                       <td><span className="rekap-keterangan">{record.description}</span></td>
-                      <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(record)} tone={statusTone(record)}>{display}</StatusBadge>{record.status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <div className="lembur-revision-meta"><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <strong>REVISI TERAKHIR</strong>}</div>}</td>
+                      <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(record)} tone={statusTone(record)}>{display}</StatusBadge>{status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <div className="lembur-revision-meta"><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <strong>REVISI TERAKHIR</strong>}</div>}</td>
                       <td className="lembur-table-actions-cell">
                         <div className="lembur-table-actions">
                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
@@ -1197,7 +1219,7 @@ export default function SLALembur({
                        <div><span className="lembur-kicker">Detail Lembur{detailIsSingleParticipant ? ` · ${detailActivity.participantName}` : ''}</span><h2>{jenisLabel(detailActivity)}</h2><p>{!canMutate ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}{detailIsSingleParticipant ? ` · 1 dari ${detailActivityRecords.length} peserta` : ''}</p></div>
                        <div className="lembur-detail-header-actions"><StatusBadge status={statusBadgeKey(detailActivity)} tone={statusTone(detailActivity)}>{displayStatus(detailActivity)}</StatusBadge><IconButton label="Tutup" className="lembur-icon-button" onClick={closeDetail}><Icon name="close" size={17} /></IconButton></div>
                      </div>
-                     {detailActivity.revisionDeadlineAt && detailActivity.status==='CORRECTION_REQUIRED' && <Alert tone="warning" title="Batas Revisi" className="lembur-detail-alert"><span>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · sisa {Math.max(0,Math.ceil((new Date(detailActivity.revisionDeadlineAt)-new Date())/3600000))} jam</span>{detailActivity.rejectionCount===2&&<small>Revisi terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</small>}</Alert>}
+                     {detailActivity.revisionDeadlineAt && recordReviewStatus(detailActivity)==='CORRECTION_REQUIRED' && <Alert tone="warning" title="Batas Revisi" className="lembur-detail-alert"><span>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · sisa {Math.max(0,Math.ceil((new Date(detailActivity.revisionDeadlineAt)-new Date())/3600000))} jam</span>{detailActivity.rejectionCount===2&&<small>Revisi terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</small>}</Alert>}
                     <section className="lembur-detail-section">
                       <h3>Pegawai & Waktu</h3>
                       <div className="lembur-detail-table-wrap"><table className="sla-table">
@@ -1224,9 +1246,10 @@ export default function SLALembur({
                         </div>
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
-                     {(isAdminUp3||isSuperAdmin) && detailActivity.status==='SUBMITTED' && (
-                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivityRecords.length>1&&<p className="lembur-approval-scope-note">Persetujuan berlaku untuk seluruh {detailActivityRecords.length} peserta dalam form ini.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailActivity.id);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity.id)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
-                     )}
+                     {(isAdminUp3||isSuperAdmin) && detailCanApprove && (
+                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailApprovalKey);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
+                      )}
+                     {(isAdminUp3||isSuperAdmin) && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
                   </>
                 )}
               </div>

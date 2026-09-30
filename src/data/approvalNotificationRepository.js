@@ -51,7 +51,8 @@ const APPROVAL_SOURCES = [
       ])
       const activities = new Map()
       for (const row of [...replacementRows, ...workRows]) {
-        if (row.status === 'SUBMITTED' && !activities.has(row.id)) activities.set(row.id, row)
+        const reviewStatus = row.type === 'WORK' ? row.entryStatus ?? row.status : row.status
+        if (reviewStatus === 'SUBMITTED' && !activities.has(row.id)) activities.set(row.id, row)
       }
       return [...activities.values()].map((row) => ({
         id: row.id,
