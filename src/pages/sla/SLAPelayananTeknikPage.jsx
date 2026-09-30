@@ -35,6 +35,7 @@ import {
   buildVersionSections,
   flattenVersionIndicators,
   pelayananTeknikModules,
+  defaultSlaPeriod,
   slaContractScope,
   slaIndicators,
   slaPeriods,
@@ -155,7 +156,7 @@ export default function SLAPelayananTeknikPage({
   onApprovalChange,
 }) {
   const [moduleId, setModuleId] = useState('sla')
-  const [period, setPeriod] = useState('Agustus 2026')
+  const [period, setPeriod] = useState(() => defaultSlaPeriod())
   const [versionId, setVersionId] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
   const [changeRequests, setChangeRequests] = useState([])

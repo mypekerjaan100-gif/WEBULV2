@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import FinancialComparisonDashboard from '../components/sla/FinancialComparisonDashboard.jsx'
-import { slaPeriods } from '../data/slaPelayananTeknik.js'
+import { defaultSlaPeriod, slaPeriods } from '../data/slaPelayananTeknik.js'
 import { getOrganizationScope } from '../data/orgIdMap.js'
 import { useAuth } from '../lib/AppAuth.jsx'
 import { useSlaPreview } from '../context/SlaPreviewContext.js'
@@ -14,7 +14,7 @@ export default function FinancialAnalysisPage() {
   const FINANCIAL_ROLES = ['TEAM_LEADER', 'MANAGER_UNIT', 'MANAGER_UP']
   const canAccess = isSuperAdmin || orgAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
 
-  const [period, setPeriod] = useState('Agustus 2026')
+  const [period, setPeriod] = useState(() => defaultSlaPeriod())
   const [orgMap, setOrgMap] = useState(null)
   const [orgMapError, setOrgMapError] = useState('')
   const up3Id = preview?.up3Id ?? 'up3'

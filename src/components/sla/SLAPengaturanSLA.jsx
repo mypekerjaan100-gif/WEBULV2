@@ -5,7 +5,7 @@ import {
   versionMetadataValid,
   versionReferences,
 } from '../../data/versiSlaPelayananTeknik.js'
-import { variableCostPoints, slaPeriods } from '../../data/slaPelayananTeknik.js'
+import { defaultSlaPeriod, variableCostPoints, slaPeriods } from '../../data/slaPelayananTeknik.js'
 import {
   fetchIndicators,
   fetchMonthlyTargets,
@@ -42,7 +42,7 @@ const countIndicators = (version) =>
 const targetCellKey = (indicatorId, unitId) => `${indicatorId}:${unitId}`
 
 function TargetUlpView({ orgMap, versions }) {
-  const [period, setPeriod] = useState('Agustus 2026')
+  const [period, setPeriod] = useState(() => defaultSlaPeriod())
   const [targetVersions, setTargetVersions] = useState([])
   const [selectedVersionId, setSelectedVersionId] = useState('')
   const [indicators, setIndicators] = useState([])

@@ -38,6 +38,44 @@ export const slaPeriods = [
   'Agustus 2027',
 ]
 
+const SLA_MONTH_NAMES = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+]
+
+function slaPeriodMonthKey(label) {
+  const parts = String(label ?? '').trim().split(/\s+/)
+  const monthIndex = SLA_MONTH_NAMES.indexOf(parts[0])
+  const year = Number(parts[1])
+  if (monthIndex < 0 || !Number.isInteger(year)) return null
+  return year * 12 + monthIndex
+}
+
+export function currentPeriodLabel(referenceDate = new Date()) {
+  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate)
+  if (Number.isNaN(date.getTime())) return null
+  return `${SLA_MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`
+}
+
+export function defaultSlaPeriod(referenceDate = new Date()) {
+  if (!Array.isArray(slaPeriods) || slaPeriods.length === 0) return currentPeriodLabel(referenceDate)
+  const current = currentPeriodLabel(referenceDate)
+  if (current && slaPeriods.includes(current)) return current
+  const currentKey = slaPeriodMonthKey(current)
+  if (currentKey == null) return slaPeriods[slaPeriods.length - 1]
+  let fallback = null
+  for (const label of slaPeriods) {
+    const key = slaPeriodMonthKey(label)
+    if (key == null) continue
+    if (key <= currentKey) fallback = label
+    else break
+  }
+  if (fallback) return fallback
+  const firstKey = slaPeriodMonthKey(slaPeriods[0])
+  if (firstKey != null && currentKey < firstKey) return slaPeriods[0]
+  return slaPeriods[slaPeriods.length - 1]
+}
+
 export const slaVersions = [
   {
     id: 'v1',
