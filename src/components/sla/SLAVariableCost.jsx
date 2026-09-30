@@ -192,7 +192,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     setSheetLoading(true)
     setSheetErrors({})
     try {
-      const results = await Promise.all(SPREADSHEET_CODES.map(async (indicatorCode) => {
+      const settled = await Promise.allSettled(SPREADSHEET_CODES.map(async (indicatorCode) => {
         const [summary, woRows] = await Promise.all([
           fetchSpreadsheetSummary({ indicator: indicatorCode, period: periodMonth }),
           contractId && up3Uuid
@@ -202,6 +202,16 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         return { indicatorCode, summary, woRows: woRows ?? [] }
       }))
       if (requestId !== sheetRequestRef.current) return
+      const results = []
+      const nextErrors = {}
+      settled.forEach((item, index) => {
+        const indicatorCode = SPREADSHEET_CODES[index]
+        if (item.status === 'fulfilled') {
+          results.push(item.value)
+        } else {
+          nextErrors[indicatorCode] = item.reason?.message || 'Data gagal dimuat.'
+        }
+      })
       const nextSummaries = {}
       const nextPeriods = {}
       const nextManualWo = {}
@@ -212,7 +222,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       }
       setSheetSummaries(nextSummaries)
       setSheetPeriods(nextPeriods)
-      sheetLoadedPeriod.current = periodMonth
+      setSheetErrors(nextErrors)
+      if (results.length > 0) sheetLoadedPeriod.current = periodMonth
       setSheetSyncedAt(results.map((item) => item.summary?.syncedAt).filter(Boolean).sort().at(-1) ?? new Date().toISOString())
       setManualWoByIndicator(nextManualWo)
       setWoDrafts((current) => {
@@ -228,7 +239,10 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       if (showModal) {
         // Load awal / ganti periode langsung tampil tanpa flash sukses.
         // Refresh manual menampilkan konfirmasi singkat.
-        if (mode === 'refresh') {
+        if (results.length === 0) {
+          const message = Object.values(nextErrors)[0] || 'Data gagal dimuat.'
+          setProcessState({ mode, status: 'error', error: message })
+        } else if (mode === 'refresh') {
           setProcessState({ mode, status: 'success', error: '' })
         } else {
           setProcessState(null)

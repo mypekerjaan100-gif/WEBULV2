@@ -30,6 +30,21 @@ export const SPREADSHEET_SOURCES = Object.freeze({
     name: 'Inspeksi Gardu/Keypoint Tier 2',
     sheetName: 'GARDU T2',
   }),
+  '3.1a': Object.freeze({
+    code: '3.1a',
+    name: 'ROW Fix',
+    sheetName: 'Pangkas Pohon',
+  }),
+  '3.1b': Object.freeze({
+    code: '3.1b',
+    name: 'ROW Var',
+    sheetName: 'VAR ROW',
+  }),
+  '3.2b': Object.freeze({
+    code: '3.2b',
+    name: 'Pemeliharaan Gardu',
+    sheetName: 'HAR gardu',
+  }),
 })
 
 export const SPREADSHEET_INDICATOR_CODES = Object.freeze(Object.keys(SPREADSHEET_SOURCES))
