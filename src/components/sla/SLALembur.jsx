@@ -200,6 +200,8 @@ export default function SLALembur({
   const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [toast, setToast] = useState('')
+  const [approvalBusy, setApprovalBusy] = useState(false)
+  const [approvalError, setApprovalError] = useState('')
   const [deadlineInfo, setDeadlineInfo] = useState(null)
   const [deadlineLoadStatus, setDeadlineLoadStatus] = useState('idle')
   const [deadlineLoadError, setDeadlineLoadError] = useState('')
@@ -227,6 +229,11 @@ export default function SLALembur({
     const timeoutId = window.setTimeout(() => setToast(''), 3500)
     return () => window.clearTimeout(timeoutId)
   }, [toast])
+
+  useEffect(() => {
+    setApprovalError('')
+    setApprovalBusy(false)
+  }, [detailActivityId])
 
   useEffect(() => {
     if (!formOpen || formStep !== 'form' || !/^\d{4}-\d{2}-\d{2}$/.test(draft.date ?? '') || !contractScope.contractId || !up3Id) {
@@ -725,26 +732,43 @@ export default function SLALembur({
     } finally { setSubmitting(false) }
   }
 
+  function friendlyApprovalError(message, fallback) {
+    const text = String(message ?? '')
+    if (/not authorized|42501|permission|scope/i.test(text)) {
+      return 'Akun Anda tidak memiliki akses approval untuk scope lembur ini.'
+    }
+    if (/only submitted|status/i.test(text)) {
+      return 'Data sudah berubah status. Tutup detail lalu buka kembali untuk memuat status terbaru.'
+    }
+    if (/failed to fetch|networkerror|timeout|aborterror|http \d{3}/i.test(text)) {
+      return 'Terjadi gangguan jaringan. Periksa koneksi lalu coba lagi.'
+    }
+    return text || fallback
+  }
+
   const handleApprove = async (activityId)=>{
     if(!window.confirm('Setujui pengajuan lembur ini?')) return
-    setSubmitting(true)
+    setApprovalBusy(true)
+    setApprovalError('')
     try{
-      const res = await approveOvertime(activityId)
-      setMessage(res.message || 'Disetujui')
-      if(onRefresh) onRefresh()
-      setDetailActivityId(null)
-    }catch(e){ setMessage(e.message || 'Gagal menyetujui') } finally{ setSubmitting(false) }
-  }
-  const handleReject = async (activityId)=>{
-    if(!rejectReason.trim()){ setMessage('Alasan penolakan wajib diisi'); return }
-    setSubmitting(true)
-    try{
-      const res = await rejectOvertime(activityId, rejectReason)
-      setMessage(res.message || 'Ditolak')
-      if(onRefresh) onRefresh()
+      await approveOvertime(activityId)
       setShowReject(null); setRejectReason('')
       setDetailActivityId(null)
-    }catch(e){ setMessage(e.message || 'Gagal menolak') } finally{ setSubmitting(false) }
+      setToast('Lembur berhasil disetujui.')
+      if(onRefresh) await onRefresh()
+    }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal disetujui.')) } finally{ setApprovalBusy(false) }
+  }
+  const handleReject = async (activityId)=>{
+    if(!rejectReason.trim()){ setApprovalError('Alasan penolakan wajib diisi.'); return }
+    setApprovalBusy(true)
+    setApprovalError('')
+    try{
+      const res = await rejectOvertime(activityId, rejectReason)
+      setShowReject(null); setRejectReason('')
+      setDetailActivityId(null)
+      setToast(res?.message || 'Lembur ditolak dan dikembalikan untuk revisi.')
+      if(onRefresh) await onRefresh()
+    }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
   }
 
   const handleDelete = async () => {
@@ -1185,7 +1209,7 @@ export default function SLALembur({
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
                      {(isAdminUp3||isSuperAdmin) && detailActivity.status==='SUBMITTED' && (
-                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" onClick={()=>{setShowReject(null);setRejectReason('')}}>Batal</Button><Button variant="danger" disabled={submitting||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>Kirim Penolakan</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={submitting} onClick={()=>setShowReject(detailActivity.id)}>Tolak</Button><Button variant="primary" disabled={submitting} onClick={()=>handleApprove(detailActivity.id)}>Setujui</Button></div></section>
+                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailActivity.id&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity.id)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailActivity.id);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity.id)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
                      )}
                   </>
                 )}
