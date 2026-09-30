@@ -45,11 +45,14 @@ export async function handleCreateUser(
   const { data: existingUsername } = await adminClient.from("auth_usernames").select("user_id").eq("username_normalized", normalizedUsername).maybeSingle();
   if (existingUsername) return { status: 409, body: { error: "username_exists", message: "Username sudah digunakan." } };
 
+  // Akun dibuat langsung aktif tanpa verifikasi email agar admin tidak ribet:
+  // login memakai username + password dan bisa langsung digunakan.
+  // Email pemulihan bersifat opsional dan hanya dipakai untuk lupa password.
   const authEmail = recoveryEmail || `login-${crypto.randomUUID()}@users.invalid`;
   const { data: created, error: createError } = await adminClient.auth.admin.createUser({
     email: authEmail,
     password,
-    email_confirm: !recoveryEmail,
+    email_confirm: true,
     user_metadata: { display_name: displayName, username },
   });
   if (createError || !created.user) {
@@ -63,21 +66,6 @@ export async function handleCreateUser(
   if (profileError || usernameError) {
     await cleanup();
     return { status: usernameError?.code === "23505" ? 409 : 500, body: { error: usernameError?.code === "23505" ? "username_exists" : "account_persistence_failed", message: usernameError?.code === "23505" ? "Username sudah digunakan." : "Akun tidak dapat disimpan." } };
-  }
-
-  if (recoveryEmail) {
-    const anonClient = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_ANON_KEY"), {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { error: verificationError } = await anonClient.auth.resend({
-      type: "signup",
-      email: recoveryEmail,
-      options: { emailRedirectTo: Deno.env.get("APP_URL") ?? "https://laporanharian.vercel.app" },
-    });
-    if (verificationError) {
-      await cleanup();
-      return { status: 500, body: { error: "verification_email_failed", message: "Email verifikasi tidak dapat dikirim." } };
-    }
   }
 
   const { error: accessError } = await adminClient.rpc("admin_set_user_access", {
@@ -101,7 +89,7 @@ export async function handleCreateUser(
       userId,
       username,
       displayName,
-      recoveryEmailStatus: recoveryEmail ? "PENDING_VERIFICATION" : "NOT_CONFIGURED",
+      recoveryEmailStatus: recoveryEmail ? "CONFIGURED" : "NOT_CONFIGURED",
     },
   };
 }

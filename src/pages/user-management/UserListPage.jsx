@@ -600,7 +600,7 @@ function CreateUserModal({ onClose, onSuccess }) {
             </>}
             {organizationRole && <div className="form-group"><label htmlFor="create-internal-unit">Unit Organisasi *</label><select id="create-internal-unit" className="input-select" value={internalOrgUnitId} onChange={(e) => setInternalOrgUnitId(e.target.value)} required><option value="">Pilih unit</option>{internalUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></div>}
             <p className="invite-hint">
-              Jika email diisi, pengguna harus menyelesaikan verifikasi Supabase sebelum login pertama dan sebelum email dapat digunakan untuk reset password.
+              Email bersifat opsional dan hanya digunakan untuk lupa password. Kosongkan jika tidak diperlukan — akun langsung aktif dan bisa login dengan username.
             </p>
           </div>
           <div className="modal-footer">
