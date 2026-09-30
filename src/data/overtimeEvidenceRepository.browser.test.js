@@ -129,12 +129,12 @@ try {
       'prepare_overtime_evidence_upload',
       {
         p_activity_id: ownActivity,
-        p_evidence_type: 'SPK',
-        p_original_filename: 'oversized.doc',
-        p_original_mime_type: 'application/msword',
+        p_evidence_type: 'FOTO_PROSES',
+        p_original_filename: 'oversized.png',
+        p_original_mime_type: 'image/png',
         p_original_size_bytes: 1024 * 1024 + 1,
         p_stored_size_bytes: 1024 * 1024,
-        p_stored_mime_type: 'application/msword',
+        p_stored_mime_type: 'image/webp',
         p_checksum: null,
         p_sort_order: 0,
         p_supersedes_evidence_id: null,
@@ -143,8 +143,8 @@ try {
     if (prepareOversizeError) throw prepareOversizeError
     const oversizedFile = new File(
       [new Uint8Array(1024 * 1024 + 1)],
-      'oversized.doc',
-      { type: 'application/msword' },
+      'oversized.png',
+      { type: 'image/png' },
     )
     const { error: oversizedUploadError } = await supabase.storage
       .from('overtime-evidence')

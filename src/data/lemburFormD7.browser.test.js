@@ -93,11 +93,17 @@ try {
 
     let expiredEvidenceBlocked = false
     try {
-      const file = new File([new Uint8Array([1, 2, 3])], 'expired.pdf', { type: 'application/pdf' })
+      const expiredCanvas = document.createElement('canvas')
+      expiredCanvas.width = 900
+      expiredCanvas.height = 600
+      const expiredContext = expiredCanvas.getContext('2d')
+      expiredContext.fillStyle = '#164e63'
+      expiredContext.fillRect(0, 0, expiredCanvas.width, expiredCanvas.height)
+      const expiredBlob = await new Promise((resolve) => expiredCanvas.toBlob(resolve, 'image/png'))
       await evidenceRepository.uploadOvertimeEvidence({
         activityId: expiredDraftId,
         evidenceType: 'FORM_CUTI',
-        file,
+        file: new File([expiredBlob], 'expired.png', { type: 'image/png' }),
       })
     } catch (evidenceError) {
       expiredEvidenceBlocked = /Batas pengajuan|revisi telah lewat/.test(evidenceError.message)
@@ -231,13 +237,13 @@ try {
     }
   }
 
-  await completeValidForm('08:00', '10:00', 'form-cuti-draft.pdf', 'application/pdf', pdf)
+  await completeValidForm('08:00', '10:00', 'form-cuti-draft.png')
   await page.getByRole('button', { name: 'Simpan Draft', exact: true }).click()
   await page.getByText('Draft dan evidence berhasil disimpan — Data tersinkron.', { exact: true }).waitFor()
   const pageCountBeforePreview = page.context().pages().length
   await page.locator('.lembur-selected-file').getByRole('button', { name: 'Preview', exact: true }).click()
-  await page.locator('.lembur-preview-body iframe').waitFor()
-  if (page.context().pages().length !== pageCountBeforePreview) throw new Error('Preview dokumen membuka tab baru')
+  await page.locator('.lembur-preview-body img').waitFor()
+  if (page.context().pages().length !== pageCountBeforePreview) throw new Error('Preview foto membuka tab baru')
   await page.getByRole('button', { name: 'Tutup preview', exact: true }).click()
   if (!await page.locator('.lembur-form-modal-wide').isVisible()) throw new Error('Form context hilang setelah preview')
 

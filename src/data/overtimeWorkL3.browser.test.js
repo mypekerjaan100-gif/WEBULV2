@@ -60,13 +60,6 @@ try {
       const blob = await new Promise(r=> canvas.toBlob(r, 'image/png'))
       return new File([blob], name, { type: 'image/png' })
     }
-    async function makePdf(name) {
-      // small fake PDF bypasses client-side optimization (size <= 880KB returns directly)
-      const header = '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n' + name
-      const blob = new Blob([header], { type: 'application/pdf' })
-      return new File([blob], name, { type: 'application/pdf' })
-    }
-
     // helper to get employees for a date
     await signIn('ulp')
     const employees = await workRepo.listReplacementEmployees({ contractId, up3Id, startedAt: '2026-08-20T08:00:00+07:00' })
@@ -195,7 +188,7 @@ try {
     try { await workRepo.submitOvertimeWork(garduId) } catch(e){ garduBlocked=/SPK|FOTO_BRIEFING/.test(e.message) }
     if (!garduBlocked) throw new Error('Gardu evidence not blocked')
     // upload shared evidence once per activity
-    await evidenceRepo.uploadOvertimeEvidence({ activityId: garduId, evidenceType: 'SPK', file: await makePdf('spk.pdf') })
+    await evidenceRepo.uploadOvertimeEvidence({ activityId: garduId, evidenceType: 'SPK', file: await makeImage('spk.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: garduId, evidenceType: 'FOTO_BRIEFING', file: await makeImage('brief1.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: garduId, evidenceType: 'FOTO_BRIEFING', file: await makeImage('brief2.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: garduId, evidenceType: 'FOTO_PROSES', file: await makeImage('proses.png') })
@@ -240,7 +233,7 @@ try {
       workLocation: 'Jl. Merdeka',
       participants: [{ employee_id: g1.id, started_at: '2026-08-23T18:00:00+07:00', ended_at: '2026-08-23T20:00:00+07:00' }],
     })
-    await evidenceRepo.uploadOvertimeEvidence({ activityId: jtmId, evidenceType: 'SPK', file: await makePdf('spk_jtm.pdf') })
+    await evidenceRepo.uploadOvertimeEvidence({ activityId: jtmId, evidenceType: 'SPK', file: await makeImage('spk_jtm.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: jtmId, evidenceType: 'FOTO_BRIEFING', file: await makeImage('jtm_brief.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: jtmId, evidenceType: 'FOTO_PROSES', file: await makeImage('jtm_proses.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: jtmId, evidenceType: 'FOTO_SELESAI', file: await makeImage('jtm_selesai.png') })
@@ -257,7 +250,7 @@ try {
       workLocation: 'Jl. Sudirman',
       participants: [{ employee_id: g2.id, started_at: '2026-08-24T18:00:00+07:00', ended_at: '2026-08-24T20:00:00+07:00' }],
     })
-    await evidenceRepo.uploadOvertimeEvidence({ activityId: jtrId, evidenceType: 'SPK', file: await makePdf('spk_jtr.pdf') })
+    await evidenceRepo.uploadOvertimeEvidence({ activityId: jtrId, evidenceType: 'SPK', file: await makeImage('spk_jtr.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: jtrId, evidenceType: 'FOTO_BRIEFING', file: await makeImage('jtr_brief.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: jtrId, evidenceType: 'FOTO_PROSES', file: await makeImage('jtr_proses.png') })
     await evidenceRepo.uploadOvertimeEvidence({ activityId: jtrId, evidenceType: 'FOTO_SELESAI', file: await makeImage('jtr_selesai.png') })

@@ -18,16 +18,24 @@ const pdfFile = new File(
   'evidence.pdf',
   { type: 'application/pdf' },
 )
-const processedPdf = await processEvidenceFile(pdfFile, 'SPK')
+const processedPdf = await processEvidenceFile(pdfFile, 'DOKUMEN_ARSIP')
 assert(processedPdf.stored.sizeBytes <= EVIDENCE_MAX_BYTES, 'PDF <= 1 MB')
 assert(processedPdf.stored.checksum.length === 64, 'SHA-256 generated')
+
+let lemburPdfRejected = false
+try {
+  await processEvidenceFile(pdfFile, 'SPK')
+} catch (error) {
+  lemburPdfRejected = /wajib berupa foto/.test(error.message)
+}
+assert(lemburPdfRejected, 'Lembur evidence rejects PDF clearly')
 
 const extensionOnlyPdf = new File(
   [await pdf.save({ useObjectStreams: false })],
   'scan-form-cuti.pdf',
   { type: '' },
 )
-const processedExtensionOnlyPdf = await processEvidenceFile(extensionOnlyPdf, 'SPK')
+const processedExtensionOnlyPdf = await processEvidenceFile(extensionOnlyPdf, 'DOKUMEN_ARSIP')
 assert(processedExtensionOnlyPdf.stored.mimeType === 'application/pdf', 'PDF detected from extension')
 
 const oversizedDocBytes = new Uint8Array(EVIDENCE_MAX_BYTES + 1)
@@ -41,9 +49,9 @@ let oversizedRejected = false
 try {
   await processEvidenceFile(oversizedDoc, 'SPK')
 } catch (error) {
-  oversizedRejected = /1 MB/.test(error.message)
+  oversizedRejected = /wajib berupa foto/.test(error.message)
 }
-assert(oversizedRejected, 'Oversized document rejected clearly')
+assert(oversizedRejected, 'Lembur evidence rejects DOC clearly')
 
 let malformedPdfRejected = false
 try {
@@ -51,7 +59,7 @@ try {
   bigMalformed.set([1, 2, 3])
   await processEvidenceFile(
     new File([bigMalformed], 'malformed.pdf', { type: 'application/pdf' }),
-    'SPK',
+    'DOKUMEN_ARSIP',
   )
 } catch (error) {
   malformedPdfRejected = /tidak dapat dioptimalkan/.test(error.message)

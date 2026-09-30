@@ -9,6 +9,12 @@ const MAX_PDF_PAGES = 500
 const SUPPORTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 const PHOTO_EVIDENCE_TYPES = new Set([
+  'FORM_CUTI',
+  'FORM_SAKIT',
+  'SURAT_SAKIT',
+  'FORM_IZIN',
+  'SURAT_IZIN',
+  'SPK',
   'FOTO_SEBELUM',
   'FOTO_SESUDAH',
   'FOTO_BRIEFING',
@@ -234,6 +240,10 @@ export async function processEvidenceFile(file, evidenceType) {
 
   const normalizedFile = normalizeEvidenceFileType(file)
 
+  if (PHOTO_EVIDENCE_TYPES.has(evidenceType) && !SUPPORTED_IMAGE_TYPES.has(normalizedFile.type)) {
+    throw new Error('Evidence Lembur wajib berupa foto JPG/JPEG, PNG, atau WebP agar dapat dikompres otomatis.')
+  }
+
   const original = {
     filename: normalizedFile.name,
     mimeType: normalizedFile.type || 'application/octet-stream',
@@ -249,11 +259,11 @@ export async function processEvidenceFile(file, evidenceType) {
     await validateOfficeSignature(normalizedFile)
     storedFile = normalizedFile
   } else {
-    throw new Error('Format evidence tidak didukung. Gunakan PDF, JPG/JPEG, PNG, WebP, DOC, atau DOCX.')
+    throw new Error('Format evidence tidak didukung. Gunakan foto JPG/JPEG, PNG, atau WebP.')
   }
 
   if (PHOTO_EVIDENCE_TYPES.has(evidenceType) && !storedFile.type.startsWith('image/')) {
-    throw new Error('Evidence foto wajib berupa gambar JPEG atau WebP.')
+    throw new Error('Evidence Lembur wajib berupa foto JPG/JPEG, PNG, atau WebP agar dapat dikompres otomatis.')
   }
   if (storedFile.size > EVIDENCE_MAX_BYTES) {
     const label = storedFile.type === 'application/pdf' ? 'PDF' : 'Dokumen'

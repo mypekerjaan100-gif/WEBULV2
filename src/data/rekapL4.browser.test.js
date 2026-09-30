@@ -25,7 +25,6 @@ try{
     async function makeImage(name){
       const c=document.createElement('canvas'); c.width=900; c.height=600; const ctx=c.getContext('2d'); ctx.fillStyle='#164e63'; ctx.fillRect(0,0,900,600); ctx.fillStyle='#fff'; ctx.font='42px sans-serif'; ctx.fillText(name,50,300); const blob=await new Promise(r=>c.toBlob(r,'image/png')); return new File([blob], name, {type:'image/png'})
     }
-    async function makePdf(name){ const blob=new Blob(['%PDF-1.4 '+name],{type:'application/pdf'}); return new File([blob], name, {type:'application/pdf'}) }
     await signIn('ulp')
     const employees = await repRepo.listReplacementEmployees({ contractId, up3Id, startedAt: '2026-08-20T08:00:00+07:00' })
     const e = (n)=> employees.find(x=>x.name===n)
@@ -58,7 +57,7 @@ try{
       {employee_id:g2.id, started_at:'2026-08-24T18:00:00+07:00', ended_at:'2026-08-24T21:00:00+07:00'},
       {employee_id:g3.id, started_at:'2026-08-24T19:00:00+07:00', ended_at:'2026-08-24T22:00:00+07:00'},
     ]})
-    await evRepo.uploadOvertimeEvidence({ activityId:garduId, evidenceType:'SPK', file: await makePdf('spk.pdf') })
+    await evRepo.uploadOvertimeEvidence({ activityId:garduId, evidenceType:'SPK', file: await makeImage('spk.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:garduId, evidenceType:'FOTO_BRIEFING', file: await makeImage('brief1.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:garduId, evidenceType:'FOTO_BRIEFING', file: await makeImage('brief2.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:garduId, evidenceType:'FOTO_PROSES', file: await makeImage('proses.png') })
@@ -66,14 +65,14 @@ try{
     await repRepo.submitOvertimeWork(garduId)
 
     const jtmId = await repRepo.saveOvertimeWorkDraft({ activityId:null, contractId, up3Id, unitId:ownUnitId, workCategory:'JTM', description:'JTM keterangan', workTitle:'JTM - Test', workLocation:'Lokasi JTM', participants:[{employee_id:g1.id, started_at:'2026-08-25T08:00:00+07:00', ended_at:'2026-08-25T12:00:00+07:00'}] })
-    await evRepo.uploadOvertimeEvidence({ activityId:jtmId, evidenceType:'SPK', file: await makePdf('spk2.pdf') })
+    await evRepo.uploadOvertimeEvidence({ activityId:jtmId, evidenceType:'SPK', file: await makeImage('spk2.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:jtmId, evidenceType:'FOTO_BRIEFING', file: await makeImage('jtm_brief.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:jtmId, evidenceType:'FOTO_PROSES', file: await makeImage('jtm_proses.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:jtmId, evidenceType:'FOTO_SELESAI', file: await makeImage('jtm_selesai.png') })
     await repRepo.submitOvertimeWork(jtmId)
 
     const jtrId = await repRepo.saveOvertimeWorkDraft({ activityId:null, contractId, up3Id, unitId:ownUnitId, workCategory:'JTR', description:'JTR keterangan', workTitle:'JTR - Test', workLocation:'Lokasi JTR', participants:[{employee_id:g2.id, started_at:'2026-08-26T08:00:00+07:00', ended_at:'2026-08-26T12:00:00+07:00'}] })
-    await evRepo.uploadOvertimeEvidence({ activityId:jtrId, evidenceType:'SPK', file: await makePdf('spk3.pdf') })
+    await evRepo.uploadOvertimeEvidence({ activityId:jtrId, evidenceType:'SPK', file: await makeImage('spk3.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:jtrId, evidenceType:'FOTO_BRIEFING', file: await makeImage('jtr_brief.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:jtrId, evidenceType:'FOTO_PROSES', file: await makeImage('jtr_proses.png') })
     await evRepo.uploadOvertimeEvidence({ activityId:jtrId, evidenceType:'FOTO_SELESAI', file: await makeImage('jtr_selesai.png') })
