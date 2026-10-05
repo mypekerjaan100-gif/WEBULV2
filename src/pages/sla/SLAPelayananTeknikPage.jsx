@@ -616,16 +616,16 @@ export default function SLAPelayananTeknikPage({
   const primaryModules = visibleModules.filter((module) => ['sla', 'variable-cost', 'lembur'].includes(module.id))
   const configurationModules = visibleModules.filter((module) => !['sla', 'variable-cost', 'lembur'].includes(module.id))
 
-  const refreshLembur = useCallback(async () => {
+  const refreshLembur = useCallback(async (options = {}) => {
     if (!orgMap?.contractUuid || !orgMap?.up3Uuid || (role === 'ulp' && !lemburUnitUuid)) {
       setLemburRecords([])
       setLemburLoadStatus('idle')
       return
     }
     const requestId = ++lemburRequestId.current
-    setLemburLoadStatus('loading')
+    if (!options.background) setLemburLoadStatus('loading')
     setLemburLoadError('')
-    setLemburRecords([])
+    if (!options.background) setLemburRecords([])
     try {
       await expireInitialOvertimeDrafts({
         contractId: orgMap.contractUuid,
@@ -652,12 +652,12 @@ export default function SLAPelayananTeknikPage({
     } catch (error) {
       if (requestId !== lemburRequestId.current) return
       setLemburLoadError(error.message || 'Gagal memuat data lembur. Data tersinkron tidak tersedia.')
-      setLemburLoadStatus('error')
+      if (!options.background) setLemburLoadStatus('error')
     }
   }, [orgMap?.contractUuid, orgMap?.up3Uuid, role, lemburUnitUuid, lemburPeriodMonth])
 
-  const refreshLemburAndApprovals = useCallback(async () => {
-    await refreshLembur()
+  const refreshLemburAndApprovals = useCallback(async (options = {}) => {
+    await refreshLembur(options)
     await onApprovalChange?.()
   }, [refreshLembur, onApprovalChange])
 
@@ -667,7 +667,7 @@ export default function SLAPelayananTeknikPage({
     return () => { lemburRequestId.current += 1 }
   }, [moduleId, authUserId, refreshLembur])
 
-  const saveLembur = async (id, draft) => {
+  const saveLembur = async (id, draft, options = {}) => {
     try {
       const activityId = await saveOvertimeReplacementDraft({
         activityId: id,
@@ -675,7 +675,7 @@ export default function SLAPelayananTeknikPage({
         up3Id: orgMap.up3Uuid,
         ...draft,
       })
-      await refreshLembur()
+      if (!options.skipRefresh) await refreshLembur()
       return {
         ok: true,
         activityId,
@@ -686,7 +686,7 @@ export default function SLAPelayananTeknikPage({
     }
   }
 
-  const saveWorkLembur = async (id, draft) => {
+  const saveWorkLembur = async (id, draft, options = {}) => {
     try {
       const activityId = await saveOvertimeWorkDraft({
         activityId: id,
@@ -694,7 +694,7 @@ export default function SLAPelayananTeknikPage({
         up3Id: orgMap.up3Uuid,
         ...draft,
       })
-      await refreshLembur()
+      if (!options.skipRefresh) await refreshLembur()
       return {
         ok: true,
         activityId,
@@ -705,20 +705,20 @@ export default function SLAPelayananTeknikPage({
     }
   }
 
-  const submitLembur = async (activityId) => {
+  const submitLembur = async (activityId, options = {}) => {
     try {
       await submitOvertimeReplacement(activityId)
-      await refreshLembur()
+      if (!options.skipRefresh) await refreshLembur()
       return { ok: true, message: 'Lembur diajukan dan menunggu approval.' }
     } catch (error) {
       return { ok: false, message: error.message || 'Gagal mengajukan Lembur.' }
     }
   }
 
-  const submitWorkLembur = async (activityId) => {
+  const submitWorkLembur = async (activityId, options = {}) => {
     try {
       await submitOvertimeWork(activityId)
-      await refreshLembur()
+      if (!options.skipRefresh) await refreshLembur()
       return { ok: true, message: 'Lembur diajukan dan menunggu approval.' }
     } catch (error) {
       return { ok: false, message: error.message || 'Gagal mengajukan Lembur.' }

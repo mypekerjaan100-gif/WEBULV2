@@ -26,6 +26,7 @@ import {
   FilterBar,
   FilterField,
   IconButton,
+  ProcessModal,
   SearchInput,
   Select,
   StatePanel,
@@ -224,6 +225,7 @@ export default function SLALembur({
   const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [toast, setToast] = useState('')
+  const [submitProcess, setSubmitProcess] = useState(null)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [approvalError, setApprovalError] = useState('')
   const [deadlineInfo, setDeadlineInfo] = useState(null)
@@ -580,7 +582,7 @@ export default function SLALembur({
         participantEmployeeId: participantEmployee.id,
         startedAt: range.startedAt,
         endedAt: range.endedAt,
-      })
+      }, { skipRefresh: true })
     } else {
       let participants=[]
       let unitForActivity=null
@@ -607,7 +609,7 @@ export default function SLALembur({
         workTitle: draft.workTitle,
         workLocation: draft.workLocation,
         participants,
-      })
+      }, { skipRefresh: true })
     }
     if (!result?.ok || !result.activityId) throw new Error(result?.message || 'Draft Lembur gagal disimpan.')
     setActiveActivityId(result.activityId)
@@ -732,11 +734,12 @@ export default function SLALembur({
     } catch (e) { setMessage(e.message || 'Evidence gagal dihapus.') } finally { setSubmitting(false) }
   }
 
-  const submitDraft = async () => {
+  const runSubmitDraft = async () => {
     const validation = validateDraft()
-    if (validation) { setMessage(validation); return }
-    if (!evidenceComplete) { setMessage('Lengkapi seluruh evidence wajib sebelum mengajukan Lembur.'); return }
+    if (validation) { setMessage(validation); return false }
+    if (!evidenceComplete) { setMessage('Lengkapi seluruh evidence wajib sebelum mengajukan Lembur.'); return false }
     setSubmitting(true)
+    setSubmitProcess({ status: 'loading', error: '' })
     try {
       const resubmitting = isRevision
       let activityId = activeActivityId
@@ -745,17 +748,26 @@ export default function SLALembur({
       const result = resubmitting
         ? await resubmitOvertime(activityId)
         : isReplacement
-          ? await onSubmit(activityId)
-          : await onSubmitWork(activityId)
+          ? await onSubmit(activityId, { skipRefresh: true })
+          : await onSubmitWork(activityId, { skipRefresh: true })
       if (!resubmitting && !result?.ok) throw new Error(result?.message || 'Lembur gagal diajukan.')
       resetForm()
       setFormOpen(false)
       setMessage(resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : 'Lembur diajukan dan menunggu approval.')
-      if(onRefresh) await onRefresh()
+      setSubmitProcess({ status: 'success', error: '' })
+      if(onRefresh) await onRefresh({ background: true }).catch(() => {})
+      return true
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
-      setMessage(error.message || 'Draft, evidence, atau pengajuan Lembur gagal disimpan.')
+      const errorMessage = error.message || 'Draft, evidence, atau pengajuan Lembur gagal disimpan.'
+      setMessage(errorMessage)
+      setSubmitProcess({ status: 'error', error: errorMessage })
+      return false
     } finally { setSubmitting(false) }
+  }
+
+  const submitDraft = () => {
+    runSubmitDraft()
   }
 
   function friendlyApprovalError(message, fallback) {
@@ -1258,6 +1270,19 @@ export default function SLALembur({
           {evidencePreview && <div className="lembur-preview-overlay" onClick={()=>setEvidencePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>{evidenceLabel(evidencePreview.entry.evidenceType)}</strong><span>{evidencePreview.entry.originalFilename}</span></div><IconButton label="Tutup preview" className="lembur-icon-button" onClick={()=>setEvidencePreview(null)}><Icon name="close" size={17} /></IconButton></div><div className="lembur-preview-body">{evidencePreview.loading?<div className="lembur-detail-empty">Menyiapkan preview aman...</div>:isImageEvidence(evidencePreview.entry)?<img src={evidencePreview.url} alt={evidencePreview.entry.originalFilename} />:isPdfEvidence(evidencePreview.entry)?<iframe src={evidencePreview.url} title={evidencePreview.entry.originalFilename} />:<div className="lembur-document-fallback"><span className="lembur-doc-icon">DOC</span><strong>Pratinjau dokumen tidak didukung browser.</strong><p>Dokumen tetap tersimpan aman. Tutup viewer untuk kembali ke Detail Lembur.</p></div>}</div>{isImageEvidence(evidencePreview.entry)&&evidencePreview.entries.length>1&&<div className="lembur-preview-nav"><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(-1)}>← Sebelumnya</Button><span>{evidencePreview.index+1} / {evidencePreview.entries.length}</span><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(1)}>Berikutnya →</Button></div>}</div></div>}
         </>
       )}
+      <ProcessModal
+        open={Boolean(submitProcess)}
+        status={submitProcess?.status ?? 'loading'}
+        title="Mengajukan Lembur"
+        subtitle="Menyimpan draft, mengunggah evidence, lalu mengirim pengajuan."
+        successTitle="Lembur Berhasil Diajukan"
+        successMessage="Pengajuan Lembur berhasil dikirim dan menunggu approval."
+        error={submitProcess?.error}
+        autoCloseMs={2000}
+        allowClose={submitProcess?.status !== 'loading'}
+        onClose={() => setSubmitProcess(null)}
+        onRetry={runSubmitDraft}
+      />
     </section>
   )
 }
