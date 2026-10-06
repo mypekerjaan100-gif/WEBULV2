@@ -1185,7 +1185,7 @@ export default function SLALembur({
                       <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(record)} tone={statusTone(record)}>{display}</StatusBadge>{status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <div className="lembur-revision-meta"><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <strong>REVISI TERAKHIR</strong>}</div>}</td>
                       <td className="lembur-table-actions-cell">
                         <div className="lembur-table-actions">
-                          {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={submitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
+                          {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
                            <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
                            {isSuperAdmin && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus</Button>}
                         </div>
