@@ -813,8 +813,17 @@ export default function SLALembur({
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
   }
 
+  const activityRowIds = (activityId) => records.filter((record) => record.id === activityId)
+  const canDeleteRecord = (record) => {
+    if (!record) return false
+    if (isSuperAdmin) return true
+    if (!canMutate) return false
+    if (!['DRAFT', 'SUBMITTED', 'CORRECTION_REQUIRED'].includes(record.status)) return false
+    return !activityRowIds(record.id).some((row) => recordReviewStatus(row) === 'APPROVED')
+  }
+
   const handleDelete = async () => {
-    if (!isSuperAdmin || !deleteTarget) return
+    if ((!isSuperAdmin && !canMutate) || !deleteTarget) return
     const reason = deleteReason.trim()
     if (!reason) { setDeleteError('Alasan hapus wajib diisi.'); return }
     setDeleteBusy(true)
@@ -1188,7 +1197,7 @@ export default function SLALembur({
                         <div className="lembur-table-actions">
                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
                            <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
-                           {isSuperAdmin && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus</Button>}
+                           {canDeleteRecord(record) && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus</Button>}
                         </div>
                       </td>
                     </tr>
@@ -1197,11 +1206,11 @@ export default function SLALembur({
               </tbody>
             </table>
           </div>
-          {isSuperAdmin && deleteTarget && (
+          {(isSuperAdmin || canMutate) && deleteTarget && (
             <div className="rekap-detail-overlay" onClick={()=>{if(!deleteBusy){setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}}>
               <div className="rekap-detail-modal lembur-delete-modal" role="dialog" aria-modal="true" aria-labelledby="lembur-delete-title" onClick={event=>event.stopPropagation()}>
-                <div className="lembur-delete-header"><div><span className="lembur-kicker">SUPER ADMIN</span><h2 id="lembur-delete-title">Hapus Data Lembur</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}><Icon name="close" size={17} /></IconButton></div>
-                <Alert tone="danger" title="Konfirmasi soft delete">Data akan hilang dari Rekap Lembur normal, tetapi audit dan evidence tetap tersimpan.</Alert>
+                <div className="lembur-delete-header"><div><span className="lembur-kicker">{isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN ULP'}</span><h2 id="lembur-delete-title">Hapus Data Lembur</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}><Icon name="close" size={17} /></IconButton></div>
+                <Alert tone="danger" title="Konfirmasi soft delete">Data akan hilang dari Rekap Lembur normal, tetapi audit dan evidence tetap tersimpan.{deleteTargetRows.length > 1 && ` Seluruh ${deleteTargetRows.length} peserta dalam form ini ikut dihapus.`}</Alert>
                 <dl className="lembur-delete-summary"><div><dt>Jenis</dt><dd>{jenisLabel(deleteTarget)}</dd></div><div><dt>Tanggal</dt><dd>{deleteTarget.date}</dd></div><div><dt>Peserta</dt><dd>{deleteParticipants.join(', ') || '-'}</dd></div><div><dt>Total</dt><dd>Rp {formatRp(deleteTotal)}</dd></div><div><dt>Keterangan</dt><dd>{deleteTarget.description}</dd></div></dl>
                 <label className="sla-context-field"><span className="sla-context-label">Alasan Hapus *</span><textarea className="sla-context-select" rows={3} value={deleteReason} disabled={deleteBusy} onChange={event=>{setDeleteReason(event.target.value);setDeleteError('')}} placeholder="Jelaskan alasan penghapusan data Lembur" /></label>
                 {deleteError && <Alert tone="danger">{deleteError}</Alert>}
