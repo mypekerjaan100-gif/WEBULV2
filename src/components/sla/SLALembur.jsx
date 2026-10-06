@@ -986,6 +986,7 @@ export default function SLALembur({
   const photoDetailEvidence = activeDetailEvidence.filter(isImageEvidence)
   const ulpCount = (orgUnits ?? []).filter((unit) => unit.type === 'ULP').length
   const up3ScopeName = (orgUnits ?? []).find((unit) => unit.uuid === up3Id || unit.legacyKey === up3Id)?.displayName
+  const showUlpColumn = isSuperAdmin || isManagement || !canMutate
   const deleteTargetRows = deleteTarget ? records.filter((record) => record.id === deleteTarget.id) : []
   const deleteParticipants = [...new Set(deleteTargetRows.map((record) => record.participantName).filter(Boolean))]
   const deleteTotal = deleteTargetRows.reduce((total, record) => total + Number(record.total ?? 0), 0)
@@ -1124,7 +1125,7 @@ export default function SLALembur({
                 </Select>
               </FilterField>
             )}
-            {(isManagement || !canMutate) && (
+            {showUlpColumn && (
               <FilterField label="ULP" className="lembur-filter-field">
                 <Select value={filters.ulp} onChange={e=> setFilters(f=>({ ...f, ulp: e.target.value }))}>
                   <option value="">Semua</option>
@@ -1159,16 +1160,16 @@ export default function SLALembur({
               <thead>
                 <tr>
                   <th>Tanggal</th>
-                  {!canMutate && <th>ULP</th>}
+                  {showUlpColumn && <th>ULP</th>}
                   <th>Jenis</th><th>Pegawai</th><th>Waktu/Jam</th><th>Total Rp</th><th>Keterangan</th><th>Status</th><th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {!paginated.length && <tr><td colSpan={!canMutate ? 9 : 8}>Belum ada record Lembur pada periode ini.</td></tr>}
+                {!paginated.length && <tr><td colSpan={showUlpColumn ? 9 : 8}>Belum ada record Lembur pada periode ini.</td></tr>}
                 {paginated.map(record=>{
                   const time = pontianakFormValues(record.startedAt, record.endedAt)
                   const jenis = record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
-                  const ulpName = !canMutate ? getUlpName(record.unitId) : null
+                  const ulpName = showUlpColumn ? getUlpName(record.unitId) : null
                   const status = recordReviewStatus(record)
                   const canEdit = status==='DRAFT' || status==='CORRECTION_REQUIRED'
                   const isExpired = recordIsExpired(record)
@@ -1176,7 +1177,7 @@ export default function SLALembur({
                   return (
                     <tr key={`${record.id}-${record.entryId}`}>
                       <td>{record.date}</td>
-                      {!canMutate && <td>{ulpName}</td>}
+                      {showUlpColumn && <td>{ulpName}</td>}
                       <td>{jenis}</td>
                       <td>{record.participantName}</td>
                       <td className="lembur-table-time">{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''} · {formatDurationMinutes(record.durationHours*60)}</td>
@@ -1228,7 +1229,7 @@ export default function SLALembur({
                 {detailActivity && (
                   <>
                      <div className="lembur-detail-header">
-                       <div><span className="lembur-kicker">Detail Lembur{detailIsSingleParticipant ? ` · ${detailActivity.participantName}` : ''}</span><h2>{jenisLabel(detailActivity)}</h2><p>{!canMutate ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}{detailIsSingleParticipant ? ` · 1 dari ${detailActivityRecords.length} peserta` : ''}</p></div>
+                       <div><span className="lembur-kicker">Detail Lembur{detailIsSingleParticipant ? ` · ${detailActivity.participantName}` : ''}</span><h2>{jenisLabel(detailActivity)}</h2><p>{showUlpColumn ? `${getUlpName(detailActivity.unitId)} · ` : ''}{detailActivity.date}{detailIsSingleParticipant ? ` · 1 dari ${detailActivityRecords.length} peserta` : ''}</p></div>
                        <div className="lembur-detail-header-actions"><StatusBadge status={statusBadgeKey(detailActivity)} tone={statusTone(detailActivity)}>{displayStatus(detailActivity)}</StatusBadge><IconButton label="Tutup" className="lembur-icon-button" onClick={closeDetail}><Icon name="close" size={17} /></IconButton></div>
                      </div>
                      {detailActivity.revisionDeadlineAt && recordReviewStatus(detailActivity)==='CORRECTION_REQUIRED' && <Alert tone="warning" title="Batas Revisi" className="lembur-detail-alert"><span>{new Date(detailActivity.revisionDeadlineAt).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · sisa {Math.max(0,Math.ceil((new Date(detailActivity.revisionDeadlineAt)-new Date())/3600000))} jam</span>{detailActivity.rejectionCount===2&&<small>Revisi terakhir. Jika ditolak kembali, status menjadi Ditolak Final.</small>}</Alert>}
