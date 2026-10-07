@@ -933,6 +933,9 @@ export default function SLALembur({
     ? detailActivityRecords.filter(r=> r.entryId===detailEntryId)
     : detailActivityRecords
   const detailRecords = detailEntryRecords.length > 0 ? detailEntryRecords : detailActivityRecords
+  const visibleDetailHistory = detailEntryId != null
+    ? detailHistory.filter((h) => h.entry_id == null || h.entry_id === detailEntryId)
+    : detailHistory
   const detailActivity = detailRecords[0] || null
   const detailIsSingleParticipant = detailEntryId != null && detailActivityRecords.length > 1
   const detailApprovalKey = detailActivity ? `${detailActivity.id}:${detailActivity.entryId ?? 'activity'}` : ''
@@ -1257,10 +1260,10 @@ export default function SLALembur({
                     </section>
                     <section className="lembur-detail-section"><h3>Keterangan</h3><div className="lembur-detail-description">{detailActivity.workTitle&&<strong>{detailActivity.workTitle}</strong>}{detailActivity.workLocation&&<span>{detailActivity.workLocation}</span>}<p>{detailActivity.description}</p></div></section>
                     <section className="lembur-detail-section"><h3>Evidence</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
-                    <section className="lembur-detail-section"><h3>Riwayat</h3>
-                      {detailHistory.length ? (
+                    <section className="lembur-detail-section"><h3>Riwayat{detailEntryId != null && detailActivityRecords.length > 1 ? ` · ${detailActivity?.participantName ?? ''}` : ''}</h3>
+                      {visibleDetailHistory.length ? (
                         <div className="lembur-history-timeline">
-                          {detailHistory.map(h=>(
+                          {visibleDetailHistory.map(h=>(
                             <div key={h.id} className="lembur-history-item">
                               <span className="lembur-history-dot" /><div><small>{new Date(h.occurred_at).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · {h.actor_user_id?.slice(0,8)}</small><strong>{h.event}</strong><p>{h.previous_status} → {h.new_status}{h.reason&&` · ${h.reason}`}</p>{h.notes&&<p>{h.notes}</p>}</div>
                             </div>
