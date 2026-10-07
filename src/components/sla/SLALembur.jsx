@@ -791,6 +791,35 @@ export default function SLALembur({
     return text || fallback
   }
 
+  function friendlyDeleteError(message) {
+    const text = String(message ?? '')
+    if (/only super_admin may delete overtime data/i.test(text)) {
+      return 'Anda hanya dapat menghapus data dari ULP sendiri yang belum disetujui. Muat ulang lalu coba lagi.'
+    }
+    if (/hanya pemilik data pada ulp sendiri/i.test(text)) {
+      return 'Anda hanya dapat menghapus data dari ULP sendiri.'
+    }
+    if (/hanya lembur yang belum disetujui/i.test(text)) {
+      return 'Data tidak dapat dihapus karena sudah disetujui atau sudah final.'
+    }
+    if (/sebagian peserta sudah disetujui/i.test(text)) {
+      return 'Sebagian peserta sudah disetujui sehingga data tidak dapat dihapus.'
+    }
+    if (/alasan hapus wajib diisi/i.test(text)) {
+      return 'Alasan hapus wajib diisi.'
+    }
+    if (/overtime activity is not available/i.test(text)) {
+      return 'Data sudah tidak tersedia. Muat ulang daftar lembur.'
+    }
+    if (/authentication required|42501|not authorized|permission|scope/i.test(text)) {
+      return 'Akun Anda tidak memiliki akses hapus untuk data lembur ini.'
+    }
+    if (/failed to fetch|networkerror|timeout|aborterror|http \d{3}/i.test(text)) {
+      return 'Terjadi gangguan jaringan. Periksa koneksi lalu coba lagi.'
+    }
+    return text || 'Data Lembur gagal dihapus.'
+  }
+
   const handleApprove = async (record)=>{
     if(!record) return
     const participantLabel = record.type === 'WORK' ? ` peserta ${record.participantName}` : ''
@@ -842,7 +871,7 @@ export default function SLALembur({
       setToast('Data Lembur berhasil dihapus.')
       await onRefresh?.()
     } catch (error) {
-      setDeleteError(error.message || 'Data Lembur gagal dihapus.')
+      setDeleteError(friendlyDeleteError(error?.message))
     } finally {
       setDeleteBusy(false)
     }
