@@ -706,7 +706,7 @@ export default function SLALembur({
       if(onRefresh) await onRefresh()
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
-      setMessage(error.message || 'Draft atau evidence gagal disimpan.')
+      setMessage(friendlySaveError(error?.message, 'Draft atau evidence gagal disimpan.'))
     } finally { setSubmitting(false) }
   }
 
@@ -766,7 +766,7 @@ export default function SLALembur({
       return true
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
-      const errorMessage = error.message || 'Draft, evidence, atau pengajuan Lembur gagal disimpan.'
+      const errorMessage = friendlySaveError(error?.message, 'Draft, evidence, atau pengajuan Lembur gagal disimpan.')
       setMessage(errorMessage)
       setSubmitProcess({ status: 'error', error: errorMessage })
       return false
@@ -789,6 +789,26 @@ export default function SLALembur({
       return 'Terjadi gangguan jaringan. Periksa koneksi lalu coba lagi.'
     }
     return text || fallback
+  }
+
+  function friendlySaveError(message, fallback) {
+    const text = String(message ?? '')
+    if (/only draft replacement overtime can be changed|only draft or revision replacement/i.test(text)) {
+      return 'Data sudah berubah status. Muat ulang daftar lembur lalu buka kembali revisinya.'
+    }
+    if (/revision deadline has expired|batas revisi telah lewat/i.test(text)) {
+      return 'Batas revisi telah lewat. Transaksi Lembur sudah kedaluwarsa.'
+    }
+    if (/overtime activity is not available|not available to this account/i.test(text)) {
+      return 'Data sudah tidak tersedia untuk akun ini. Muat ulang daftar lembur.'
+    }
+    if (/authentication required|42501|not authorized|not mutable by this account|permission|scope/i.test(text)) {
+      return 'Akun Anda tidak memiliki akses untuk menyimpan data lembur ini.'
+    }
+    if (/failed to fetch|networkerror|timeout|aborterror|http \d{3}/i.test(text)) {
+      return 'Terjadi gangguan jaringan. Periksa koneksi lalu coba lagi.'
+    }
+    return text || fallback || 'Draft atau revisi Lembur gagal disimpan.'
   }
 
   function friendlyDeleteError(message) {
