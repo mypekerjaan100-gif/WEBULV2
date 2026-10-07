@@ -933,9 +933,21 @@ export default function SLALembur({
     ? detailActivityRecords.filter(r=> r.entryId===detailEntryId)
     : detailActivityRecords
   const detailRecords = detailEntryRecords.length > 0 ? detailEntryRecords : detailActivityRecords
+  const dedupedDetailHistory = (() => {
+    const participantKeys = new Set(
+      detailHistory
+        .filter((h) => h.entry_id != null && ['APPROVED', 'REJECTED', 'CLOSED'].includes(h.event))
+        .map((h) => `${h.event}|${h.occurred_at}`),
+    )
+    return detailHistory.filter((h) => {
+      if (h.entry_id != null) return true
+      if (!['APPROVED', 'REJECTED', 'CLOSED'].includes(h.event)) return true
+      return !participantKeys.has(`${h.event}|${h.occurred_at}`)
+    })
+  })()
   const visibleDetailHistory = detailEntryId != null
-    ? detailHistory.filter((h) => h.entry_id == null || h.entry_id === detailEntryId)
-    : detailHistory
+    ? dedupedDetailHistory.filter((h) => h.entry_id == null || h.entry_id === detailEntryId)
+    : dedupedDetailHistory
   const detailActivity = detailRecords[0] || null
   const detailIsSingleParticipant = detailEntryId != null && detailActivityRecords.length > 1
   const detailApprovalKey = detailActivity ? `${detailActivity.id}:${detailActivity.entryId ?? 'activity'}` : ''
