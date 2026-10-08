@@ -360,6 +360,7 @@ export default function SLALembur({
   const submitting = isSubmitting || deadlineUnavailable
   const activeInitialExpired = recordReviewStatus(activeRecord) === 'DRAFT' && initialDeadlinePassed
   const activeRevisionExpired = isRevision && recordIsExpired(activeRecord)
+  const activeHasApproved = activeRecords.some((entry) => recordReviewStatus(entry) === 'APPROVED')
   const formReadOnly = activeInitialExpired || activeRevisionExpired
 
   const evidenceByType = evidence.reduce((acc, r) => {
@@ -462,13 +463,18 @@ export default function SLALembur({
   }
 
   const editDraft = (record) => {
+    if (!record) return
     const activityRecords = records.filter(r=>r.id===record.id)
     const first = activityRecords[0]
     if (!first) return
-    const canEdit = recordReviewStatus(first)==='DRAFT' || recordReviewStatus(first)==='CORRECTION_REQUIRED'
-    if (!canEdit) return
-    if (recordIsExpired(first)){
-      setMessage(first.status === 'DRAFT'
+    const clickedStatus = recordReviewStatus(record)
+    const canEdit = clickedStatus==='DRAFT' || clickedStatus==='CORRECTION_REQUIRED'
+    if (!canEdit) {
+      setMessage('Data sudah berubah status. Muat ulang daftar lembur lalu buka kembali revisinya.')
+      return
+    }
+    if (recordIsExpired(record)){
+      setMessage(recordReviewStatus(record) === 'DRAFT'
         ? 'Batas pengajuan telah lewat. Draft ini sudah kedaluwarsa dan hanya dapat dilihat.'
         : 'Batas revisi telah lewat. Transaksi Lembur sudah kedaluwarsa.')
       return
@@ -622,6 +628,10 @@ export default function SLALembur({
     const incoming = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]
     const pending = incoming.filter(Boolean)
     if (!pending.length || initialDeadlinePassed || deadlineUnavailable || formReadOnly) return
+    if (activeHasApproved) {
+      setMessage('Sebagian peserta sudah disetujui sehingga evidence tidak dapat diubah.')
+      return
+    }
     const queue = requirement.allowMultiple ? pending : pending.slice(0, 1)
     setSubmitting(true)
     setMessage(`Memproses ${requirement.label}...`)
@@ -731,6 +741,10 @@ export default function SLALembur({
   }
 
   const removeEvidence = async (entry) => {
+    if (activeHasApproved) {
+      setMessage('Sebagian peserta sudah disetujui sehingga evidence tidak dapat diubah.')
+      return
+    }
     if (!window.confirm(`Hapus ${entry.originalFilename}?`)) return
     setSubmitting(true)
     try {
@@ -1169,8 +1183,8 @@ export default function SLALembur({
 
                 </div>
                  <section className="lembur-form-section lembur-evidence-section">
-                   <div className="lembur-section-heading"><span>C</span><div><h3>Evidence</h3><p>Upload foto JPG/JPEG, PNG, atau WebP. Foto akan dikompres otomatis, lalu klik Simpan Draft atau Ajukan Lembur.</p></div></div>
-                  <div className="lembur-upload-grid">{evidenceRequirements.map((requirement)=>{ const existingList=(evidenceByType[requirement.type]||[]).filter(entry=>entry.status==='ACTIVE'); const stagedList=files[requirement.type]??[]; const hasTimeMark=requirement.helpers?.[0]==='TimeMark Wajib'; return <div className="lembur-upload-card" key={requirement.type}><div className="lembur-upload-card-heading"><strong>{requirement.label} *</strong>{hasTimeMark&&<span className="lembur-timemark-badge">TimeMark Wajib</span>}</div>{requirement.helpers?.slice(hasTimeMark?1:0).map((helper)=><small key={helper}>{helper}</small>)}<label className="lembur-dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();stageEvidence(requirement,Array.from(e.dataTransfer.files ?? []))}}><input key={`${requirement.type}-${stagedList.length}-${existingList.length}`} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple={!!requirement.allowMultiple} disabled={submitting||initialDeadlinePassed||formReadOnly} onChange={e=>stageEvidence(requirement,Array.from(e.target.files ?? []))} /><span className="lembur-upload-icon">↑</span><strong>Pilih atau tarik foto ke sini</strong><small>JPG/PNG/WebP · dikompres otomatis maks. 1 MB{requirement.allowMultiple ? ' · minimal 1 foto, dapat lebih dari 1' : ''}{requirement.allowMultiple && (stagedList.length + existingList.length) > 0 ? ` · ${stagedList.length + existingList.length} foto` : ''}</small></label><div className="lembur-selected-files">{stagedList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{entry.previewUrl?<img src={entry.previewUrl} alt="" />:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.processed.original.filename}</strong><small>{Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</small></div><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeStagedEvidence(requirement.type,entry.id)}>Hapus</button></div>)}{existingList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{isImageEvidence(entry)&&evidenceUrls[entry.id]?<button type="button" className="lembur-thumb-button" onClick={()=>previewEvidence(entry,existingList)}><img src={evidenceUrls[entry.id]} alt={entry.originalFilename} /></button>:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.originalFilename}</strong><small>{(entry.storedSizeBytes/1024).toFixed(0)} KB · tersimpan</small></div><button type="button" className="sla-btn" onClick={()=>previewEvidence(entry,existingList)}>Preview</button><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button></div>)}</div></div>})}</div>
+                   <div className="lembur-section-heading"><span>C</span><div><h3>Evidence</h3><p>Upload foto JPG/JPEG, PNG, atau WebP. Foto akan dikompres otomatis, lalu klik Simpan Draft atau Ajukan Lembur.{activeHasApproved && ' Evidence dikunci karena sebagian peserta sudah disetujui.'}</p></div></div>
+                  <div className="lembur-upload-grid">{evidenceRequirements.map((requirement)=>{ const existingList=(evidenceByType[requirement.type]||[]).filter(entry=>entry.status==='ACTIVE'); const stagedList=files[requirement.type]??[]; const hasTimeMark=requirement.helpers?.[0]==='TimeMark Wajib'; return <div className="lembur-upload-card" key={requirement.type}><div className="lembur-upload-card-heading"><strong>{requirement.label} *</strong>{hasTimeMark&&<span className="lembur-timemark-badge">TimeMark Wajib</span>}</div>{requirement.helpers?.slice(hasTimeMark?1:0).map((helper)=><small key={helper}>{helper}</small>)}<label className="lembur-dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();stageEvidence(requirement,Array.from(e.dataTransfer.files ?? []))}}><input key={`${requirement.type}-${stagedList.length}-${existingList.length}`} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple={!!requirement.allowMultiple} disabled={submitting||initialDeadlinePassed||formReadOnly||activeHasApproved} onChange={e=>stageEvidence(requirement,Array.from(e.target.files ?? []))} /><span className="lembur-upload-icon">↑</span><strong>Pilih atau tarik foto ke sini</strong><small>JPG/PNG/WebP · dikompres otomatis maks. 1 MB{requirement.allowMultiple ? ' · minimal 1 foto, dapat lebih dari 1' : ''}{requirement.allowMultiple && (stagedList.length + existingList.length) > 0 ? ` · ${stagedList.length + existingList.length} foto` : ''}</small></label><div className="lembur-selected-files">{stagedList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{entry.previewUrl?<img src={entry.previewUrl} alt="" />:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.processed.original.filename}</strong><small>{Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</small></div><button type="button" className="sla-btn" disabled={submitting||formReadOnly||activeHasApproved} onClick={()=>removeStagedEvidence(requirement.type,entry.id)}>Hapus</button></div>)}{existingList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{isImageEvidence(entry)&&evidenceUrls[entry.id]?<button type="button" className="lembur-thumb-button" onClick={()=>previewEvidence(entry,existingList)}><img src={evidenceUrls[entry.id]} alt={entry.originalFilename} /></button>:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.originalFilename}</strong><small>{(entry.storedSizeBytes/1024).toFixed(0)} KB · tersimpan</small></div><button type="button" className="sla-btn" onClick={()=>previewEvidence(entry,existingList)}>Preview</button><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button></div>)}</div></div>})}</div>
                  </section>
                 </div>
 

@@ -30,7 +30,7 @@ async function rpc(name, parameters) {
   if (error) {
     const message = error.message || `RPC ${name} gagal.`
     if (/evidence scope\/status is not manageable|evidence is not finalizable|evidence is not deletable/i.test(message)) {
-      throw new Error('Batas pengajuan atau revisi telah lewat, atau evidence berada di luar akses Anda.')
+      throw new Error('Evidence tidak dapat diubah: sebagian peserta sudah disetujui, batas pengajuan/revisi telah lewat, atau evidence berada di luar akses Anda.')
     }
     throw new Error(message)
   }
