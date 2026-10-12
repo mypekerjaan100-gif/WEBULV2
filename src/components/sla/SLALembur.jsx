@@ -184,6 +184,7 @@ export default function SLALembur({
 }) {
   const [draft, setDraft] = useState(() => initialDraft(periodMonth))
   const [activeActivityId, setActiveActivityId] = useState(null)
+  const [activeRevisionEntryId, setActiveRevisionEntryId] = useState(null)
   const [activeWorkCategory, setActiveWorkCategory] = useState(null)
   const [employeeOptions, setEmployeeOptions] = useState([])
   const [employeeLoading, setEmployeeLoading] = useState(false)
@@ -194,6 +195,8 @@ export default function SLALembur({
   const [dirty, setDirty] = useState(true)
   const activeActivityIdRef = useRef(activeActivityId)
   activeActivityIdRef.current = activeActivityId
+  const activeRevisionEntryIdRef = useRef(activeRevisionEntryId)
+  activeRevisionEntryIdRef.current = activeRevisionEntryId
   const [filters, setFilters] = useState({ ulp: '', unitLayanan: '', jenis: 'Semua', pegawai: '', status: 'Semua', periode: '' })
   const canViewFinancial = isAdminUp3 || isSuperAdmin || isManagement
   const isReadOnlyManagement = isManagement
@@ -364,7 +367,15 @@ export default function SLALembur({
   const activeInitialExpired = recordReviewStatus(activeRecord) === 'DRAFT' && initialDeadlinePassed
   const activeRevisionExpired = isRevision && recordIsExpired(activeRecord)
   const activeHasApproved = activeRecords.some((entry) => recordReviewStatus(entry) === 'APPROVED')
+  const activeRevisionRecord = activeRevisionEntryId
+    ? activeRecords.find((entry) => entry.entryId === activeRevisionEntryId) ?? null
+    : null
+  const activeRevisionParticipantName = activeRevisionRecord?.participantName
+    ?? activeRecords.find((entry) => recordReviewStatus(entry) === 'CORRECTION_REQUIRED')?.participantName
+    ?? ''
+  const isPartialApprovalRevision = Boolean(isRevision && activeHasApproved && (activeRevisionEntryId ?? activeRevisionRecord))
   const formReadOnly = activeInitialExpired || activeRevisionExpired
+  const isEvidenceOnlyRevision = Boolean(isPartialApprovalRevision)
 
   const evidenceByType = evidence.reduce((acc, r) => {
     acc[r.evidenceType] = acc[r.evidenceType] || []
@@ -401,10 +412,12 @@ export default function SLALembur({
     return () => { cancelled = true }
   }, [canMutate, contractScope.contractId, up3Id, employeeQueryDate])
 
-  const refreshEvidence = async (activityId = activeActivityId) => {
+  const refreshEvidence = async (activityId = activeActivityId, entryId = activeRevisionEntryIdRef.current) => {
     if (!activityId) { setEvidence([]); return }
-    const { listOvertimeEvidence } = await import('../../data/overtimeEvidenceRepository.js')
-    const rows = await listOvertimeEvidence(activityId)
+    const { listOvertimeEvidence, listOvertimeEntryEffectiveEvidence } = await import('../../data/overtimeEvidenceRepository.js')
+    const rows = entryId
+      ? await listOvertimeEntryEffectiveEvidence(activityId, entryId)
+      : await listOvertimeEvidence(activityId)
     if (activeActivityIdRef.current === activityId) setEvidence(rows)
   }
 
@@ -413,11 +426,15 @@ export default function SLALembur({
     if (!activeActivityId) { setEvidence([]); return undefined }
     setEvidence([])
     import('../../data/overtimeEvidenceRepository.js')
-      .then(({ listOvertimeEvidence }) => listOvertimeEvidence(activeActivityId))
+      .then(({ listOvertimeEvidence, listOvertimeEntryEffectiveEvidence }) => (
+        activeRevisionEntryId
+          ? listOvertimeEntryEffectiveEvidence(activeActivityId, activeRevisionEntryId)
+          : listOvertimeEvidence(activeActivityId)
+      ))
       .then(rows => { if(!cancelled) setEvidence(rows) })
       .catch(err => { if(!cancelled) setMessage(err.message || 'Gagal memuat evidence.') })
     return () => { cancelled=true }
-  }, [activeActivityId])
+  }, [activeActivityId, activeRevisionEntryId])
 
   useEffect(() => {
     let cancelled = false
@@ -452,6 +469,7 @@ export default function SLALembur({
     releaseStagedFiles()
     setDraft(initialDraft(periodMonth))
     setActiveActivityId(null)
+    setActiveRevisionEntryId(null)
     setActiveWorkCategory(null)
     setEvidence([])
     setFiles({})
@@ -524,6 +542,7 @@ export default function SLALembur({
       })
     }
     setActiveActivityId(first.id)
+    setActiveRevisionEntryId(clickedStatus === 'CORRECTION_REQUIRED' ? (record.entryId ?? null) : null)
     setEvidence([])
     setFiles({})
     setDirty(false)
@@ -637,10 +656,6 @@ export default function SLALembur({
     const incoming = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]
     const pending = incoming.filter(Boolean)
     if (!pending.length || initialDeadlinePassed || deadlineUnavailable || formReadOnly) return
-    if (activeHasApproved) {
-      setMessage('Sebagian peserta sudah disetujui sehingga evidence tidak dapat diubah.')
-      return
-    }
     const queue = requirement.allowMultiple ? pending : pending.slice(0, 1)
     setSubmitting(true)
     setMessage(`Memproses ${requirement.label}...`)
@@ -688,20 +703,28 @@ export default function SLALembur({
   }
 
   const uploadStagedEvidence = async (activityId) => {
-    const { listOvertimeEvidence, uploadOvertimeEvidence } = await import('../../data/overtimeEvidenceRepository.js')
+    const { listOvertimeEvidence, listOvertimeEntryEffectiveEvidence, uploadOvertimeEvidence } = await import('../../data/overtimeEvidenceRepository.js')
+    const revisionEntryId = isPartialApprovalRevision ? (activeRevisionEntryIdRef.current ?? activeRevisionEntryId) : null
     for (const requirement of evidenceRequirements) {
       const stagedItems = files[requirement.type] ?? []
       for (let index = 0; index < stagedItems.length; index += 1) {
         const staged = stagedItems[index]
+        const scopedExisting = (evidenceByType[requirement.type] ?? []).filter((row) => row.status === 'ACTIVE' && row.entryId != null)
+        const sharedExisting = evidenceSingle[requirement.type] ?? null
         await uploadOvertimeEvidence({
           activityId,
+          entryId: revisionEntryId,
           evidenceType: requirement.type,
           file: staged.processed.file,
           processedFile: staged.processed,
           sortOrder: requirement.allowMultiple
             ? (evidenceByType[requirement.type] ?? []).filter((row) => row.status === 'ACTIVE').length + index
             : 0,
-          supersedesEvidenceId: requirement.allowMultiple ? null : (evidenceSingle[requirement.type]?.id ?? null),
+          supersedesEvidenceId: requirement.allowMultiple
+            ? null
+            : (revisionEntryId
+              ? (scopedExisting.find((row) => row.evidenceType === requirement.type)?.id ?? null)
+              : (sharedExisting?.entryId == null ? (sharedExisting?.id ?? null) : null)),
         })
         if (staged.previewUrl) URL.revokeObjectURL(staged.previewUrl)
         setFiles((current) => ({
@@ -710,7 +733,10 @@ export default function SLALembur({
         }))
       }
     }
-    setEvidence(await listOvertimeEvidence(activityId))
+    const refreshed = revisionEntryId
+      ? await listOvertimeEntryEffectiveEvidence(activityId, revisionEntryId)
+      : await listOvertimeEvidence(activityId)
+    setEvidence(refreshed)
   }
 
   const saveDraft = async () => {
@@ -750,8 +776,8 @@ export default function SLALembur({
   }
 
   const removeEvidence = async (entry) => {
-    if (activeHasApproved) {
-      setMessage('Sebagian peserta sudah disetujui sehingga evidence tidak dapat diubah.')
+    if (isPartialApprovalRevision && !entry.entryId) {
+      setMessage('Evidence awal tidak dapat dihapus karena sebagian peserta sudah disetujui. Unggah foto pengganti khusus peserta revisi.')
       return
     }
     if (!window.confirm(`Hapus ${entry.originalFilename}?`)) return
@@ -772,18 +798,23 @@ export default function SLALembur({
     setSubmitProcess({ status: 'loading', error: '' })
     try {
       const resubmitting = isRevision
+      const partialResubmitEntryId = isPartialApprovalRevision ? (activeRevisionEntryIdRef.current ?? activeRevisionEntryId) : null
       let activityId = activeActivityId
       if (!activityId || dirty) activityId = await persistDraft()
       await uploadStagedEvidence(activityId)
-      const result = resubmitting
-        ? await resubmitOvertime(activityId)
-        : isReplacement
-          ? await onSubmit(activityId, { skipRefresh: true })
-          : await onSubmitWork(activityId, { skipRefresh: true })
+      const result = resubmitting && partialResubmitEntryId
+        ? await (await import('../../data/overtimeReplacementRepository.js')).resubmitOvertimeEntry(partialResubmitEntryId).then((entryId) => ({ ok: true, entryId })).catch((error) => ({ ok: false, message: error?.message }))
+        : resubmitting
+          ? await resubmitOvertime(activityId)
+          : isReplacement
+            ? await onSubmit(activityId, { skipRefresh: true })
+            : await onSubmitWork(activityId, { skipRefresh: true })
+      if (resubmitting && partialResubmitEntryId && !result?.ok) throw new Error(result?.message || 'Revisi peserta gagal diajukan.')
       if (!resubmitting && !result?.ok) throw new Error(result?.message || 'Lembur gagal diajukan.')
+      const revisionName = isPartialApprovalRevision ? activeRevisionParticipantName : ''
       resetForm()
       setFormOpen(false)
-      setMessage(resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : 'Lembur diajukan dan menunggu approval.')
+      setMessage(resubmitting && revisionName ? `Revisi ${revisionName} berhasil diajukan kembali. Evidence peserta yang sudah disetujui tidak berubah.` : resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : 'Lembur diajukan dan menunggu approval.')
       setSubmitProcess({ status: 'success', error: '' })
       if(onRefresh) await onRefresh({ background: true }).catch(() => {})
       return true
@@ -1015,13 +1046,14 @@ export default function SLALembur({
     if (!detailActivityId) { setDetailEvidence([]); setDetailHistory([]); setDetailEvidenceUrls({}); setDetailFinancial([]); return }
     let cancelled=false
     setDetailLoading(true)
+    const entryIdForDetail = detailEntryId
     Promise.all([
-      import('../../data/overtimeEvidenceRepository.js').then(m=>m.listOvertimeEvidence(detailActivityId)),
+      import('../../data/overtimeEvidenceRepository.js').then(m=> entryIdForDetail ? m.listOvertimeEntryEffectiveEvidence(detailActivityId, entryIdForDetail) : m.listOvertimeEvidence(detailActivityId)),
       listOvertimeHistory(detailActivityId).catch(()=>[]),
       canViewFinancial ? import('../../data/overtimeReplacementRepository.js').then(m=>m.listOvertimeEntryFinancial(detailActivityId)).catch(()=>[]) : Promise.resolve([])
     ]).then(([evs, hist, fin])=>{ if(!cancelled){ setDetailEvidence(evs); setDetailHistory(hist||[]); setDetailFinancial(fin||[]) } }).catch(()=>{ if(!cancelled){ setDetailEvidence([]); setDetailHistory([]); setDetailFinancial([]) } }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
     return ()=>{ cancelled=true }
-  }, [detailActivityId, canViewFinancial])
+  }, [detailActivityId, detailEntryId, canViewFinancial])
   useEffect(() => {
     let cancelled = false
     const images = detailEvidence.filter((entry) => entry.status === 'ACTIVE' && isImageEvidence(entry))
@@ -1190,10 +1222,11 @@ export default function SLALembur({
                  <section className="lembur-form-section">
                   <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">A</span><div className="lembur-section-heading-text"><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
                    <div className={`lembur-form-grid ${formLayoutClass}`}>
-                     <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
-                     <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} /></label>
-                     {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
-                      {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea className="sla-context-select" value={draft.description} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
+                      <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
+                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                      {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
+                       {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea className="sla-context-select" value={draft.description} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
+                      {isEvidenceOnlyRevision && <Alert tone="info" className="lembur-deadline-helper">Revisi khusus evidence untuk {activeRevisionParticipantName}. Data pekerjaan dan peserta dikunci agar evidence peserta yang sudah disetujui tidak berubah.</Alert>}
                      {replacementDescription && <div className="lembur-description-preview lembur-grid-full"><span>Keterangan otomatis</span>{replacementDescription}</div>}
                         {draft.date && !isRevision && !deadlineReady && deadlineLoadStatus !== 'error' && (
                           <Alert tone="info" className="lembur-deadline-helper">Memverifikasi batas pengajuan dari server...</Alert>
@@ -1218,38 +1251,41 @@ export default function SLALembur({
                     <div className="lembur-duration-compact"><span>Durasi</span><strong>{range ? formatDurationMinutes(range.durationMinutes) : '–'}</strong>{draft.endTime <= draft.startTime && <small>+1 hari</small>}</div>
                   </div>}
                   {isAdministrasi && (()=>{ const participant=draft.participants[0]; const participantRange=buildPontianakRange(draft.date, participant?.startTime||draft.startTime, participant?.endTime||draft.endTime); return <div className="lembur-time-grid is-single"><label className="sla-context-field"><span className="sla-context-label">Pegawai Lembur *</span><select className="sla-context-select" value={participant?.employeeId || ''} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat pegawai...':'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label><label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={participant?.startTime||draft.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /></label><label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={participant?.endTime||draft.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /></label><div className="lembur-duration-compact"><span>Durasi</span><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{participant?.endTime<=participant?.startTime&&<small>+1 hari</small>}</div></div>})()}
-                   {isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur</strong><Button variant="secondary" size="small" onClick={addParticipant}>+ Tambah Pegawai</Button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<IconButton label="Hapus peserta" className="lembur-row-remove" onClick={()=>removeParticipant(participant.tempId)}><Icon name="close" size={15} /></IconButton>:<span />}</div>})}</div>}
+                   {isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur{isEvidenceOnlyRevision && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''}</strong><Button variant="secondary" size="small" disabled={isEvidenceOnlyRevision} onClick={addParticipant}>+ Tambah Pegawai</Button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading || isEvidenceOnlyRevision} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} disabled={isEvidenceOnlyRevision} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} disabled={isEvidenceOnlyRevision} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision} onClick={()=>removeParticipant(participant.tempId)}><Icon name="close" size={15} /></IconButton>:<span />}</div>})}</div>}
                 </section>
 
                 </div>
                  <section className="lembur-form-section lembur-evidence-section">
-                   <div className="lembur-section-heading lembur-evidence-heading"><span className="lembur-step-badge" aria-hidden="true">C</span><div className="lembur-section-heading-text"><h3>Evidence</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{evidenceDoneCount}/{evidenceRequirements.length} lengkap</span></div>
-                   {activeHasApproved && <p className="lembur-evidence-locked-note">Evidence dikunci karena sebagian peserta sudah disetujui.</p>}
-                  <div className="lembur-upload-grid lembur-evidence-grid">
-                    {evidenceRequirements.map((requirement, cardIndex) => {
-                      const existingList = (evidenceByType[requirement.type] || []).filter((entry) => entry.status === 'ACTIVE')
-                      const stagedList = files[requirement.type] ?? []
-                      return (
-                        <EvidenceUploadCard
-                          key={requirement.type}
-                          requirement={requirement}
-                          position={cardIndex + 1}
-                          existingList={existingList}
-                          stagedList={stagedList}
-                          evidenceUrls={evidenceUrls}
-                          isImageEvidence={isImageEvidence}
-                          inputDisabled={submitting || initialDeadlinePassed || formReadOnly || activeHasApproved}
-                          actionDisabled={submitting || formReadOnly || activeHasApproved}
-                          locked={activeHasApproved}
-                          onStage={stageEvidence}
-                          onRemoveStaged={removeStagedEvidence}
-                          onPreview={previewEvidence}
-                          onRemoveSaved={removeEvidence}
-                        />
-                      )
-                    })}
-                  </div>
-                 </section>
+                    <div className="lembur-section-heading lembur-evidence-heading"><span className="lembur-step-badge" aria-hidden="true">C</span><div className="lembur-section-heading-text"><h3>Evidence{isPartialApprovalRevision && activeRevisionParticipantName ? ` · ${activeRevisionParticipantName}` : ''}</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{evidenceDoneCount}/{evidenceRequirements.length} lengkap</span></div>
+                    {isPartialApprovalRevision && <p className="lembur-evidence-locked-note">Revisi evidence khusus {activeRevisionParticipantName}. Evidence awal milik peserta yang sudah disetujui tidak berubah dan tidak dapat dihapus.</p>}
+                    {!isPartialApprovalRevision && activeHasApproved && <p className="lembur-evidence-locked-note">Evidence dikunci karena sebagian peserta sudah disetujui.</p>}
+                   <div className="lembur-upload-grid lembur-evidence-grid">
+                     {evidenceRequirements.map((requirement, cardIndex) => {
+                       const existingList = (evidenceByType[requirement.type] || []).filter((entry) => entry.status === 'ACTIVE')
+                       const stagedList = files[requirement.type] ?? []
+                       return (
+                         <EvidenceUploadCard
+                           key={requirement.type}
+                           requirement={requirement}
+                           position={cardIndex + 1}
+                           existingList={existingList}
+                           stagedList={stagedList}
+                           evidenceUrls={evidenceUrls}
+                           isImageEvidence={isImageEvidence}
+                           inputDisabled={submitting || initialDeadlinePassed || formReadOnly}
+                           actionDisabled={submitting || formReadOnly}
+                           locked={false}
+                           isPartialRevision={isPartialApprovalRevision}
+                           revisionParticipantName={activeRevisionParticipantName}
+                           onStage={stageEvidence}
+                           onRemoveStaged={removeStagedEvidence}
+                           onPreview={previewEvidence}
+                           onRemoveSaved={removeEvidence}
+                         />
+                       )
+                     })}
+                   </div>
+                  </section>
                 </div>
 
                  {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <Alert tone="info" className="lembur-message">{message}</Alert>}

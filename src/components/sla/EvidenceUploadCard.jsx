@@ -14,6 +14,8 @@ export default function EvidenceUploadCard({
   inputDisabled,
   actionDisabled,
   locked,
+  isPartialRevision = false,
+  revisionParticipantName = '',
   onStage,
   onRemoveStaged,
   onPreview,
@@ -33,11 +35,14 @@ export default function EvidenceUploadCard({
       : totalCount > 0
         ? `${totalCount} foto`
         : 'Belum diisi'
-  const dropLabel = !requirement.allowMultiple && existingList.length > 0
-    ? 'Klik untuk ganti foto'
-    : requirement.allowMultiple && totalCount > 0
-      ? 'Tambah foto atau tarik ke sini'
-      : 'Pilih foto atau tarik ke sini'
+  const hasScopedOverride = existingList.some((entry) => entry.entryId != null)
+  const dropLabel = isPartialRevision && !requirement.allowMultiple && existingList.length > 0 && !hasScopedOverride
+    ? `Pilih foto pengganti untuk ${revisionParticipantName || 'peserta revisi'}`
+    : !requirement.allowMultiple && existingList.length > 0
+      ? 'Klik untuk ganti foto'
+      : requirement.allowMultiple && totalCount > 0
+        ? 'Tambah foto atau tarik ke sini'
+        : 'Pilih foto atau tarik ke sini'
 
   return (
     <div className={`lembur-upload-card is-${status}`}>
@@ -83,7 +88,9 @@ export default function EvidenceUploadCard({
       </label>
       {totalCount > 0 && (
         <ul className="lembur-selected-files">
-          {existingList.map((entry) => (
+          {existingList.map((entry) => {
+            const isSharedLocked = isPartialRevision && !entry.entryId
+            return (
             <li className="lembur-selected-file" key={entry.id}>
               {isImageEvidence(entry) && evidenceUrls[entry.id] ? (
                 <button
@@ -99,7 +106,7 @@ export default function EvidenceUploadCard({
               )}
               <div className="lembur-selected-file-meta">
                 <strong>{entry.originalFilename}</strong>
-                <small>{formatKilobytes(entry.storedSizeBytes)} · tersimpan</small>
+                <small>{formatKilobytes(entry.storedSizeBytes)} · tersimpan{entry.entryId ? ` · revisi ${revisionParticipantName || ''}`.trimEnd() : isPartialRevision ? ' · evidence awal' : ''}</small>
               </div>
               <div className="lembur-selected-file-actions">
                 <button type="button" className="sla-btn lembur-evidence-action" onClick={() => onPreview(entry, existingList)}>
@@ -108,14 +115,16 @@ export default function EvidenceUploadCard({
                 <button
                   type="button"
                   className="sla-btn lembur-evidence-action is-danger"
-                  disabled={actionDisabled || locked}
+                  disabled={actionDisabled || locked || isSharedLocked}
+                  title={isSharedLocked ? 'Evidence awal tidak dapat dihapus karena milik peserta yang sudah disetujui' : undefined}
                   onClick={() => onRemoveSaved(entry)}
                 >
                   Hapus
                 </button>
               </div>
             </li>
-          ))}
+            )
+          })}
           {stagedList.map((entry) => (
             <li className="lembur-selected-file is-staged" key={entry.id}>
               {entry.previewUrl

@@ -8,6 +8,8 @@ function mapEvidence(row) {
   return {
     id: row.id,
     activityId: row.activity_id,
+    entryId: row.entry_id ?? null,
+    isScoped: row.entry_id != null,
     evidenceType: row.evidence_type,
     storagePath: row.storage_path,
     originalFilename: row.original_filename,
@@ -45,12 +47,22 @@ export async function listOvertimeEvidence(activityId, { includeHistory = false 
   return (rows ?? []).map(mapEvidence)
 }
 
+export async function listOvertimeEntryEffectiveEvidence(activityId, entryId, { includeHistory = false } = {}) {
+  const rows = await rpc('list_overtime_entry_effective_evidence', {
+    p_activity_id: activityId,
+    p_entry_id: entryId ?? null,
+    p_include_history: includeHistory,
+  })
+  return (rows ?? []).map(mapEvidence)
+}
+
 export function prepareOvertimeEvidenceFile(file, evidenceType) {
   return processEvidenceFile(file, evidenceType)
 }
 
 export async function uploadOvertimeEvidence({
   activityId,
+  entryId = null,
   evidenceType,
   file,
   processedFile = null,
@@ -58,18 +70,32 @@ export async function uploadOvertimeEvidence({
   supersedesEvidenceId = null,
 }) {
   const processed = processedFile ?? await processEvidenceFile(file, evidenceType)
-  const preparedRow = await rpc('prepare_overtime_evidence_upload', {
-    p_activity_id: activityId,
-    p_evidence_type: evidenceType,
-    p_original_filename: processed.original.filename,
-    p_original_mime_type: processed.original.mimeType,
-    p_original_size_bytes: processed.original.sizeBytes,
-    p_stored_size_bytes: processed.stored.sizeBytes,
-    p_stored_mime_type: processed.stored.mimeType,
-    p_checksum: processed.stored.checksum,
-    p_sort_order: sortOrder,
-    p_supersedes_evidence_id: supersedesEvidenceId,
-  })
+  const preparedRow = entryId
+    ? await rpc('prepare_overtime_entry_evidence_upload', {
+      p_activity_id: activityId,
+      p_entry_id: entryId,
+      p_evidence_type: evidenceType,
+      p_original_filename: processed.original.filename,
+      p_original_mime_type: processed.original.mimeType,
+      p_original_size_bytes: processed.original.sizeBytes,
+      p_stored_size_bytes: processed.stored.sizeBytes,
+      p_stored_mime_type: processed.stored.mimeType,
+      p_checksum: processed.stored.checksum,
+      p_sort_order: sortOrder,
+      p_supersedes_evidence_id: supersedesEvidenceId,
+    })
+    : await rpc('prepare_overtime_evidence_upload', {
+      p_activity_id: activityId,
+      p_evidence_type: evidenceType,
+      p_original_filename: processed.original.filename,
+      p_original_mime_type: processed.original.mimeType,
+      p_original_size_bytes: processed.original.sizeBytes,
+      p_stored_size_bytes: processed.stored.sizeBytes,
+      p_stored_mime_type: processed.stored.mimeType,
+      p_checksum: processed.stored.checksum,
+      p_sort_order: sortOrder,
+      p_supersedes_evidence_id: supersedesEvidenceId,
+    })
   const prepared = mapEvidence(preparedRow)
 
   const { error: uploadError } = await supabase.storage
