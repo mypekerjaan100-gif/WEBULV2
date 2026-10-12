@@ -5746,37 +5746,46 @@ summary:focus-visible {
 .lembur-participant-row .lembur-row-remove { width: 27px; height: 27px; min-height: 27px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #8a4148; cursor: pointer; }
 .lembur-participant-row .lembur-row-remove:hover:not(:disabled) { background: #fbeaec; color: #8a4148; }
 
-.lembur-upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
-.lembur-upload-card:only-child { width: min(100%, 380px); grid-column: 1 / -1; }
-.lembur-form-workspace.is-technical .lembur-upload-grid { align-items: stretch; }
-.lembur-form-workspace.is-technical .lembur-upload-card { min-height: 145px; }
-.lembur-upload-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid #dce5e9; border-radius: 9px; background: #fff; }
-.lembur-upload-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; color: #173d4f; }
-.lembur-upload-card-heading > strong { display: flex; min-width: 0; align-items: center; flex: 1 1 auto; font-size: 12px; line-height: 20px; white-space: nowrap; }
-.lembur-upload-card-heading strong::before { content: '↑'; display: inline-grid; width: 20px; height: 20px; margin-right: 6px; place-items: center; border-radius: 5px; background: #e4eff3; color: #174b63; font-size: 12px; }
-.lembur-upload-card > small { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: 11px; line-height: 15px; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
-.lembur-upload-card > small:hover { position: relative; z-index: 3; overflow: visible; padding: 6px 8px; border-radius: 6px; background: #fff; box-shadow: 0 8px 20px rgba(7, 26, 51, .14); -webkit-line-clamp: unset; }
-.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2) > small { display: none; }
-.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2) > small:first-of-type { display: block; font-size: 0; line-height: 15px; white-space: nowrap; }
-.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2) > small:first-of-type::before { content: 'Wajah petugas dan kehadiran peserta harus terlihat jelas.'; font-size: 11px; }
-.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2)::after { content: 'Wajah petugas harus dapat dikenali, APD tetap digunakan, dan foto harus membuktikan seluruh peserta yang diajukan hadir.'; position: absolute; top: 38px; right: 9px; left: 9px; z-index: 5; display: none; padding: 7px 8px; border: 1px solid #dce5e9; border-radius: 6px; background: #fff; color: #365966; font-size: 11px; line-height: 15px; box-shadow: 0 8px 20px rgba(7, 26, 51, .14); }
-.lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2):hover::after { display: block; }
+.lembur-upload-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; align-items: start; }
+.lembur-upload-card:only-child { width: min(100%, 420px); grid-column: 1 / -1; }
+.lembur-upload-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #dce5e9; border-radius: 12px; background: #fff; }
+.lembur-upload-card.is-complete { border-color: #bfe0cb; }
+.lembur-upload-card.is-locked { background: #f7f9fa; }
+.lembur-upload-card-heading { display: flex; align-items: center; gap: 8px; color: #173d4f; }
+.lembur-evidence-position { display: inline-grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 8px; background: #e4eff3; color: #174b63; font-size: 12px; font-weight: 800; }
+.lembur-upload-card-heading > strong { min-width: 0; flex: 1 1 auto; overflow: hidden; font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.lembur-evidence-badges { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .lembur-timemark-badge { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 6px; border-radius: 999px; background: #fff3d9; color: #7b500f; font-size: 10px; line-height: 14px; font-weight: 800; white-space: nowrap; }
-.lembur-dropzone { position: relative; display: grid; height: 86px; min-height: 0; place-items: center; align-content: center; gap: 1px; padding: 6px; border: 1px dashed #9db4be; border-radius: 8px; background: #f8fbfc; color: #365966; font-size: 12px; text-align: center; cursor: pointer; }
+.lembur-evidence-status { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 8px; border-radius: 999px; background: #eef3f5; color: #526b76; font-size: 10px; line-height: 14px; font-weight: 800; white-space: nowrap; }
+.lembur-evidence-status.is-complete { background: #e5f4ea; color: #23613b; }
+.lembur-evidence-status.is-locked { background: #e3e8eb; color: #607d8b; }
+.lembur-evidence-status.is-partial { background: #fff3d9; color: #7b500f; }
+.lembur-evidence-hints { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--color-text-muted); font-size: 11px; line-height: 16px; }
+.lembur-evidence-progress { margin-left: auto; flex: 0 0 auto; padding: 3px 10px; border: 1px solid #c9deef; border-radius: 999px; background: #edf6fc; color: #17628f; font-size: 11px; line-height: 16px; font-weight: 800; white-space: nowrap; }
+.lembur-evidence-progress.is-complete { border-color: #9bc9ad; background: #effaf3; color: #23613b; }
+.lembur-evidence-locked-note { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: #f1f4f5; color: #607d8b; font-size: 11px; line-height: 16px; }
+.lembur-evidence-heading { flex-wrap: wrap; row-gap: 6px; }
+.lembur-dropzone { position: relative; display: flex; align-items: center; gap: 10px; min-height: 76px; padding: 10px 12px; border: 1px dashed #9db4be; border-radius: 10px; background: #f8fbfc; color: #365966; cursor: pointer; }
 .lembur-dropzone:hover { border-color: #174b63; background: #f1f7f9; }
+.lembur-dropzone:focus-within { outline: 2px solid #174b63; outline-offset: 2px; }
 .lembur-dropzone input { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.lembur-dropzone small { color: var(--color-text-muted); font-size: 11px; }
-.lembur-dropzone::after { content: 'Foto JPG/PNG/WebP - klik pilih file, lalu Simpan Draft atau Ajukan Lembur'; color: var(--color-text-muted); font-size: 10px; line-height: 13px; }
 .lembur-dropzone input:disabled { cursor: not-allowed; }
-.lembur-upload-icon { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; background: #e4eff3; color: #174b63; font-size: 15px; font-weight: 800; }
-.lembur-selected-files { display: grid; gap: 7px; }
-.lembur-selected-file { display: flex; min-width: 0; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 7px; background: #f5f8f9; }
-.lembur-selected-file > img, .lembur-thumb-button img { width: 40px; height: 36px; border-radius: 5px; object-fit: cover; }
-.lembur-selected-file > div { min-width: 0; flex: 1; }
-.lembur-selected-file > div strong, .lembur-selected-file > div small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lembur-selected-file > div strong { color: #294b59; font-size: 12px; }
-.lembur-selected-file > div small { color: var(--color-text-muted); font-size: 10px; }
-.lembur-thumb-button { padding: 0; border: 0; background: none; cursor: pointer; }
+.lembur-dropzone:has(input:disabled) { background: #f1f4f5; cursor: not-allowed; }
+.lembur-dropzone:has(input:disabled) > * { opacity: .6; }
+.lembur-upload-icon { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border-radius: 50%; background: #e4eff3; color: #174b63; font-size: 17px; font-weight: 800; }
+.lembur-dropzone-text { display: grid; gap: 2px; min-width: 0; text-align: left; }
+.lembur-dropzone-text > strong { color: #173d4f; font-size: 12px; line-height: 17px; }
+.lembur-dropzone-text > small { color: var(--color-text-muted); font-size: 11px; line-height: 15px; }
+.lembur-selected-files { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.lembur-selected-file { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 6px; border: 1px solid #e3eaee; border-radius: 9px; background: #f5f8f9; }
+.lembur-selected-file > img, .lembur-thumb-button img { width: 44px; height: 40px; flex: 0 0 44px; border-radius: 6px; object-fit: cover; }
+.lembur-selected-file-meta { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.lembur-selected-file-meta > strong, .lembur-selected-file-meta > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lembur-selected-file-meta > strong { color: #294b59; font-size: 12px; }
+.lembur-selected-file-meta > small { color: var(--color-text-muted); font-size: 10px; }
+.lembur-selected-file-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.lembur-evidence-action { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+.lembur-thumb-button { display: grid; flex: 0 0 auto; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; }
 .lembur-doc-icon { display: grid; width: 40px; height: 36px; flex: 0 0 40px; place-items: center; border-radius: 5px; background: #e9eff2; color: #486470; font-size: 10px; font-weight: 800; }
 .lembur-message { margin: 8px 18px 0; }
 .lembur-approval-alert { margin: 0 0 10px; }
@@ -7807,7 +7816,6 @@ summary:focus-visible {
 }
 
 :root[data-theme='dark'] .lembur-dropzone:hover,
-:root[data-theme='dark'] .lembur-upload-card > small:hover,
 :root[data-theme='dark'] .lembur-detail-photo:hover,
 :root[data-theme='dark'] .lembur-detail-document:hover {
   border-color: var(--border-strong);
@@ -7833,7 +7841,8 @@ summary:focus-visible {
 :root[data-theme='dark'] .lembur-participants-heading,
 :root[data-theme='dark'] .lembur-section-heading h3,
 :root[data-theme='dark'] .lembur-upload-card-heading,
-:root[data-theme='dark'] .lembur-selected-file > div strong,
+:root[data-theme='dark'] .lembur-selected-file-meta > strong,
+:root[data-theme='dark'] .lembur-dropzone-text > strong,
 :root[data-theme='dark'] .lembur-detail-description,
 :root[data-theme='dark'] .lembur-history-item strong {
   color: var(--text-primary);
@@ -7841,10 +7850,22 @@ summary:focus-visible {
 
 :root[data-theme='dark'] .lembur-section-heading > span,
 :root[data-theme='dark'] .lembur-upload-icon,
-:root[data-theme='dark'] .lembur-upload-card-heading strong::before,
+:root[data-theme='dark'] .lembur-evidence-position,
 :root[data-theme='dark'] .lembur-doc-icon {
   background: var(--primary-subtle);
   color: var(--tone-info-text);
+}
+
+:root[data-theme='dark'] .lembur-evidence-status,
+:root[data-theme='dark'] .lembur-evidence-progress {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+}
+
+:root[data-theme='dark'] .lembur-evidence-locked-note {
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
 }
 
 :root[data-theme='dark'] .lembur-detail-section > h3 {
@@ -7865,8 +7886,7 @@ summary:focus-visible {
   color: var(--text-secondary);
 }
 
-:root[data-theme='dark'] .lembur-participant-row > strong,
-:root[data-theme='dark'] .lembur-form-workspace.is-technical .lembur-upload-card:nth-child(2)::after {
+:root[data-theme='dark'] .lembur-participant-row > strong {
   border-color: var(--border);
   background: var(--surface-subtle);
   color: var(--text-secondary);

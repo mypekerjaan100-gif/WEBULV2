@@ -19,6 +19,7 @@ import {
 } from '../../data/overtimeReplacementL2.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
+import EvidenceUploadCard from './EvidenceUploadCard.jsx'
 import Icon from '../Icon.jsx'
 import {
   Alert,
@@ -375,6 +376,12 @@ export default function SLALembur({
     const stagedCount = (files[requirement.type] ?? []).length
     return requirement.allowMultiple ? activeCount + stagedCount > 0 : stagedCount > 0 || activeCount === 1
   })
+  const evidenceRequirementComplete = (requirement) => {
+    const activeCount = (evidenceByType[requirement.type] ?? []).filter((row) => row.status === 'ACTIVE').length
+    const stagedCount = (files[requirement.type] ?? []).length
+    return requirement.allowMultiple ? activeCount + stagedCount > 0 : stagedCount > 0 || activeCount === 1
+  }
+  const evidenceDoneCount = evidenceRequirements.filter(evidenceRequirementComplete).length
 
   const employeeQueryDate = draft.date ? `${draft.date}T12:00:00+07:00` : null
   useEffect(() => {
@@ -1183,8 +1190,32 @@ export default function SLALembur({
 
                 </div>
                  <section className="lembur-form-section lembur-evidence-section">
-                   <div className="lembur-section-heading"><span>C</span><div><h3>Evidence</h3><p>Upload foto JPG/JPEG, PNG, atau WebP. Foto akan dikompres otomatis, lalu klik Simpan Draft atau Ajukan Lembur.{activeHasApproved && ' Evidence dikunci karena sebagian peserta sudah disetujui.'}</p></div></div>
-                  <div className="lembur-upload-grid">{evidenceRequirements.map((requirement)=>{ const existingList=(evidenceByType[requirement.type]||[]).filter(entry=>entry.status==='ACTIVE'); const stagedList=files[requirement.type]??[]; const hasTimeMark=requirement.helpers?.[0]==='TimeMark Wajib'; return <div className="lembur-upload-card" key={requirement.type}><div className="lembur-upload-card-heading"><strong>{requirement.label} *</strong>{hasTimeMark&&<span className="lembur-timemark-badge">TimeMark Wajib</span>}</div>{requirement.helpers?.slice(hasTimeMark?1:0).map((helper)=><small key={helper}>{helper}</small>)}<label className="lembur-dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();stageEvidence(requirement,Array.from(e.dataTransfer.files ?? []))}}><input key={`${requirement.type}-${stagedList.length}-${existingList.length}`} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple={!!requirement.allowMultiple} disabled={submitting||initialDeadlinePassed||formReadOnly||activeHasApproved} onChange={e=>stageEvidence(requirement,Array.from(e.target.files ?? []))} /><span className="lembur-upload-icon">↑</span><strong>Pilih atau tarik foto ke sini</strong><small>JPG/PNG/WebP · dikompres otomatis maks. 1 MB{requirement.allowMultiple ? ' · minimal 1 foto, dapat lebih dari 1' : ''}{requirement.allowMultiple && (stagedList.length + existingList.length) > 0 ? ` · ${stagedList.length + existingList.length} foto` : ''}</small></label><div className="lembur-selected-files">{stagedList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{entry.previewUrl?<img src={entry.previewUrl} alt="" />:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.processed.original.filename}</strong><small>{Math.ceil(entry.processed.stored.sizeBytes/1024)} KB · siap disimpan</small></div><button type="button" className="sla-btn" disabled={submitting||formReadOnly||activeHasApproved} onClick={()=>removeStagedEvidence(requirement.type,entry.id)}>Hapus</button></div>)}{existingList.map((entry)=><div className="lembur-selected-file" key={entry.id}>{isImageEvidence(entry)&&evidenceUrls[entry.id]?<button type="button" className="lembur-thumb-button" onClick={()=>previewEvidence(entry,existingList)}><img src={evidenceUrls[entry.id]} alt={entry.originalFilename} /></button>:<span className="lembur-doc-icon">DOC</span>}<div><strong>{entry.originalFilename}</strong><small>{(entry.storedSizeBytes/1024).toFixed(0)} KB · tersimpan</small></div><button type="button" className="sla-btn" onClick={()=>previewEvidence(entry,existingList)}>Preview</button><button type="button" className="sla-btn" disabled={submitting||formReadOnly} onClick={()=>removeEvidence(entry)}>Hapus</button></div>)}</div></div>})}</div>
+                   <div className="lembur-section-heading lembur-evidence-heading"><span>C</span><div><h3>Evidence</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{evidenceDoneCount}/{evidenceRequirements.length} lengkap</span></div>
+                   {activeHasApproved && <p className="lembur-evidence-locked-note">Evidence dikunci karena sebagian peserta sudah disetujui.</p>}
+                  <div className="lembur-upload-grid lembur-evidence-grid">
+                    {evidenceRequirements.map((requirement, cardIndex) => {
+                      const existingList = (evidenceByType[requirement.type] || []).filter((entry) => entry.status === 'ACTIVE')
+                      const stagedList = files[requirement.type] ?? []
+                      return (
+                        <EvidenceUploadCard
+                          key={requirement.type}
+                          requirement={requirement}
+                          position={cardIndex + 1}
+                          existingList={existingList}
+                          stagedList={stagedList}
+                          evidenceUrls={evidenceUrls}
+                          isImageEvidence={isImageEvidence}
+                          inputDisabled={submitting || initialDeadlinePassed || formReadOnly || activeHasApproved}
+                          actionDisabled={submitting || formReadOnly || activeHasApproved}
+                          locked={activeHasApproved}
+                          onStage={stageEvidence}
+                          onRemoveStaged={removeStagedEvidence}
+                          onPreview={previewEvidence}
+                          onRemoveSaved={removeEvidence}
+                        />
+                      )
+                    })}
+                  </div>
                  </section>
                 </div>
 
