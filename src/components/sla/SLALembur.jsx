@@ -4,6 +4,8 @@ import {
   approveOvertimeEntry,
   getOvertimeInitialDeadlineConfig,
   listOvertimeHistory,
+  listOvertimeReplacements,
+  listOvertimeWork,
   listReplacementEmployees,
   rejectOvertime,
   rejectOvertimeEntry,
@@ -861,32 +863,63 @@ export default function SLALembur({
     return text || 'Data Lembur gagal dihapus.'
   }
 
-  const handleApprove = async (record)=>{
+  const verifyParticipantStatus = async (record, entryId, expectedStatuses) => {
+    try {
+      const contractId = record.contractId ?? contractScope?.contractId
+      const scopeUp3Id = record.up3Id ?? up3Id
+      if (!contractId || !scopeUp3Id) return true
+      const rows = record.type === 'WORK'
+        ? await listOvertimeWork({ contractId, up3Id: scopeUp3Id, unitId: null, periodMonth: record.periodMonth ?? periodMonth ?? null })
+        : await listOvertimeReplacements({ contractId, up3Id: scopeUp3Id, unitId: null, periodMonth: record.periodMonth ?? periodMonth ?? null })
+      const match = rows.find((row) => row.id === record.id && (entryId == null || row.entryId === entryId))
+      if (!match) return false
+      return expectedStatuses.includes(recordReviewStatus(match))
+    } catch {
+      return true
+    }
+  }
+
+  const handleApprove = async (record, entryIdOverride)=>{
     if(!record) return
-    const participantLabel = record.type === 'WORK' ? ` peserta ${record.participantName}` : ''
-    if(!window.confirm(`Setujui pengajuan lembur${participantLabel} ini?`)) return
+    const entryId = entryIdOverride ?? (record.type === 'WORK' ? record.entryId : null)
+    const participantName = record.type === 'WORK' ? record.participantName : ''
+    if(!window.confirm(`Setujui pengajuan lembur${participantName ? ` peserta ${participantName}` : ''} ini?`)) return
     setApprovalBusy(true)
     setApprovalError('')
     try{
-      if (record.type === 'WORK' && record.entryId) await approveOvertimeEntry(record.entryId)
-      else await approveOvertime(record.id)
+      if (record.type === 'WORK') {
+        if (!entryId) throw new Error('Data peserta tidak valid. Tutup detail lalu buka kembali dari baris peserta.')
+        const resultId = await approveOvertimeEntry(entryId)
+        if (resultId && String(resultId) !== String(entryId)) throw new Error('Approval peserta belum tersimpan. Muat ulang lalu coba lagi.')
+      } else {
+        await approveOvertime(record.id)
+      }
+      await onRefresh?.()
+      const verified = await verifyParticipantStatus(record, entryId, ['APPROVED'])
+      if (!verified) throw new Error('Approval peserta belum tersimpan. Muat ulang lalu coba lagi.')
       closeDetail()
-      setToast('Lembur berhasil disetujui.')
-      if(onRefresh) await onRefresh()
+      setToast(participantName ? `${participantName} berhasil disetujui.` : 'Lembur berhasil disetujui.')
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal disetujui.')) } finally{ setApprovalBusy(false) }
   }
-  const handleReject = async (record)=>{
+  const handleReject = async (record, entryIdOverride)=>{
     if(!record) return
     if(!rejectReason.trim()){ setApprovalError('Alasan penolakan wajib diisi.'); return }
+    const entryId = entryIdOverride ?? (record.type === 'WORK' ? record.entryId : null)
     setApprovalBusy(true)
     setApprovalError('')
     try{
-      const res = record.type === 'WORK' && record.entryId
-        ? await rejectOvertimeEntry(record.entryId, rejectReason)
-        : await rejectOvertime(record.id, rejectReason)
+      let res = null
+      if (record.type === 'WORK') {
+        if (!entryId) throw new Error('Data peserta tidak valid. Tutup detail lalu buka kembali dari baris peserta.')
+        res = await rejectOvertimeEntry(entryId, rejectReason)
+      } else {
+        res = await rejectOvertime(record.id, rejectReason)
+      }
+      await onRefresh?.()
+      const verified = await verifyParticipantStatus(record, entryId, ['CORRECTION_REQUIRED', 'CLOSED'])
+      if (!verified) throw new Error('Penolakan peserta belum tersimpan. Muat ulang lalu coba lagi.')
       closeDetail()
       setToast(res?.message || 'Lembur ditolak dan dikembalikan untuk revisi.')
-      if(onRefresh) await onRefresh()
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
   }
 
@@ -1385,7 +1418,7 @@ export default function SLALembur({
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
                      {(isAdminUp3||isSuperAdmin) && detailCanApprove && (
-                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailApprovalKey);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
+                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailApprovalKey);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
                       )}
                      {(isAdminUp3||isSuperAdmin) && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
                   </>
