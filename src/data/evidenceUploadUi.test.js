@@ -15,7 +15,7 @@ const cssUrl = new URL('../styles/index.css', import.meta.url)
 const css = readFileSync(fileURLToPath(cssUrl), 'utf8')
 
 // Hooks yang dipakai browser test harus tetap ada.
-for (const hook of ['lembur-upload-card', 'lembur-upload-card-heading', 'lembur-timemark-badge', 'lembur-dropzone', 'lembur-upload-icon', 'lembur-selected-files', 'lembur-selected-file', 'lembur-thumb-button', 'lembur-doc-icon']) {
+for (const hook of ['lembur-upload-card', 'lembur-upload-card-heading', 'lembur-timemark-badge', 'lembur-dropzone', 'lembur-file-input', 'lembur-upload-icon', 'lembur-selected-files', 'lembur-selected-file', 'lembur-thumb-button', 'lembur-doc-icon']) {
   assert(card.includes(hook), `EvidenceUploadCard harus memakai class ${hook}`)
 }
 assert(card.includes('siap disimpan'), 'Label staged harus menyebut siap disimpan')
@@ -37,5 +37,22 @@ assert(css.includes('repeat(auto-fit, minmax(250px, 1fr))'), 'Grid evidence haru
 assert(css.includes('.lembur-evidence-status'), 'Status per kartu harus punya style')
 assert(css.includes('.lembur-evidence-progress'), 'Progress header harus punya style')
 assert(css.includes('.lembur-evidence-locked-note'), 'Catatan terkunci harus punya style')
+
+// Badge progres tidak boleh ikut style ikon langkah 26px.
+assert(!css.includes('.lembur-section-heading > span'), 'Selector generik section-heading > span harus dihapus agar badge progres tidak terpotong')
+assert(css.includes('.lembur-step-badge'), 'Ikon langkah harus memakai class khusus')
+assert(css.includes('.lembur-section-heading-text'), 'Teks heading harus punya wrapper flex')
+assert(lembur.includes('lembur-step-badge'), 'SLALembur harus memakai lembur-step-badge')
+assert(lembur.includes('lembur-section-heading-text'), 'SLALembur harus memakai wrapper teks heading')
+
+// Input file native tidak boleh terlihat; pakai teknik visually-hidden yang andal.
+assert(card.includes('lembur-file-input'), 'Input file harus memakai class khusus')
+assert(css.includes('.lembur-file-input'), 'CSS harus menyembunyikan input file khusus')
+assert(css.includes('clip-path: inset(50%)'), 'Input file harus disembunyikan dengan clip-path')
+assert(!css.includes('.lembur-dropzone input { position: absolute; inset: 0'), 'Overlay input full-size harus dihapus')
+
+// Header kartu harus wrap rapi saat badge TimeMark + status berdampingan.
+assert(css.includes('.lembur-upload-card-heading { display: flex; flex-wrap: wrap'), 'Header kartu harus wrap')
+assert(css.includes('.lembur-evidence-badges { display: inline-flex; flex: 0 1 auto'), 'Badges kartu harus bisa wrap ke kanan')
 
 console.log(`Evidence upload UI tests passed: ${passed}`)

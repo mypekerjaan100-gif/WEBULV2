@@ -5707,7 +5707,8 @@ summary:focus-visible {
 .lembur-form-workspace .lembur-form-section { min-width: 0; margin: 0; }
 .lembur-form-section { margin: 12px 18px 0; padding: 14px 16px; border: 1px solid #dfe6ea; border-radius: 10px; background: #fff; }
 .lembur-section-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
-.lembur-section-heading > span { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 7px; background: #eaf2f5; color: #174b63; font-size: 12px; font-weight: 800; }
+.lembur-step-badge { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 7px; background: #eaf2f5; color: #174b63; font-size: 12px; font-weight: 800; }
+.lembur-section-heading-text { min-width: 0; flex: 1 1 220px; }
 .lembur-section-heading h3 { margin: 0; color: #173d4f; font-size: 16px; line-height: 20px; }
 .lembur-section-heading p { margin: 1px 0 0; color: var(--color-text-muted); font-size: 11px; line-height: 15px; }
 .lembur-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
@@ -5751,27 +5752,27 @@ summary:focus-visible {
 .lembur-upload-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #dce5e9; border-radius: 12px; background: #fff; }
 .lembur-upload-card.is-complete { border-color: #bfe0cb; }
 .lembur-upload-card.is-locked { background: #f7f9fa; }
-.lembur-upload-card-heading { display: flex; align-items: center; gap: 8px; color: #173d4f; }
+.lembur-upload-card-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; row-gap: 6px; color: #173d4f; }
 .lembur-evidence-position { display: inline-grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 8px; background: #e4eff3; color: #174b63; font-size: 12px; font-weight: 800; }
-.lembur-upload-card-heading > strong { min-width: 0; flex: 1 1 auto; overflow: hidden; font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
-.lembur-evidence-badges { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.lembur-upload-card-heading > strong { min-width: 0; flex: 1 1 120px; overflow: hidden; font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.lembur-evidence-badges { display: inline-flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; max-width: 100%; }
 .lembur-timemark-badge { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 6px; border-radius: 999px; background: #fff3d9; color: #7b500f; font-size: 10px; line-height: 14px; font-weight: 800; white-space: nowrap; }
 .lembur-evidence-status { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 8px; border-radius: 999px; background: #eef3f5; color: #526b76; font-size: 10px; line-height: 14px; font-weight: 800; white-space: nowrap; }
 .lembur-evidence-status.is-complete { background: #e5f4ea; color: #23613b; }
 .lembur-evidence-status.is-locked { background: #e3e8eb; color: #607d8b; }
 .lembur-evidence-status.is-partial { background: #fff3d9; color: #7b500f; }
 .lembur-evidence-hints { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--color-text-muted); font-size: 11px; line-height: 16px; }
-.lembur-evidence-progress { margin-left: auto; flex: 0 0 auto; padding: 3px 10px; border: 1px solid #c9deef; border-radius: 999px; background: #edf6fc; color: #17628f; font-size: 11px; line-height: 16px; font-weight: 800; white-space: nowrap; }
+.lembur-evidence-progress { margin-left: auto; flex: 0 0 auto; align-self: flex-start; padding: 4px 12px; border: 1px solid #c9deef; border-radius: 999px; background: #edf6fc; color: #17628f; font-size: 11px; line-height: 16px; font-weight: 800; white-space: nowrap; }
 .lembur-evidence-progress.is-complete { border-color: #9bc9ad; background: #effaf3; color: #23613b; }
 .lembur-evidence-locked-note { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: #f1f4f5; color: #607d8b; font-size: 11px; line-height: 16px; }
-.lembur-evidence-heading { flex-wrap: wrap; row-gap: 6px; }
-.lembur-dropzone { position: relative; display: flex; align-items: center; gap: 10px; min-height: 76px; padding: 10px 12px; border: 1px dashed #9db4be; border-radius: 10px; background: #f8fbfc; color: #365966; cursor: pointer; }
+.lembur-evidence-heading { flex-wrap: wrap; align-items: flex-start; row-gap: 8px; }
+.lembur-evidence-heading .lembur-step-badge { margin-top: 1px; }
+.lembur-dropzone { position: relative; display: flex; align-items: center; gap: 10px; min-height: 76px; padding: 10px 12px; border: 1px dashed #9db4be; border-radius: 10px; background: #f8fbfc; color: #365966; cursor: pointer; overflow: hidden; }
 .lembur-dropzone:hover { border-color: #174b63; background: #f1f7f9; }
 .lembur-dropzone:focus-within { outline: 2px solid #174b63; outline-offset: 2px; }
-.lembur-dropzone input { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.lembur-dropzone input:disabled { cursor: not-allowed; }
-.lembur-dropzone:has(input:disabled) { background: #f1f4f5; cursor: not-allowed; }
-.lembur-dropzone:has(input:disabled) > * { opacity: .6; }
+.lembur-file-input { position: absolute !important; width: 1px !important; height: 1px !important; margin: -1px !important; padding: 0 !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; border: 0 !important; white-space: nowrap !important; opacity: 0 !important; pointer-events: none !important; }
+.lembur-dropzone:has(.lembur-file-input:disabled) { background: #f1f4f5; cursor: not-allowed; }
+.lembur-dropzone:has(.lembur-file-input:disabled) .lembur-upload-icon, .lembur-dropzone:has(.lembur-file-input:disabled) .lembur-dropzone-text { opacity: .6; }
 .lembur-upload-icon { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border-radius: 50%; background: #e4eff3; color: #174b63; font-size: 17px; font-weight: 800; }
 .lembur-dropzone-text { display: grid; gap: 2px; min-width: 0; text-align: left; }
 .lembur-dropzone-text > strong { color: #173d4f; font-size: 12px; line-height: 17px; }
@@ -7848,7 +7849,7 @@ summary:focus-visible {
   color: var(--text-primary);
 }
 
-:root[data-theme='dark'] .lembur-section-heading > span,
+:root[data-theme='dark'] .lembur-step-badge,
 :root[data-theme='dark'] .lembur-upload-icon,
 :root[data-theme='dark'] .lembur-evidence-position,
 :root[data-theme='dark'] .lembur-doc-icon {

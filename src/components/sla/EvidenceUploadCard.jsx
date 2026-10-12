@@ -64,10 +64,12 @@ export default function EvidenceUploadCard({
       >
         <input
           key={`${requirement.type}-${stagedList.length}-${existingList.length}`}
+          className="lembur-file-input"
           type="file"
           accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
           multiple={!!requirement.allowMultiple}
           disabled={inputDisabled}
+          aria-label={`Pilih foto ${requirement.label}`}
           onChange={(event) => onStage(requirement, Array.from(event.target.files ?? []))}
         />
         <span className="lembur-upload-icon" aria-hidden="true">↑</span>

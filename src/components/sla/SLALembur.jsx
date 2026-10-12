@@ -1188,7 +1188,7 @@ export default function SLALembur({
                 <div className={`lembur-form-workspace ${formLayoutClass}`}>
                 <div className="lembur-form-left">
                  <section className="lembur-form-section">
-                  <div className="lembur-section-heading"><span>A</span><div><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
+                  <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">A</span><div className="lembur-section-heading-text"><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
                    <div className={`lembur-form-grid ${formLayoutClass}`}>
                      <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} onChange={e=>updateDraft({ date:e.target.value })} /></label>
@@ -1209,7 +1209,7 @@ export default function SLALembur({
                 </section>
 
                 <section className="lembur-form-section">
-                  <div className="lembur-section-heading"><span>B</span><div><h3>Pegawai & Waktu</h3><p>Peserta, jam kerja, dan durasi otomatis</p></div></div>
+                  <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">B</span><div className="lembur-section-heading-text"><h3>Pegawai & Waktu</h3><p>Peserta, jam kerja, dan durasi otomatis</p></div></div>
                   {isReplacement && <div className="lembur-time-grid is-replacement">
                     <label className="sla-context-field"><span className="sla-context-label">Pegawai yang Digantikan *</span><select className="sla-context-select" value={draft.replacedEmployeeId} disabled={employeeLoading} onChange={e=>updateDraft({ replacedEmployeeId:e.target.value, participantEmployeeId:'' })}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
                     <label className="sla-context-field"><span className="sla-context-label">Pegawai Pengganti *</span><select className="sla-context-select" value={draft.participantEmployeeId} disabled={!replacedEmployee} onChange={e=>updateDraft({ participantEmployeeId:e.target.value })}><option value="">Pilih pegawai pengganti</option>{participantOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
@@ -1223,7 +1223,7 @@ export default function SLALembur({
 
                 </div>
                  <section className="lembur-form-section lembur-evidence-section">
-                   <div className="lembur-section-heading lembur-evidence-heading"><span>C</span><div><h3>Evidence</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{evidenceDoneCount}/{evidenceRequirements.length} lengkap</span></div>
+                   <div className="lembur-section-heading lembur-evidence-heading"><span className="lembur-step-badge" aria-hidden="true">C</span><div className="lembur-section-heading-text"><h3>Evidence</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{evidenceDoneCount}/{evidenceRequirements.length} lengkap</span></div>
                    {activeHasApproved && <p className="lembur-evidence-locked-note">Evidence dikunci karena sebagian peserta sudah disetujui.</p>}
                   <div className="lembur-upload-grid lembur-evidence-grid">
                     {evidenceRequirements.map((requirement, cardIndex) => {
