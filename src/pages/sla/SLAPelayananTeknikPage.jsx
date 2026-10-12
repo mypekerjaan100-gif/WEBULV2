@@ -615,6 +615,24 @@ export default function SLAPelayananTeknikPage({
       : authorizedModules
   const primaryModules = visibleModules.filter((module) => ['sla', 'variable-cost', 'lembur'].includes(module.id))
   const configurationModules = visibleModules.filter((module) => !['sla', 'variable-cost', 'lembur'].includes(module.id))
+  const configMenuRef = useRef(null)
+
+  useEffect(() => {
+    if (configurationModules.length === 0) return undefined
+    const closeOnOutsideClick = (event) => {
+      const menu = configMenuRef.current
+      if (menu?.open && !menu.contains(event.target)) menu.open = false
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && configMenuRef.current?.open) configMenuRef.current.open = false
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [configurationModules.length])
 
   const refreshLembur = useCallback(async (options = {}) => {
     if (!orgMap?.contractUuid || !orgMap?.up3Uuid || (role === 'ulp' && !lemburUnitUuid)) {
@@ -873,7 +891,10 @@ export default function SLAPelayananTeknikPage({
       key={module.id}
       type="button"
       className={`sla-module-nav-item ${moduleId === module.id ? 'sla-module-nav-item-active' : ''}`}
-      onClick={() => setModuleId(module.id)}
+      onClick={() => {
+        if (configMenuRef.current) configMenuRef.current.open = false
+        setModuleId(module.id)
+      }}
     >
       {module.name}
       {canManageUp3Operations && module.id === 'variable-cost' && (approvalCounts.variable ?? 0) > 0 && (
@@ -905,7 +926,7 @@ export default function SLAPelayananTeknikPage({
           {primaryModules.map(renderModuleButton)}
         </nav>
         {configurationModules.length > 0 && (
-          <details className="sla-config-menu">
+          <details className="sla-config-menu" ref={configMenuRef}>
             <summary className={configurationModules.some((module) => module.id === moduleId) ? 'sla-config-menu-active' : ''}>
               Master &amp; Pengaturan
             </summary>
