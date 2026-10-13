@@ -11,6 +11,7 @@ import {
   rejectOvertimeEntry,
   resubmitOvertime,
   softDeleteOvertimeActivity,
+  softDeleteOvertimeEntry,
 } from '../../data/overtimeReplacementRepository.js'
 import {
   automaticReplacementDescription,
@@ -1280,6 +1281,9 @@ export default function SLALembur({
     if (/hanya lembur yang belum disetujui/i.test(text)) {
       return 'Data tidak dapat dihapus karena sudah disetujui atau sudah final.'
     }
+    if (/hanya peserta yang belum disetujui/i.test(text)) {
+      return 'Peserta ini tidak dapat dihapus karena sudah disetujui atau sudah final.'
+    }
     if (/sebagian peserta sudah disetujui/i.test(text)) {
       return 'Sebagian peserta sudah disetujui sehingga data tidak dapat dihapus.'
     }
@@ -1360,13 +1364,13 @@ export default function SLALembur({
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
   }
 
-  const activityRowIds = (activityId) => records.filter((record) => record.id === activityId)
+  // Hapus per peserta: baris tabel = satu entry. Peserta lain dalam batch
+  // tidak ikut terhapus (server menjaga scope + status target).
   const canDeleteRecord = (record) => {
     if (!record) return false
     if (isSuperAdmin) return true
     if (!canMutate) return false
-    if (!['DRAFT', 'SUBMITTED', 'CORRECTION_REQUIRED'].includes(record.status)) return false
-    return !activityRowIds(record.id).some((row) => recordReviewStatus(row) === 'APPROVED')
+    return ['DRAFT', 'SUBMITTED', 'CORRECTION_REQUIRED'].includes(recordReviewStatus(record))
   }
 
   const handleDelete = async () => {
@@ -1376,10 +1380,15 @@ export default function SLALembur({
     setDeleteBusy(true)
     setDeleteError('')
     try {
-      await softDeleteOvertimeActivity(deleteTarget.id, reason)
+      if (deleteTarget.entryId) {
+        await softDeleteOvertimeEntry(deleteTarget.entryId, reason)
+      } else {
+        await softDeleteOvertimeActivity(deleteTarget.id, reason)
+      }
+      const deletedName = deleteTarget.participantName ? `Peserta ${deleteTarget.participantName} dihapus. ` : ''
       setDeleteTarget(null)
       setDeleteReason('')
-      setToast('Data Lembur berhasil dihapus.')
+      setToast(`${deletedName}Data Lembur berhasil dihapus.`)
       await onRefresh?.()
     } catch (error) {
       setDeleteError(friendlyDeleteError(error?.message))
@@ -1652,9 +1661,9 @@ export default function SLALembur({
   const ulpCount = (orgUnits ?? []).filter((unit) => unit.type === 'ULP').length
   const up3ScopeName = (orgUnits ?? []).find((unit) => unit.uuid === up3Id || unit.legacyKey === up3Id)?.displayName
   const showUlpColumn = isSuperAdmin || isManagement || !canMutate
-  const deleteTargetRows = deleteTarget ? records.filter((record) => record.id === deleteTarget.id) : []
-  const deleteParticipants = [...new Set(deleteTargetRows.map((record) => record.participantName).filter(Boolean))]
-  const deleteTotal = deleteTargetRows.reduce((total, record) => total + Number(record.total ?? 0), 0)
+  // Dialog hapus selalu satu peserta (baris yang diklik).
+  const deleteParticipantName = deleteTarget?.participantName || '-'
+  const deleteTotal = Number(deleteTarget?.total ?? 0)
 
   return (
     <section className="sla-module-panel lembur-l2">
@@ -2046,7 +2055,7 @@ export default function SLALembur({
                         <div className="lembur-table-actions">
                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>{recordReviewStatus(record) === 'CORRECTION_REQUIRED' ? 'Revisi Pengajuan' : 'Lanjutkan Draft'}</Button>}
                            <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
-                           {canDeleteRecord(record) && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus</Button>}
+                            {canDeleteRecord(record) && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus Peserta</Button>}
                         </div>
                       </td>
                     </tr>
@@ -2058,9 +2067,9 @@ export default function SLALembur({
           {(isSuperAdmin || canMutate) && deleteTarget && (
             <div className="rekap-detail-overlay" onClick={()=>{if(!deleteBusy){setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}}>
               <div className="rekap-detail-modal lembur-delete-modal" role="dialog" aria-modal="true" aria-labelledby="lembur-delete-title" onClick={event=>event.stopPropagation()}>
-                <div className="lembur-delete-header"><div><span className="lembur-kicker">{isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN ULP'}</span><h2 id="lembur-delete-title">Hapus Data Lembur</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}><Icon name="close" size={17} /></IconButton></div>
-                <Alert tone="danger" title="Konfirmasi soft delete">Data akan hilang dari Rekap Lembur normal, tetapi audit dan evidence tetap tersimpan.{deleteTargetRows.length > 1 && ` Seluruh ${deleteTargetRows.length} peserta dalam form ini ikut dihapus.`}</Alert>
-                <dl className="lembur-delete-summary"><div><dt>Jenis</dt><dd>{jenisLabel(deleteTarget)}</dd></div><div><dt>Tanggal</dt><dd>{deleteTarget.date}</dd></div><div><dt>Peserta</dt><dd>{deleteParticipants.join(', ') || '-'}</dd></div><div><dt>Total</dt><dd>Rp {formatRp(deleteTotal)}</dd></div><div><dt>Keterangan</dt><dd>{deleteTarget.description}</dd></div></dl>
+                <div className="lembur-delete-header"><div><span className="lembur-kicker">{isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN ULP'}</span><h2 id="lembur-delete-title">Hapus Peserta Lembur</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}><Icon name="close" size={17} /></IconButton></div>
+                <Alert tone="danger" title="Konfirmasi hapus peserta">Hanya peserta ini yang dihapus dari Rekap Lembur normal. Peserta lain dalam batch tidak berubah; audit tetap tersimpan.</Alert>
+                <dl className="lembur-delete-summary"><div><dt>Jenis</dt><dd>{jenisLabel(deleteTarget)}</dd></div><div><dt>Tanggal</dt><dd>{deleteTarget.date}</dd></div><div><dt>Peserta</dt><dd>{deleteParticipantName}</dd></div><div><dt>Total</dt><dd>Rp {formatRp(deleteTotal)}</dd></div><div><dt>Keterangan</dt><dd>{deleteTarget.description}</dd></div></dl>
                 <label className="sla-context-field"><span className="sla-context-label">Alasan Hapus *</span><textarea className="sla-context-select" rows={3} value={deleteReason} disabled={deleteBusy} onChange={event=>{setDeleteReason(event.target.value);setDeleteError('')}} placeholder="Jelaskan alasan penghapusan data Lembur" /></label>
                 {deleteError && <Alert tone="danger">{deleteError}</Alert>}
                 <div className="lembur-delete-actions"><Button variant="ghost" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}>Batal</Button><Button variant="danger" disabled={deleteBusy||!deleteReason.trim()} onClick={handleDelete}>{deleteBusy?'Menghapus...':'Hapus Data'}</Button></div>

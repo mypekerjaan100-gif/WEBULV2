@@ -84,6 +84,19 @@ assert(!component.includes('actor_user_id?.slice(0,8)'), 'Potongan UUID harus di
 assert(component.includes('isLegacyRevisionMarker'), 'Deteksi marker revisi lama hilang')
 assert(component.includes('detailEntryRejectionCount'), 'Atribusi marker ke peserta ditolak hilang')
 assert(component.includes('Catatan lama: peserta tidak tercatat.'), 'Penanda batch untuk marker lama hilang')
+assert(repo.includes('softDeleteOvertimeEntry'), 'Repo hapus peserta hilang')
+assert(component.includes('softDeleteOvertimeEntry'), 'Form harus memakai hapus per peserta')
+assert(component.includes('Hapus Peserta Lembur'), 'Judul dialog hapus peserta hilang')
+assert(component.includes('Hanya peserta ini yang dihapus'), 'Penjelasan hapus peserta hilang')
+assert(!component.includes('ikut dihapus'), 'Teks hapus seluruh batch harus dihapus')
+
+const entryDeleteMigrationUrl = new URL(
+  '../../supabase/migrations/20261014210000_overtime_entry_delete.sql',
+  import.meta.url,
+)
+const entryDeleteSql = readFileSync(fileURLToPath(entryDeleteMigrationUrl), 'utf8')
+assert(entryDeleteSql.includes('soft_delete_overtime_entry_l5'), 'RPC hapus peserta hilang')
+assert(entryDeleteSql.includes('Hanya peserta yang belum disetujui'), 'Proteksi hapus target approved hilang')
 
 const historyMigrationUrl = new URL(
   '../../supabase/migrations/20261014190000_overtime_history_revision_saved.sql',
