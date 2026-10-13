@@ -5065,30 +5065,74 @@ summary:focus-visible {
 }
 
 /* Allow wrapping for specific columns */
-.sla-pegawai-table td:nth-child(2),   /* Nama */
-.sla-pegawai-table td:nth-child(4),   /* Lokasi Penempatan */
-.sla-pegawai-table td:nth-child(5) {  /* Jabatan */
+.sla-pegawai-table td:nth-child(3),   /* Nama */
+.sla-pegawai-table td:nth-child(5),   /* Lokasi Penempatan */
+.sla-pegawai-table td:nth-child(6) {  /* Jabatan */
   white-space: normal;
   word-break: break-word;
   max-width: 220px;
 }
 
-.sla-pegawai-table th:nth-child(2),
-.sla-pegawai-table th:nth-child(4),
-.sla-pegawai-table th:nth-child(5) {
+.sla-pegawai-table th:nth-child(3),
+.sla-pegawai-table th:nth-child(5),
+.sla-pegawai-table th:nth-child(6) {
   white-space: normal;
 }
 
 /* Keep numeric/id columns from wrapping */
-.sla-pegawai-table td:nth-child(1),   /* NIP */
-.sla-pegawai-table td:nth-child(6),   /* Tgl Lahir */
-.sla-pegawai-table td:nth-child(7),   /* Masa Pensiun */
-.sla-pegawai-table td:nth-child(8),   /* Bank */
-.sla-pegawai-table td:nth-child(9),   /* No Rekening */
-.sla-pegawai-table td:nth-child(10),  /* Tarif Lembur/Jam */
-.sla-pegawai-table td:nth-child(11),  /* Status */
-.sla-pegawai-table td:nth-child(12) { /* Approval */
+.sla-pegawai-table td:nth-child(2),   /* NIP */
+.sla-pegawai-table td:nth-child(7),   /* Tgl Lahir */
+.sla-pegawai-table td:nth-child(8),   /* Masa Pensiun */
+.sla-pegawai-table td:nth-child(9),   /* Bank */
+.sla-pegawai-table td:nth-child(10),  /* No Rekening */
+.sla-pegawai-table td:nth-child(11),  /* Tarif Lembur/Jam */
+.sla-pegawai-table td:nth-child(12),  /* Status */
+.sla-pegawai-table td:nth-child(13) { /* Approval */
   white-space: nowrap;
+}
+
+/* Employee photo */
+.sp-pegawai-photo {
+  object-fit: cover;
+  border-radius: 8px;
+  background: #e4eff3;
+  display: inline-grid;
+  place-items: center;
+  color: #174b63;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+img.sp-pegawai-photo {
+  display: inline-block;
+}
+.sp-pegawai-photo-thumb {
+  width: 44px;
+  height: 44px;
+  font-size: 13px;
+}
+.sp-pegawai-photo-large {
+  width: 120px;
+  height: 120px;
+  font-size: 28px;
+  border-radius: 12px;
+}
+.sp-pegawai-photo-placeholder {
+  background: #e4eff3;
+  color: #5b7a88;
+}
+.sp-pegawai-photo-field {
+  grid-column: 1 / -1;
+}
+.sp-pegawai-photo-picker {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.sp-pegawai-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 /* Status/Approval badges in table */
@@ -7589,6 +7633,12 @@ summary:focus-visible {
 :root[data-theme='dark'] input[type='search']::-webkit-search-cancel-button {
   filter: invert(0.75) brightness(1.1);
   opacity: 0.85;
+}
+
+:root[data-theme='dark'] .sp-pegawai-photo,
+:root[data-theme='dark'] .sp-pegawai-photo-placeholder {
+  background: var(--primary-subtle);
+  color: var(--tone-info-text);
 }
 
 :root[data-theme='dark'] .sla-table thead th,

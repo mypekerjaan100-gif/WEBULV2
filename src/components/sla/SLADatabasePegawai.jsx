@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   currentNameOf,
   ulpIdsOfUp3,
@@ -75,7 +75,17 @@ const emptyForm = (defaultUnitId, up3Id) => ({
   statusReason: '',
   statusReasonNote: '',
   statusEffectiveDate: '',
+  photoAssetId: '',
+  existingPhotoId: '',
+  hasExistingPhoto: false,
 })
+
+function photoInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
 
 const formatPeriod = (from, to) =>
   `${from ?? 'sejak awal'} \u2014 ${to == null ? 'sekarang' : to}`
@@ -139,6 +149,79 @@ export default function SLADatabasePegawai({
   const [importParsing, setImportParsing] = useState(false)
   const [importProcessing, setImportProcessing] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const [photoByEmployee, setPhotoByEmployee] = useState({})
+  const [photoUrls, setPhotoUrls] = useState({})
+  const [photoStaged, setPhotoStaged] = useState(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+  const photoStagedUrl = useMemo(
+    () => (photoStaged?.previewUrl ? photoStaged.previewUrl : ''),
+    [photoStaged],
+  )
+  const photoObjectUrlRef = useRef(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const ids = [...new Set([
+      ...employees.map((e) => e.id).filter(Boolean),
+      ...changeRequests
+        .filter((r) => r.status === 'Pending' && r.employeeId)
+        .map((r) => r.employeeId),
+    ])]
+    if (!ids.length) {
+      setPhotoByEmployee({})
+      return undefined
+    }
+    import('../../data/employeePhotoRepository.js')
+      .then(({ listEmployeePhotos }) => listEmployeePhotos(ids))
+      .then((photos) => {
+        if (cancelled) return
+        const grouped = {}
+        for (const photo of photos) {
+          if (!photo.employeeId) continue
+          ;(grouped[photo.employeeId] ??= []).push(photo)
+        }
+        setPhotoByEmployee(grouped)
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoByEmployee({})
+      })
+    return () => { cancelled = true }
+  }, [employees, changeRequests])
+
+  useEffect(() => {
+    let cancelled = false
+    const activeIds = Object.values(photoByEmployee)
+      .flat()
+      .filter((photo) => photo.status === 'ACTIVE' || photo.status === 'STAGED')
+      .map((photo) => photo.id)
+    const pendingAddPhotoIds = changeRequests
+      .filter((req) => req.status === 'Pending' && req.type === 'add')
+      .map((req) => req.rawProposed?.photo_asset_id ?? req.proposed?.photoAssetId ?? '')
+      .filter(Boolean)
+    const unique = [...new Set([...activeIds, ...pendingAddPhotoIds])].slice(0, 60)
+    if (!unique.length) {
+      setPhotoUrls({})
+      return undefined
+    }
+    import('../../data/employeePhotoRepository.js')
+      .then(({ createEmployeePhotoSignedUrls }) => createEmployeePhotoSignedUrls(unique))
+      .then((urls) => { if (!cancelled) setPhotoUrls(urls) })
+      .catch(() => { if (!cancelled) setPhotoUrls({}) })
+    return () => { cancelled = true }
+  }, [photoByEmployee, changeRequests])
+
+  useEffect(() => () => {
+    if (photoObjectUrlRef.current) URL.revokeObjectURL(photoObjectUrlRef.current)
+    if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const activePhotoOf = (employeeId) =>
+    (photoByEmployee[employeeId] ?? []).find((photo) => photo.status === 'ACTIVE') ?? null
+  const stagedPhotoOfRequest = (requestId) =>
+    Object.values(photoByEmployee).flat().find(
+      (photo) => photo.status === 'STAGED' && photo.changeRequestId === requestId,
+    ) ?? null
 
   const unitById = new Map(units.map((u) => [u.id, u]))
   const orgUnitByUuid = orgMap
@@ -299,6 +382,7 @@ export default function SLADatabasePegawai({
   const exportMasterPegawai = () => {
     const columns = [
       { label: 'No', width: 8 },
+      { label: 'Foto', width: 12 },
       { label: 'NIP', width: 18 },
       { label: 'Nama', width: 28 },
       { label: 'Unit', width: 22 },
@@ -318,8 +402,10 @@ export default function SLADatabasePegawai({
       const pensionLabel = pension.retirementDate
         ? `${pension.state} (${pension.retirementDate})`
         : (pension.state ?? '')
+      const exportPhoto = row.employee ? activePhotoOf(row.employee.id) : null
       return [
         { value: String(index + 1) },
+        { value: exportPhoto ? 'Ada' : 'Belum ada' },
         { value: data.nip ?? '' },
         { value: data.name ?? '' },
         { value: unitName(data.unitId) },
@@ -369,14 +455,26 @@ export default function SLADatabasePegawai({
     statusEffectiveDate: employee.statusEffectiveDate ?? '',
   })
 
+  const closeDetail = () => {
+    if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
+    photoObjectUrlRef.current = null
+    setPhotoStaged(null)
+    setPhotoError('')
+    setDetail(null)
+  }
+
   const openDetail = (row) => {
     setTab('utama')
     setFormError('')
+    if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
+    setPhotoStaged(null)
+    setPhotoError('')
     setDetail({ mode: 'view', row })
   }
 
   const openEdit = (row) => {
     const e = row.employee
+    const existingActive = activePhotoOf(e.id)
     setForm({
       nip: e.nip,
       name: e.name,
@@ -394,7 +492,13 @@ export default function SLADatabasePegawai({
       statusReason: e.statusReason ?? '',
       statusReasonNote: e.statusReasonNote ?? '',
       statusEffectiveDate: e.statusEffectiveDate ?? '',
+      photoAssetId: '',
+      existingPhotoId: existingActive?.id ?? '',
+      hasExistingPhoto: Boolean(existingActive),
     })
+    if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
+    setPhotoStaged(null)
+    setPhotoError('')
     setTab('utama')
     setFormError('')
     setDetail({ mode: 'edit', row })
@@ -406,6 +510,9 @@ export default function SLADatabasePegawai({
         ? selectedPreviewUnitUuid
         : resolvedUnitUuids.filter((uuid) => uuid !== resolvedUp3Uuid)[0] ?? resolvedUp3Uuid ?? ''
     setForm(emptyForm(defaultUnitId, resolvedUp3Uuid))
+    if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
+    setPhotoStaged(null)
+    setPhotoError('')
     setTab('utama')
     setFormError('')
     setDetail({ mode: 'add', row: null })
@@ -427,7 +534,41 @@ export default function SLADatabasePegawai({
       }
       if (!form.statusEffectiveDate) return 'Tanggal Efektif wajib diisi.'
     }
+    if (detail?.mode === 'add' && !photoStaged && !form.photoAssetId) {
+      return 'Foto pegawai wajib diunggah untuk pegawai baru.'
+    }
+    if (detail?.mode === 'edit' && !photoStaged && !form.photoAssetId && !form.hasExistingPhoto) {
+      return 'Foto pegawai wajib diunggah karena pegawai ini belum memiliki foto.'
+    }
     return null
+  }
+
+  const handlePhotoSelect = async (file) => {
+    if (!file) return
+    setPhotoBusy(true)
+    setPhotoError('')
+    try {
+      const { prepareEmployeePhotoFile } = await import('../../data/employeePhotoProcessor.js')
+      const processed = await prepareEmployeePhotoFile(file)
+      if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
+      const previewUrl = processed.file.type.startsWith('image/')
+        ? URL.createObjectURL(processed.file)
+        : null
+      photoObjectUrlRef.current = previewUrl
+      setPhotoStaged({ processed, previewUrl, filename: processed.original.filename })
+      setForm((prev) => ({ ...prev, photoAssetId: '' }))
+    } catch (error) {
+      setPhotoError(error.message || 'Gagal memproses foto pegawai.')
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
+
+  const clearPhotoStaged = () => {
+    if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
+    photoObjectUrlRef.current = null
+    setPhotoStaged(null)
+    setForm((prev) => ({ ...prev, photoAssetId: '' }))
   }
 
   const proposedOf = () => ({
@@ -449,6 +590,7 @@ export default function SLADatabasePegawai({
     statusReasonNote:
       form.employmentStatus === 'Nonaktif' ? form.statusReasonNote.trim() : null,
     statusEffectiveDate: form.employmentStatus === 'Nonaktif' ? form.statusEffectiveDate : null,
+    photoAssetId: form.photoAssetId || '',
   })
 
   const buildRpcCtx = () => {
@@ -489,6 +631,21 @@ export default function SLADatabasePegawai({
     setActionError('')
     setActionMessage('')
     try {
+      if (photoStaged) {
+        const { uploadEmployeePhoto } = await import('../../data/employeePhotoRepository.js')
+        const uploaded = await uploadEmployeePhoto({
+          contractId: resolvedContractUuid,
+          up3Id: resolvedUp3Uuid,
+          unitId: rpcProposed.unit_id,
+          employeeId: mode === 'edit' ? (detail.row.employee?.id ?? null) : null,
+          processedFile: photoStaged.processed,
+          file: photoStaged.processed.file,
+          supersedesPhotoId: mode === 'edit' ? (form.existingPhotoId || null) : null,
+        })
+        rpcProposed.photo_asset_id = uploaded.id
+        setForm((prev) => ({ ...prev, photoAssetId: uploaded.id }))
+        clearPhotoStaged()
+      }
       if (mode === 'add') {
         await submitAddWithSnapshot({
           proposedRpc: rpcProposed,
@@ -505,7 +662,7 @@ export default function SLADatabasePegawai({
         })
         setActionMessage(role === 'ulp' ? 'Pengajuan edit dikirim (Pending).' : 'Perubahan pegawai tersimpan ke Supabase.')
       }
-      setDetail(null)
+      closeDetail()
       await onRefreshEmployees?.()
     } catch (e) {
       setFormError(e.message || 'Gagal menyimpan pegawai.')
@@ -604,9 +761,12 @@ export default function SLADatabasePegawai({
       employmentStatus: 'Status',
       statusReason: 'Alasan',
       statusEffectiveDate: 'Tgl Efektif',
+      photoAssetId: 'Foto',
     }
     const format = (key, value) =>
-      key === 'unitId'
+      key === 'photoAssetId'
+        ? (value ? 'Foto baru diunggah' : 'Tetap')
+        : key === 'unitId'
         ? unitName(value)
         : key === 'positionId'
           ? (positionName(value) ?? 'Belum Ditentukan')
@@ -668,8 +828,27 @@ export default function SLADatabasePegawai({
       const effectiveDateShown = hasOverride
         ? data.retirementDateOverride
         : retirementEffectiveDateFor(data.birthDate, policyAge)
+      const viewPhoto = data.id ? activePhotoOf(data.id) : null
+      const viewPhotoUrl = viewPhoto ? photoUrls[viewPhoto.id] : null
       return (
         <div className="sla-detail-fields">
+          <div className="sla-context-field sp-pegawai-photo-field">
+            <span className="sla-context-label">Foto Pegawai</span>
+            {viewPhoto && viewPhotoUrl ? (
+              <img
+                src={viewPhotoUrl}
+                alt={`Foto pegawai ${data.name}`}
+                className="sp-pegawai-photo sp-pegawai-photo-large"
+              />
+            ) : (
+              <span className="sp-pegawai-photo sp-pegawai-photo-placeholder" aria-label="Foto belum tersedia">
+                {photoInitials(data.name)}
+              </span>
+            )}
+            {!viewPhoto && (
+              <span className="sla-table-hint">Foto belum tersedia. Tambahkan saat edit data.</span>
+            )}
+          </div>
           <Field label="NIP" value={data.nip} />
           <Field label="Nama" value={data.name} />
           <Field label="UP3" value={unitName(data.up3Id) || up3Id} />
@@ -721,8 +900,60 @@ export default function SLADatabasePegawai({
         </div>
       )
     }
+    const editExistingPhoto = detail.mode === 'edit' && detail.row.employee
+      ? activePhotoOf(detail.row.employee.id)
+      : null
+    const editExistingUrl = editExistingPhoto ? photoUrls[editExistingPhoto.id] : null
     return (
       <div className="sla-detail-fields">
+        <div className="sla-context-field sp-pegawai-photo-field">
+          <span className="sla-context-label">Foto Pegawai *</span>
+          <div className="sp-pegawai-photo-picker">
+            {photoStaged?.previewUrl ? (
+              <img
+                src={photoStaged.previewUrl}
+                alt="Preview foto pegawai baru"
+                className="sp-pegawai-photo sp-pegawai-photo-large"
+              />
+            ) : editExistingPhoto && editExistingUrl ? (
+              <img
+                src={editExistingUrl}
+                alt={`Foto pegawai ${form.name || ''}`}
+                className="sp-pegawai-photo sp-pegawai-photo-large"
+              />
+            ) : (
+              <span className="sp-pegawai-photo sp-pegawai-photo-placeholder" aria-label="Foto belum tersedia">
+                {photoInitials(form.name)}
+              </span>
+            )}
+            <div className="sp-pegawai-photo-actions">
+              <label className="sla-btn">
+                {photoStaged || editExistingPhoto ? 'Ganti Foto' : 'Pilih Foto'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                  hidden
+                  disabled={photoBusy || saving}
+                  onChange={(e) => {
+                    handlePhotoSelect(e.target.files?.[0])
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              {photoStaged && (
+                <button type="button" className="sla-btn" disabled={photoBusy || saving} onClick={clearPhotoStaged}>
+                  Batalkan Pilihan
+                </button>
+              )}
+            </div>
+            <span className="sla-table-hint">
+              JPG, PNG, atau WebP · dikompres otomatis · maks. 512 KB
+              {photoStaged ? ` · ${photoStaged.filename} siap disimpan` : ''}
+            </span>
+            {photoBusy && <span className="sla-table-hint">Memproses foto...</span>}
+            {photoError && <p className="sla-blocked-note">{photoError}</p>}
+          </div>
+        </div>
         <div className="sla-context-field">
           <span className="sla-context-label">NIP</span>
           <input
@@ -1010,9 +1241,20 @@ export default function SLADatabasePegawai({
       return <p className="sla-flat-note">Status approval akan tersedia setelah data pegawai disimpan.</p>
     }
     if (detail.row?.addPending) {
+      const stagedId = detail.row.request.rawProposed?.photo_asset_id
+        ?? detail.row.request.proposed?.photoAssetId ?? ''
+      const stagedUrl = stagedId ? photoUrls[stagedId] : null
       return (
         <div className="sla-approval-req">
           <RequestMeta req={detail.row.request} />
+          <div className="sla-context-field sp-pegawai-photo-field">
+            <span className="sla-context-label">Foto Pegawai (pengajuan)</span>
+            {stagedUrl ? (
+              <img src={stagedUrl} alt={`Foto pengajuan ${data.name}`} className="sp-pegawai-photo sp-pegawai-photo-large" />
+            ) : (
+              <span className="sp-pegawai-photo sp-pegawai-photo-placeholder">{photoInitials(data.name)}</span>
+            )}
+          </div>
           <div className="sla-detail-fields">
             <Field label="NIP" value={data.nip} />
             <Field label="Nama" value={data.name} />
@@ -1035,9 +1277,23 @@ export default function SLADatabasePegawai({
     }
     return (
       <div className="sla-history-grid">
-        {requests.map((req) => (
+        {requests.map((req) => {
+          const reqStagedId = req.rawProposed?.photo_asset_id ?? req.proposed?.photoAssetId ?? ''
+          const reqStagedUrl = reqStagedId ? photoUrls[reqStagedId] : null
+          const reqStagedMeta = reqStagedId ? stagedPhotoOfRequest(req.id) : null
+          return (
           <div key={req.id} className="sla-approval-req">
             <RequestMeta req={req} />
+            {(reqStagedUrl || reqStagedMeta || reqStagedId) && (
+              <div className="sla-context-field sp-pegawai-photo-field">
+                <span className="sla-context-label">Foto Pegawai (pengajuan)</span>
+                {reqStagedUrl ? (
+                  <img src={reqStagedUrl} alt="Foto pengajuan pegawai" className="sp-pegawai-photo sp-pegawai-photo-large" />
+                ) : (
+                  <span className="sp-pegawai-photo sp-pegawai-photo-placeholder">?</span>
+                )}
+              </div>
+            )}
             {req.type === 'edit' && req.old && (
               <div className="sla-history-list">
                 <strong>Data lama {'\u2192'} Data baru</strong>
@@ -1050,7 +1306,8 @@ export default function SLADatabasePegawai({
               <p className="sla-table-hint">Catatan: {req.note}</p>
             )}
           </div>
-        ))}
+          )
+        })}
       </div>
     )
   }
@@ -1292,7 +1549,7 @@ export default function SLADatabasePegawai({
       )}
 
       {detail && (
-        <div className="sla-modal-overlay" onClick={() => setDetail(null)}>
+        <div className="sla-modal-overlay" onClick={() => closeDetail()}>
           <div className="sla-modal sp-pegawai-modal" onClick={(e) => e.stopPropagation()}>
             <div className="sla-modal-header">
               <h3 className="sla-modal-title">
@@ -1300,7 +1557,7 @@ export default function SLADatabasePegawai({
                   ? 'Tambah Pegawai'
                   : `${detail.mode === 'edit' ? 'Edit Pegawai' : 'Detail Pegawai'} \u2014 ${(detail.row.employee ?? detail.row.request.proposed).nip}`}
               </h3>
-              <button type="button" className="sla-modal-close" onClick={() => setDetail(null)}>{'\u00d7'}</button>
+              <button type="button" className="sla-modal-close" onClick={() => closeDetail()}>{'\u00d7'}</button>
             </div>
             <div className="sla-modal-body">
               <div className="sla-detail-tabs">
@@ -1342,7 +1599,7 @@ export default function SLADatabasePegawai({
                   </button>
                 </>
               )}
-              <button type="button" className="sla-btn" onClick={() => setDetail(null)}>
+              <button type="button" className="sla-btn" onClick={() => closeDetail()}>
                 Tutup
               </button>
             </div>
@@ -1581,6 +1838,7 @@ export default function SLADatabasePegawai({
         <table className="sla-preview-table sla-pegawai-table">
           <thead>
             <tr>
+              <th>Foto</th>
               <th>NIP</th>
               <th>Nama</th>
               <th>Unit</th>
@@ -1603,8 +1861,36 @@ export default function SLADatabasePegawai({
               const pensionMonths = pension.retirementDate
                 ? monthsBetween(todayStr, pension.retirementDate)
                 : null
+              const rowPhoto = row.employee ? activePhotoOf(row.employee.id) : null
+              const rowPhotoUrl = rowPhoto ? photoUrls[rowPhoto.id] : null
+              const pendingAddPhotoId = row.addPending
+                ? (row.request.rawProposed?.photo_asset_id ?? row.request.proposed?.photoAssetId ?? '')
+                : ''
+              const pendingAddPhotoUrl = pendingAddPhotoId ? photoUrls[pendingAddPhotoId] : null
               return (
                 <tr key={row.key}>
+                  <td>
+                    {rowPhoto && rowPhotoUrl ? (
+                      <img
+                        src={rowPhotoUrl}
+                        alt={`Foto ${data.name}`}
+                        className="sp-pegawai-photo sp-pegawai-photo-thumb"
+                      />
+                    ) : pendingAddPhotoUrl ? (
+                      <img
+                        src={pendingAddPhotoUrl}
+                        alt={`Foto ${data.name}`}
+                        className="sp-pegawai-photo sp-pegawai-photo-thumb"
+                      />
+                    ) : (
+                      <span
+                        className="sp-pegawai-photo sp-pegawai-photo-thumb sp-pegawai-photo-placeholder"
+                        title={row.employee ? 'Foto belum tersedia' : 'Menunggu approval'}
+                      >
+                        {photoInitials(data.name)}
+                      </span>
+                    )}
+                  </td>
                   <td>{data.nip}</td>
                   <td>
                     <button
@@ -1690,7 +1976,7 @@ export default function SLADatabasePegawai({
             })}
             {!visibleRows.length && (
               <tr>
-                <td colSpan={13} className="sla-table-hint">
+                <td colSpan={14} className="sla-table-hint">
                   Tidak ada pegawai yang cocok dengan filter.
                 </td>
               </tr>

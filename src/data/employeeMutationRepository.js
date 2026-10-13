@@ -145,11 +145,14 @@ export function toRpcProposed(frontProposed, ctx = {}) {
     status_reason: norm(frontProposed.statusReason ?? frontProposed.alasan_nonaktif ?? frontProposed.status_reason ?? '') || null,
     status_reason_note: norm(frontProposed.statusReasonNote ?? frontProposed.keterangan_nonaktif ?? '') || null,
     status_effective_date: norm(frontProposed.statusEffectiveDate ?? frontProposed.tanggal_efektif_status ?? '') || null,
+    photo_asset_id: norm(frontProposed.photoAssetId ?? frontProposed.photo_asset_id ?? '') || null,
   }
 }
 
 function mapRpcError(error) {
   const msg = error?.message ?? ''
+  if (msg.includes('Foto pegawai')) return msg
+  if (msg.includes('Foto')) return msg
   if (msg.includes('NIP sudah digunakan')) return msg
   if (msg.includes('Hanya Admin UP3')) return 'Hanya Admin UP3 / Super Admin yang boleh approve/reject.'
   if (msg.includes('Admin ULP hanya')) return msg
@@ -180,6 +183,7 @@ export function rpcSnapshotToUi(snap) {
     statusReason: snap.status_reason ?? snap.statusReason ?? '',
     statusReasonNote: snap.status_reason_note ?? snap.statusReasonNote ?? '',
     statusEffectiveDate: snap.status_effective_date ?? snap.statusEffectiveDate ?? '',
+    photoAssetId: snap.photo_asset_id ?? snap.photoAssetId ?? '',
   }
 }
 
