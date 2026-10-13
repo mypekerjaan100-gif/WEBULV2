@@ -217,6 +217,33 @@ export async function fetchPositionsFromSupabase() {
   return data ?? []
 }
 
+export function mapSupabasePosition(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    contractId: row.contract_id,
+    up3Id: row.up3_id ?? null,
+    legacyKey: row.legacy_key ?? null,
+    keterangan: row.description ?? '',
+    status: row.status ?? 'Aktif',
+    order: row.sort_order ?? 0,
+    fromSupabase: true,
+  }
+}
+
+export async function savePositionToSupabase({ id = null, contractId, up3Id, name, description = '', status = 'Aktif' }) {
+  const { data, error } = await supabase.rpc('save_position_l1', {
+    p_position_id: id ?? null,
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_name: name,
+    p_description: description ?? '',
+    p_status: status,
+  })
+  if (error) throw new Error(error.message || 'Jabatan gagal disimpan.')
+  return mapSupabasePosition(data)
+}
+
 export async function fetchOrganizationUnitsFromSupabase() {
   const { data, error } = await supabase
     .from('organization_units')

@@ -5,6 +5,7 @@ import { Alert, Button, StatePanel } from '../../components/ui/Primitives.jsx'
 import {
   fetchEmployeesFromSupabase,
   fetchPositionsFromSupabase,
+  mapSupabasePosition,
 } from '../../data/employeeRepository.js'
 import {
   fetchEmployeeChangeRequests,
@@ -133,6 +134,18 @@ function periodLabelFromMonth(periodMonth) {
   const [year, month] = periodMonth.split('-')
   const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
   return monthNames[Number(month) - 1] ? `${monthNames[Number(month) - 1]} ${year}` : null
+}
+
+// Gabung posisi database ke state lokal: baris lama selalu di-refresh
+// (nama/status bisa berubah), baris baru ditambahkan. Entri lokal
+// (prototype) dipertahankan.
+function mergeSupabasePositions(prev, posRows) {
+  const supabasePositions = (posRows ?? []).map(mapSupabasePosition)
+  const incomingById = new Map(supabasePositions.map((p) => [p.id, p]))
+  const existing = new Set(prev.map((j) => j.id))
+  return prev
+    .map((j) => (incomingById.has(j.id) ? { ...j, ...incomingById.get(j.id) } : j))
+    .concat(supabasePositions.filter((p) => !existing.has(p.id)))
 }
 
 export default function SLAPelayananTeknikPage({
@@ -267,24 +280,7 @@ export default function SLAPelayananTeknikPage({
         setEmployeeLoadError('')
         setEmployees(empResult.employees)
         if (posRows.length) {
-          setJabatan((prev) => {
-            const existing = new Set(prev.map((j) => j.id))
-            const supabasePositions = posRows.map((p) => ({
-              id: p.id,
-              name: p.name,
-              contractId: p.contract_id,
-              up3Id: p.up3_id ?? null,
-              legacyKey: p.legacy_key ?? null,
-              status: p.status ?? 'Aktif',
-              order: p.sort_order ?? 0,
-              fromSupabase: true,
-            }))
-            const newPositions = supabasePositions.filter((p) => !existing.has(p.id))
-            if (!newPositions.length) return prev
-            // Refresh data Supabase yang sudah ada (nama/status bisa berubah)
-            const incomingById = new Map(supabasePositions.map((p) => [p.id, p]))
-            return prev.map((j) => (incomingById.has(j.id) ? { ...j, ...incomingById.get(j.id) } : j)).concat(newPositions)
-          })
+          setJabatan((prev) => mergeSupabasePositions(prev, posRows))
         }
         setEmployeesLoaded(true)
       })
@@ -372,6 +368,12 @@ export default function SLAPelayananTeknikPage({
     setEmployeeReloadToken((t) => t + 1)
     await refreshEmployeeChangeRequests()
   }, [refreshEmployeeChangeRequests])
+
+  const refreshPositions = useCallback(async () => {
+    const posRows = await fetchPositionsFromSupabase()
+    setJabatan((prev) => mergeSupabasePositions(prev, posRows))
+    return posRows
+  }, [])
 
   // Sinkron lintas sesi/role: approval oleh Admin UP3 di sesi lain harus
   // terlihat di sesi ULP tanpa reload manual. Refresh ringan tiap 45 detik
@@ -1124,8 +1126,11 @@ export default function SLAPelayananTeknikPage({
         <SLAMasterJabatan
           contractScope={slaContractScope}
           up3Id={up3Id}
+          contractUuid={orgMap?.contractUuid ?? null}
+          up3Uuid={orgMap?.up3Uuid ?? null}
           jabatan={jabatan}
           onJabatanChange={setJabatan}
+          onRefreshPositions={refreshPositions}
         />
       ) : moduleId === 'database-pegawai' && orgMapStatus === 'loading' ? (
         <section className="placeholder">
