@@ -25,6 +25,7 @@ import {
 } from '../../data/pensiunPelayananTeknik.js'
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 import { downloadExportFile } from '../../utils/slaExportFile.js'
+import ModernDatePicker from './ModernDatePicker.jsx'
 import {
   approveEmployeeChange,
   downloadImportTemplate,
@@ -522,6 +523,9 @@ export default function SLADatabasePegawai({
   const validate = () => {
     if (!form.name.trim()) return 'Nama wajib diisi.'
     if (!form.nip.trim()) return 'NIP wajib diisi.'
+    if (form.birthDate && form.birthDate > todayStr) {
+      return 'Tanggal lahir tidak boleh melebihi hari ini.'
+    }
     if (form.workLocationId) {
       const location = locationById.get(form.workLocationId)
       if (!location || location.unitId !== form.unitId) {
@@ -1138,11 +1142,12 @@ export default function SLADatabasePegawai({
         )}
         <div className="sla-context-field">
           <span className="sla-context-label">Tanggal Lahir</span>
-          <input
-            type="date"
-            className={inputClass}
+          <ModernDatePicker
             value={form.birthDate}
-            onChange={(e) => setForm((prev) => ({ ...prev, birthDate: e.target.value }))}
+            max={todayStr}
+            placeholder="Pilih tanggal lahir"
+            ariaLabel="Pilih tanggal lahir pegawai"
+            onChange={(next) => setForm((prev) => ({ ...prev, birthDate: next }))}
           />
         </div>
         {role === 'up3' && (
