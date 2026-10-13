@@ -860,8 +860,9 @@ export default function SLADatabasePegawai({
           </>
         )}
         <div className="sla-context-field">
-          <span className="sla-context-label">Tanggal Lahir (YYYY-MM-DD)</span>
+          <span className="sla-context-label">Tanggal Lahir</span>
           <input
+            type="date"
             className={inputClass}
             value={form.birthDate}
             onChange={(e) => setForm((prev) => ({ ...prev, birthDate: e.target.value }))}
