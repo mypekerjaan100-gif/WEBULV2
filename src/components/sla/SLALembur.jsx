@@ -204,6 +204,13 @@ function isPdfEvidence(entry) {
   return entry?.storedMimeType === 'application/pdf'
 }
 
+function profileInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
 function evidenceLabel(type) {
   const requirements = [
     ...Object.values(REPLACEMENT_TYPES).flatMap((config) => config.evidence),
@@ -295,6 +302,11 @@ export default function SLALembur({
   const [detailEvidenceUrls, setDetailEvidenceUrls] = useState({})
   const [detailFinancial, setDetailFinancial] = useState([])
   const [evidencePreview, setEvidencePreview] = useState(null)
+  // Foto profil peserta pada Detail Lembur (referensi pencocokan wajah,
+  // bukan evidence): aktif per employeeId + signed URL per photoId.
+  const [detailProfileByEmployee, setDetailProfileByEmployee] = useState({})
+  const [detailProfileUrls, setDetailProfileUrls] = useState({})
+  const [profilePreview, setProfilePreview] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteError, setDeleteError] = useState('')
@@ -1625,6 +1637,41 @@ export default function SLALembur({
       .catch(() => { if (!cancelled) setDetailEvidenceUrls({}) })
     return () => { cancelled = true }
   }, [detailEvidence])
+  // Foto profil peserta yang tampil pada detail: hanya ID peserta yang
+  // tampil, hanya foto ACTIVE, URL baru saat detail dibuka/berganti.
+  useEffect(() => {
+    setDetailProfileByEmployee({})
+    setDetailProfileUrls({})
+    setProfilePreview(null)
+    if (!detailActivityId) return undefined
+    let cancelled = false
+    const ids = [...new Set(
+      (records ?? [])
+        .filter((record) => record.id === detailActivityId
+          && (detailEntryId == null || record.entryId === detailEntryId))
+        .map((record) => record.participantEmployeeId)
+        .filter(Boolean),
+    )]
+    if (!ids.length) return undefined
+    import('../../data/employeePhotoRepository.js')
+      .then(({ listEmployeePhotos, createEmployeePhotoSignedUrls }) => listEmployeePhotos(ids)
+        .then((photos) => {
+          if (cancelled) return null
+          const active = {}
+          for (const photo of photos) {
+            if (!photo?.employeeId || photo.status !== 'ACTIVE') continue
+            active[photo.employeeId] ??= photo
+          }
+          setDetailProfileByEmployee(active)
+          return createEmployeePhotoSignedUrls(Object.values(active).map((photo) => photo.id))
+        })
+        .then((urls) => {
+          if (!cancelled && urls) setDetailProfileUrls((prev) => ({ ...prev, ...urls }))
+        })
+        .catch(() => { if (!cancelled) setDetailProfileByEmployee({}) }))
+      .catch(() => { if (!cancelled) setDetailProfileByEmployee({}) })
+    return () => { cancelled = true }
+  }, [detailActivityId, detailEntryId, records])
   const detailActivityRecords = detailActivityId ? sorted.filter(r=> r.id===detailActivityId) : []
   const detailEntryRecords = detailEntryId != null
     ? detailActivityRecords.filter(r=> r.entryId===detailEntryId)
@@ -2213,7 +2260,9 @@ export default function SLALembur({
                           {detailRecords.map(r=>{
                             const t = pontianakFormValues(r.startedAt, r.endedAt)
                             const fin = detailFinancial.find(f=>f.entryId===r.entryId)
-                            return <tr key={r.entryId}><td>{r.participantName}</td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{canViewFinancial && <td>{fin ? `Rp ${formatRp(fin.hourlyRate)}/jam` : '—'}</td>}{canViewFinancial && <td>{fin ? `${fin.durationHours.toFixed(2)} jam · ${fin.multiplierHours.toFixed(2)} jam × Rp ${formatRp(fin.hourlyRate)} = Rp ${formatRp(fin.total)}` : '—'}</td>}</tr>
+                            const profilePhoto = r.participantEmployeeId ? detailProfileByEmployee[r.participantEmployeeId] : null
+                            const profileUrl = profilePhoto ? detailProfileUrls[profilePhoto.id] : null
+                            return <tr key={r.entryId}><td><span className="lembur-participant-identity">{profilePhoto && profileUrl ? <button type="button" className="sp-pegawai-photo-thumb lembur-profile-thumb" onClick={()=>setProfilePreview({ name: r.participantName, url: profileUrl })} aria-label={`Lihat foto profil ${r.participantName}`} title={`Lihat foto profil ${r.participantName}`}><img src={profileUrl} alt={`Foto profil ${r.participantName}`} /></button> : <span className="sp-pegawai-photo sp-pegawai-photo-thumb sp-pegawai-photo-placeholder" role="img" aria-label="Foto profil belum tersedia" title="Foto profil belum tersedia">{profileInitials(r.participantName)}</span>}<span>{r.participantName}</span></span></td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{canViewFinancial && <td>{fin ? `Rp ${formatRp(fin.hourlyRate)}/jam` : '—'}</td>}{canViewFinancial && <td>{fin ? `${fin.durationHours.toFixed(2)} jam · ${fin.multiplierHours.toFixed(2)} jam × Rp ${formatRp(fin.total)}` : '—'}</td>}</tr>
                           })}
                         </tbody>
                       </table></div>
@@ -2253,6 +2302,7 @@ export default function SLALembur({
               </div>
             </div>
           )}
+          {profilePreview && <div className="lembur-preview-overlay" onClick={()=>setProfilePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>Foto Profil Pegawai</strong><span>{profilePreview.name}</span></div><IconButton label="Tutup preview" className="lembur-icon-button" onClick={()=>setProfilePreview(null)}><Icon name="close" size={17} /></IconButton></div><div className="lembur-preview-body"><img src={profilePreview.url} alt={`Foto profil ${profilePreview.name}`} className="lembur-profile-full" /></div><p className="sla-table-hint lembur-profile-hint">Bandingkan wajah pada foto profil dengan foto evidence (briefing/proses/selesai).</p></div></div>}
           {evidencePreview && <div className="lembur-preview-overlay" onClick={()=>setEvidencePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>{evidenceLabel(evidencePreview.entry.evidenceType)}</strong><span>{evidencePreview.entry.originalFilename}</span></div><IconButton label="Tutup preview" className="lembur-icon-button" onClick={()=>setEvidencePreview(null)}><Icon name="close" size={17} /></IconButton></div><div className="lembur-preview-body">{evidencePreview.loading?<div className="lembur-detail-empty">Menyiapkan preview aman...</div>:isImageEvidence(evidencePreview.entry)?<img src={evidencePreview.url} alt={evidencePreview.entry.originalFilename} />:isPdfEvidence(evidencePreview.entry)?<iframe src={evidencePreview.url} title={evidencePreview.entry.originalFilename} />:<div className="lembur-document-fallback"><span className="lembur-doc-icon">DOC</span><strong>Pratinjau dokumen tidak didukung browser.</strong><p>Dokumen tetap tersimpan aman. Tutup viewer untuk kembali ke Detail Lembur.</p></div>}</div>{isImageEvidence(evidencePreview.entry)&&evidencePreview.entries.length>1&&<div className="lembur-preview-nav"><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(-1)}>← Sebelumnya</Button><span>{evidencePreview.index+1} / {evidencePreview.entries.length}</span><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(1)}>Berikutnya →</Button></div>}</div></div>}
         </>
       )}
