@@ -150,6 +150,13 @@ export async function uploadOvertimeEvidence({
   throw finalizeError
 }
 
+export async function removeOvertimeEvidenceFiles(storagePaths) {
+  const paths = [...new Set((storagePaths ?? []).filter(Boolean))]
+  if (!paths.length) return
+  const { error } = await supabase.storage.from(BUCKET).remove(paths)
+  if (error) throw new Error(error.message || 'Hapus file evidence dari Storage gagal.')
+}
+
 export async function deleteOvertimeEvidence(evidenceId) {
   const storagePath = await rpc('begin_overtime_evidence_delete', {
     p_evidence_id: evidenceId,

@@ -187,4 +187,19 @@ assert(css.includes('.lembur-participant-evidence-heading'), 'Style heading evid
 assert(css.includes('.lembur-member-card'), 'Style kartu gabungan hilang')
 assert(css.includes('.lembur-member-fields'), 'Style field kartu gabungan hilang')
 
+const entryDeleteFixUrl = new URL(
+  '../../supabase/migrations/20261014230000_overtime_entry_delete_storage_api.sql',
+  import.meta.url,
+)
+const entryDeleteFixSql = readFileSync(fileURLToPath(entryDeleteFixUrl), 'utf8')
+assert(entryDeleteFixSql.includes('soft_delete_overtime_entry_l5'), 'RPC hapus peserta pengganti hilang')
+assert(!/delete\s+from\s+storage\.objects/i.test(entryDeleteFixSql), 'RPC tidak boleh menghapus storage.objects langsung')
+assert(entryDeleteFixSql.includes('delete from public.overtime_evidence where entry_id = p_entry_id'), 'Metadata scoped harus tetap dibersihkan server')
+
+const evidenceRepoUrl = new URL('./overtimeEvidenceRepository.js', import.meta.url)
+const evidenceRepo = readFileSync(fileURLToPath(evidenceRepoUrl), 'utf8')
+assert(evidenceRepo.includes('removeOvertimeEvidenceFiles'), 'Helper hapus file Storage hilang')
+assert(component.includes('removeOvertimeEvidenceFiles'), 'Form hapus peserta harus membersihkan file via Storage API')
+assert(component.includes('includeHistory: true'), 'Daftar file peserta harus mencakup semua status')
+
 console.log(`Overtime participant evidence tests passed: ${passed}`)

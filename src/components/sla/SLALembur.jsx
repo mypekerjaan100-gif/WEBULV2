@@ -1440,15 +1440,42 @@ export default function SLALembur({
     setDeleteBusy(true)
     setDeleteError('')
     try {
+      let storageCleanupFailed = false
       if (deleteTarget.entryId) {
+        // Kumpulkan file khusus peserta ini dahulu (semua status, termasuk
+        // PENDING); evidence bersama/milik peserta lain tidak ikut.
+        let storagePaths = []
+        try {
+          const { listOvertimeEvidence } = await import('../../data/overtimeEvidenceRepository.js')
+          const rows = await listOvertimeEvidence(deleteTarget.id, { includeHistory: true })
+          storagePaths = [...new Set(
+            rows
+              .filter((row) => row.entryId === deleteTarget.entryId && row.storagePath)
+              .map((row) => row.storagePath),
+          )]
+        } catch {
+          storagePaths = []
+        }
         await softDeleteOvertimeEntry(deleteTarget.entryId, reason)
+        // File Storage dihapus via Storage API (server dilarang menyentuh
+        // storage.objects langsung). Metadata sudah terhapus di server.
+        if (storagePaths.length) {
+          try {
+            const { removeOvertimeEvidenceFiles } = await import('../../data/overtimeEvidenceRepository.js')
+            await removeOvertimeEvidenceFiles(storagePaths)
+          } catch {
+            storageCleanupFailed = true
+          }
+        }
       } else {
         await softDeleteOvertimeActivity(deleteTarget.id, reason)
       }
       const deletedName = deleteTarget.participantName ? `Peserta ${deleteTarget.participantName} dihapus. ` : ''
       setDeleteTarget(null)
       setDeleteReason('')
-      setToast(`${deletedName}Data Lembur berhasil dihapus.`)
+      setToast(storageCleanupFailed
+        ? `${deletedName}Data dihapus, tetapi sebagian file evidence gagal dibersihkan dari Storage.`
+        : `${deletedName}Data Lembur berhasil dihapus.`)
       await onRefresh?.()
     } catch (error) {
       setDeleteError(friendlyDeleteError(error?.message))
