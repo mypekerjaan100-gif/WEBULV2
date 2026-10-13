@@ -18,8 +18,8 @@ begin
   end if;
   if btrim(coalesce(p_original_filename,'')) = '' then raise exception 'Nama file asli wajib diisi' using errcode='22023'; end if;
   if p_original_size_bytes is null or p_original_size_bytes <= 0 then raise exception 'Ukuran file asli tidak valid' using errcode='22023'; end if;
-  if p_stored_size_bytes is null or p_stored_size_bytes <= 0 or p_stored_size_bytes > 524288 then
-    raise exception 'Foto hasil kompresi maksimal 512 KB' using errcode='22023';
+  if p_stored_size_bytes is null or p_stored_size_bytes <= 0 or p_stored_size_bytes > 2097152 then
+    raise exception 'Foto hasil kompresi maksimal 2 MB' using errcode='22023';
   end if;
   if coalesce(p_stored_mime_type,'') <> 'image/webp' then raise exception 'Foto harus WebP' using errcode='22023'; end if;
   if p_checksum is not null and p_checksum !~ '^[0-9a-fA-F]{64}$' then raise exception 'Checksum harus SHA-256 hex' using errcode='22023'; end if;
@@ -69,7 +69,7 @@ begin
     into v_size, v_mime from storage.objects object
   where object.bucket_id='employee-photos' and object.name=v_photo.storage_path;
   if not found then raise exception 'Objek Storage foto tidak ditemukan'; end if;
-  if v_size is null or v_size <= 0 or v_size > 524288 then raise exception 'Foto melebihi 512 KB'; end if;
+  if v_size is null or v_size <= 0 or v_size > 2097152 then raise exception 'Foto melebihi 2 MB'; end if;
   if v_mime is distinct from 'image/webp' then raise exception 'MIME foto harus image/webp'; end if;
   update public.employee_photos set status='STAGED', stored_size_bytes=v_size, stored_mime_type=v_mime, uploaded_at=now()
   where id=p_photo_id returning * into v_result;

@@ -25,7 +25,7 @@ create table if not exists public.employee_photos (
   updated_at timestamptz not null default now(),
   constraint ep_storage_path_unique unique (storage_path),
   constraint ep_original_size_nonneg check (original_size_bytes is null or original_size_bytes >= 0),
-  constraint ep_stored_size_limit check (stored_size_bytes is null or (stored_size_bytes > 0 and stored_size_bytes <= 524288)),
+  constraint ep_stored_size_limit check (stored_size_bytes is null or (stored_size_bytes > 0 and stored_size_bytes <= 2097152)),
   constraint ep_stored_mime_webp check (stored_mime_type = 'image/webp'),
   constraint ep_checksum_hex check (checksum is null or checksum ~ '^[0-9a-fA-F]{64}$'),
   constraint ep_supersedes_distinct check (supersedes_photo_id is null or supersedes_photo_id <> id),
@@ -79,7 +79,7 @@ comment on function public.auth_can_read_employee_photo(uuid, uuid, uuid)
   is 'Employee photo readable in exact ULP/UP3 submit scope or operational UP3 access.';
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('employee-photos', 'employee-photos', false, 524288, array['image/webp']::text[])
+values ('employee-photos', 'employee-photos', false, 2097152, array['image/webp']::text[])
 on conflict (id) do update set
   public = false,
   file_size_limit = excluded.file_size_limit,

@@ -154,6 +154,7 @@ export default function SLADatabasePegawai({
   const [photoStaged, setPhotoStaged] = useState(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState('')
+  const [photoDragOver, setPhotoDragOver] = useState(false)
   const photoStagedUrl = useMemo(
     () => (photoStaged?.previewUrl ? photoStaged.previewUrl : ''),
     [photoStaged],
@@ -548,8 +549,8 @@ export default function SLADatabasePegawai({
     setPhotoBusy(true)
     setPhotoError('')
     try {
-      const { prepareEmployeePhotoFile } = await import('../../data/employeePhotoProcessor.js')
-      const processed = await prepareEmployeePhotoFile(file)
+      const { processEmployeePhotoFile } = await import('../../data/employeePhotoProcessor.js')
+      const processed = await processEmployeePhotoFile(file)
       if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
       const previewUrl = processed.file.type.startsWith('image/')
         ? URL.createObjectURL(processed.file)
@@ -569,6 +570,21 @@ export default function SLADatabasePegawai({
     photoObjectUrlRef.current = null
     setPhotoStaged(null)
     setForm((prev) => ({ ...prev, photoAssetId: '' }))
+  }
+
+  const formatPhotoSize = (bytes) => {
+    if (bytes == null || Number.isNaN(Number(bytes))) return ''
+    const size = Number(bytes)
+    if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`
+    if (size >= 1024) return `${(size / 1024).toFixed(0)} KB`
+    return `${size} B`
+  }
+
+  const handlePhotoDrop = (event) => {
+    event.preventDefault()
+    setPhotoDragOver(false)
+    if (photoBusy || saving) return
+    handlePhotoSelect(event.dataTransfer.files?.[0])
   }
 
   const proposedOf = () => ({
@@ -908,49 +924,79 @@ export default function SLADatabasePegawai({
       <div className="sla-detail-fields">
         <div className="sla-context-field sp-pegawai-photo-field">
           <span className="sla-context-label">Foto Pegawai *</span>
-          <div className="sp-pegawai-photo-picker">
-            {photoStaged?.previewUrl ? (
-              <img
-                src={photoStaged.previewUrl}
-                alt="Preview foto pegawai baru"
-                className="sp-pegawai-photo sp-pegawai-photo-large"
-              />
-            ) : editExistingPhoto && editExistingUrl ? (
-              <img
-                src={editExistingUrl}
-                alt={`Foto pegawai ${form.name || ''}`}
-                className="sp-pegawai-photo sp-pegawai-photo-large"
-              />
-            ) : (
-              <span className="sp-pegawai-photo sp-pegawai-photo-placeholder" aria-label="Foto belum tersedia">
-                {photoInitials(form.name)}
+          <div
+            className={`sp-pegawai-photo-dropzone${photoDragOver ? ' is-dragover' : ''}${photoBusy ? ' is-busy' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (!photoBusy && !saving) setPhotoDragOver(true)
+            }}
+            onDragLeave={() => setPhotoDragOver(false)}
+            onDrop={handlePhotoDrop}
+          >
+            <input
+              id="sp-pegawai-photo-input"
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+              hidden
+              disabled={photoBusy || saving}
+              aria-label="Pilih foto pegawai"
+              onChange={(e) => {
+                handlePhotoSelect(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
+            <label className="sp-pegawai-photo-dropzone-main" htmlFor="sp-pegawai-photo-input">
+              <span className="sp-pegawai-photo-dropzone-preview">
+                {photoStaged?.previewUrl ? (
+                  <img
+                    src={photoStaged.previewUrl}
+                    alt="Preview foto pegawai baru"
+                    className="sp-pegawai-photo sp-pegawai-photo-drop"
+                  />
+                ) : editExistingPhoto && editExistingUrl ? (
+                  <img
+                    src={editExistingUrl}
+                    alt={`Foto pegawai ${form.name || ''}`}
+                    className="sp-pegawai-photo sp-pegawai-photo-drop"
+                  />
+                ) : (
+                  <span className="sp-pegawai-photo sp-pegawai-photo-drop sp-pegawai-photo-placeholder" aria-label="Foto belum tersedia">
+                    {photoInitials(form.name)}
+                  </span>
+                )}
+                {photoBusy && (
+                  <span className="sp-pegawai-photo-loading" aria-live="polite">Memproses…</span>
+                )}
               </span>
-            )}
+              <span className="sp-pegawai-photo-dropzone-text">
+                <span className="sp-pegawai-photo-icon" aria-hidden="true">↑</span>
+                <strong>
+                  {photoBusy
+                    ? 'Memproses dan mengompresi foto…'
+                    : photoStaged
+                      ? 'Foto siap disimpan'
+                      : editExistingPhoto
+                        ? 'Klik atau tarik foto untuk mengganti'
+                        : 'Klik atau tarik foto ke sini'}
+                </strong>
+                <small>JPG, PNG, atau WebP · dikompres otomatis · hasil maks. 2 MB</small>
+                {photoStaged && (
+                  <small className="sp-pegawai-photo-filename">
+                    {photoStaged.filename} · {formatPhotoSize(photoStaged.processed?.stored?.sizeBytes)} · WebP
+                  </small>
+                )}
+              </span>
+            </label>
             <div className="sp-pegawai-photo-actions">
-              <label className="sla-btn">
+              <label className="sla-btn sp-pegawai-photo-btn" htmlFor="sp-pegawai-photo-input">
                 {photoStaged || editExistingPhoto ? 'Ganti Foto' : 'Pilih Foto'}
-                <input
-                  type="file"
-                  accept="image/jpeg,image/jpg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-                  hidden
-                  disabled={photoBusy || saving}
-                  onChange={(e) => {
-                    handlePhotoSelect(e.target.files?.[0])
-                    e.target.value = ''
-                  }}
-                />
               </label>
               {photoStaged && (
-                <button type="button" className="sla-btn" disabled={photoBusy || saving} onClick={clearPhotoStaged}>
-                  Batalkan Pilihan
+                <button type="button" className="sla-btn sp-pegawai-photo-btn is-ghost" disabled={photoBusy || saving} onClick={clearPhotoStaged}>
+                  Batalkan
                 </button>
               )}
             </div>
-            <span className="sla-table-hint">
-              JPG, PNG, atau WebP · dikompres otomatis · maks. 512 KB
-              {photoStaged ? ` · ${photoStaged.filename} siap disimpan` : ''}
-            </span>
-            {photoBusy && <span className="sla-table-hint">Memproses foto...</span>}
             {photoError && <p className="sla-blocked-note">{photoError}</p>}
           </div>
         </div>

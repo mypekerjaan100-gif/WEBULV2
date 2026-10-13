@@ -1,5 +1,5 @@
-export const EMPLOYEE_PHOTO_MAX_BYTES = 512 * 1024
-export const EMPLOYEE_PHOTO_TARGET_BYTES = 400 * 1024
+export const EMPLOYEE_PHOTO_MAX_BYTES = 2 * 1024 * 1024
+export const EMPLOYEE_PHOTO_TARGET_BYTES = 1600 * 1024
 export const EMPLOYEE_PHOTO_MAX_INPUT_BYTES = 10 * 1024 * 1024
 export const EMPLOYEE_PHOTO_MAX_DIMENSION = 1200
 
@@ -151,7 +151,7 @@ async function compressPortrait(file) {
   }
 
   if (!best || best.size > EMPLOYEE_PHOTO_MAX_BYTES) {
-    throw new Error('Foto tidak dapat dikompresi hingga 512 KB. Gunakan foto beresolusi lebih kecil.')
+    throw new Error('Foto tidak dapat dikompresi hingga 2 MB. Gunakan foto beresolusi lebih kecil.')
   }
   return new File([best], processedName(file.name), { type: 'image/webp' })
 }
@@ -184,7 +184,7 @@ export async function processEmployeePhotoFile(file) {
 
   const storedFile = await compressPortrait(normalizedFile)
   if (storedFile.size > EMPLOYEE_PHOTO_MAX_BYTES) {
-    throw new Error('Foto tetap melebihi 512 KB setelah kompresi. Kecilkan foto sebelum upload.')
+    throw new Error('Foto tetap melebihi 2 MB setelah kompresi. Kecilkan foto sebelum upload.')
   }
 
   return {
