@@ -2,9 +2,9 @@ import { buildPontianakRange, formatDurationMinutes, pontianakFormValues } from 
 
 const SHARED_FIELD_WORK_EVIDENCE = [
   { type: 'SPK', label: 'SPK' },
-  { type: 'FOTO_BRIEFING', label: 'Foto Briefing', allowMultiple: true, helpers: ['TimeMark Wajib', 'Wajah petugas harus dapat dikenali dengan jelas tanpa mengabaikan penggunaan APD.', 'Secara keseluruhan foto briefing harus mampu membuktikan peserta yang diajukan memang hadir.'] },
-  { type: 'FOTO_PROSES', label: 'Foto Proses', helpers: ['TimeMark Wajib', 'Aktivitas dan objek pekerjaan harus terlihat jelas.'] },
-  { type: 'FOTO_SELESAI', label: 'Foto Selesai', helpers: ['TimeMark Wajib', 'Hasil pekerjaan harus terlihat jelas.'] },
+  { type: 'FOTO_BRIEFING', label: 'Foto Briefing Pekerjaan', allowMultiple: true, helpers: ['TimeMark Wajib', 'Wajah petugas harus dapat dikenali dengan jelas tanpa mengabaikan penggunaan APD.', 'Secara keseluruhan foto briefing harus mampu membuktikan peserta yang diajukan memang hadir.'] },
+  { type: 'FOTO_PROSES', label: 'Foto Proses Pekerjaan', helpers: ['TimeMark Wajib', 'Aktivitas dan objek pekerjaan harus terlihat jelas.'] },
+  { type: 'FOTO_SELESAI', label: 'Foto Selesai Pekerjaan', helpers: ['TimeMark Wajib', 'Hasil pekerjaan harus terlihat jelas.'] },
 ]
 
 export const WORK_CATEGORIES = {
