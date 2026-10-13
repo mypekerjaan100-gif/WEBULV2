@@ -173,6 +173,8 @@ function historyEventText(h) {
       return { title: 'Diajukan Ulang', desc: 'Dikirim untuk persetujuan.' }
     case 'REVISION_SAVED':
       return { title: 'Revisi Disimpan', desc: 'Perubahan disimpan, belum diajukan ulang.' }
+    case 'CORRECTED':
+      return { title: 'Koreksi Data Disetujui', desc: null }
     case 'UPDATED':
       return { title: 'Draft Diperbarui', desc: 'Perubahan draft disimpan.' }
     case 'APPROVED':
@@ -243,6 +245,7 @@ export default function SLALembur({
   managementScopeLabel = null,
   approvalTarget = null,
   onApprovalTargetHandled,
+  canCorrectApprovedWork = false,
 }) {
   const [draft, setDraft] = useState(() => initialDraft(periodMonth))
   const [activeActivityId, setActiveActivityId] = useState(null)
@@ -311,6 +314,14 @@ export default function SLALembur({
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
+  // Koreksi tanggal/jam pengajuan WORK yang sudah fully APPROVED
+  // (Super Admin / Admin UP3; status tetap Disetujui).
+  const [correctTarget, setCorrectTarget] = useState(null)
+  const [correctDate, setCorrectDate] = useState('')
+  const [correctTimes, setCorrectTimes] = useState({})
+  const [correctReason, setCorrectReason] = useState('')
+  const [correctError, setCorrectError] = useState('')
+  const [correctBusy, setCorrectBusy] = useState(false)
   const [toast, setToast] = useState('')
   const [submitProcess, setSubmitProcess] = useState(null)
   const [approvalBusy, setApprovalBusy] = useState(false)
@@ -1496,6 +1507,88 @@ export default function SLALembur({
     }
   }
 
+  // Koreksi approved: seluruh batch harus WORK + fully APPROVED; hanya
+  // Super Admin / Admin UP3 (prop canCorrectApprovedWork dari parent).
+  const correctActivityRows = (activityId) => records.filter((record) => record.id === activityId)
+  const canCorrectRecord = (record) => {
+    if (!record || record.type !== 'WORK' || !canCorrectApprovedWork) return false
+    if (record.status !== 'APPROVED') return false
+    const rows = correctActivityRows(record.id)
+    if (!rows.length) return false
+    return rows.every((row) => recordReviewStatus(row) === 'APPROVED')
+  }
+
+  const openCorrection = (record) => {
+    if (!canCorrectRecord(record)) return
+    const rows = correctActivityRows(record.id)
+    const times = {}
+    for (const row of rows) {
+      const t = pontianakFormValues(row.startedAt, row.endedAt)
+      times[row.entryId] = { startTime: t.startTime, endTime: t.endTime }
+    }
+    setCorrectTarget(record)
+    setCorrectDate(record.date)
+    setCorrectTimes(times)
+    setCorrectReason('')
+    setCorrectError('')
+  }
+
+  const closeCorrection = () => {
+    if (correctBusy) return
+    setCorrectTarget(null)
+    setCorrectDate('')
+    setCorrectTimes({})
+    setCorrectReason('')
+    setCorrectError('')
+  }
+
+  const handleCorrection = async () => {
+    if (!correctTarget || correctBusy) return
+    const reason = correctReason.trim()
+    if (!reason) { setCorrectError('Alasan koreksi wajib diisi.'); return }
+    if (!correctDate) { setCorrectError('Tanggal lembur wajib diisi.'); return }
+    const rows = correctActivityRows(correctTarget.id)
+    const participants = []
+    for (const row of rows) {
+      const time = correctTimes[row.entryId]
+      if (!time?.startTime || !time?.endTime) {
+        setCorrectError(`Jam ${row.participantName} belum lengkap.`)
+        return
+      }
+      const range = buildPontianakRange(correctDate, time.startTime, time.endTime)
+      if (!range || range.durationMinutes < 1) {
+        setCorrectError(`Jam ${row.participantName} tidak valid.`)
+        return
+      }
+      participants.push({ entry_id: row.entryId, started_at: range.startedAt, ended_at: range.endedAt })
+    }
+    setCorrectBusy(true)
+    setCorrectError('')
+    try {
+      const { correctApprovedOvertimeWork } = await import('../../data/overtimeReplacementRepository.js')
+      await correctApprovedOvertimeWork({
+        activityId: correctTarget.id,
+        overtimeDate: correctDate,
+        participants,
+        reason,
+        expectedUpdatedAt: correctTarget.updatedAt,
+      })
+      const movedPeriod = correctDate.slice(0, 7) !== String(correctTarget.date ?? '').slice(0, 7)
+      setCorrectTarget(null)
+      setCorrectDate('')
+      setCorrectTimes({})
+      setCorrectReason('')
+      setToast(movedPeriod
+        ? 'Koreksi tersimpan. Status tetap Disetujui. Tanggal pindah periode — data tampil pada periode baru.'
+        : 'Koreksi tersimpan. Status tetap Disetujui; nominal dihitung ulang.')
+      await onRefresh?.()
+    } catch (error) {
+      setCorrectError(error?.message || 'Koreksi gagal disimpan.')
+    } finally {
+      setCorrectBusy(false)
+    }
+  }
+
   const sorted = [...records].sort((a,b)=> String(b.startedAt).localeCompare(String(a.startedAt)))
   const jenisLabel = (record) => record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
   const uniquePeriods = [...new Set(sorted.map(r=> r.periodMonth || String(r.date||'').slice(0,7)))].filter(Boolean).sort()
@@ -2185,7 +2278,7 @@ export default function SLALembur({
               </thead>
               <tbody>
                 {!paginated.length && <tr><td colSpan={showUlpColumn ? 9 : 8}>Belum ada record Lembur pada periode ini.</td></tr>}
-                {paginated.map(record=>{
+                {paginated.map((record, recordIndex)=>{
                   const time = pontianakFormValues(record.startedAt, record.endedAt)
                   const jenis = record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
                   const ulpName = showUlpColumn ? getUlpName(record.unitId) : null
@@ -2206,6 +2299,7 @@ export default function SLALembur({
                       <td className="lembur-table-actions-cell">
                         <div className="lembur-table-actions">
                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>{recordReviewStatus(record) === 'CORRECTION_REQUIRED' ? 'Revisi Pengajuan' : 'Lanjutkan Draft'}</Button>}
+                           {canCorrectRecord(record) && paginated.findIndex((row) => row.id === record.id) === recordIndex && <Button variant="secondary" size="small" onClick={()=>openCorrection(record)}>Koreksi</Button>}
                            <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
                             {canDeleteRecord(record) && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus Peserta</Button>}
                         </div>
@@ -2225,6 +2319,35 @@ export default function SLALembur({
                 <label className="sla-context-field"><span className="sla-context-label">Alasan Hapus *</span><textarea className="sla-context-select" rows={3} value={deleteReason} disabled={deleteBusy} onChange={event=>{setDeleteReason(event.target.value);setDeleteError('')}} placeholder="Jelaskan alasan penghapusan data Lembur" /></label>
                 {deleteError && <Alert tone="danger">{deleteError}</Alert>}
                 <div className="lembur-delete-actions"><Button variant="ghost" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}>Batal</Button><Button variant="danger" disabled={deleteBusy||!deleteReason.trim()} onClick={handleDelete}>{deleteBusy?'Menghapus...':'Hapus Data'}</Button></div>
+              </div>
+            </div>
+          )}
+          {canCorrectApprovedWork && correctTarget && (
+            <div className="rekap-detail-overlay" onClick={closeCorrection}>
+              <div className="rekap-detail-modal lembur-correct-modal" role="dialog" aria-modal="true" aria-labelledby="lembur-correct-title" onClick={event=>event.stopPropagation()}>
+                <div className="lembur-delete-header"><div><span className="lembur-kicker">{isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN UP3'} · STATUS TETAP DISETUJUI</span><h2 id="lembur-correct-title">Koreksi Tanggal & Jam</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={correctBusy} onClick={closeCorrection}><Icon name="close" size={17} /></IconButton></div>
+                <Alert tone="warning" title="Koreksi data yang sudah disetujui">Tanggal berlaku untuk seluruh {correctActivityRows(correctTarget.id).length} peserta batch ini. Kategori, pekerjaan, peserta, dan evidence dikunci. Nominal dihitung ulang otomatis.</Alert>
+                <dl className="lembur-delete-summary"><div><dt>Jenis</dt><dd>{jenisLabel(correctTarget)}</dd></div><div><dt>Tanggal semula</dt><dd>{correctTarget.date}</dd></div><div><dt>Keterangan</dt><dd>{correctTarget.description}</dd></div></dl>
+                <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={correctDate} disabled={correctBusy} onChange={event=>{setCorrectDate(event.target.value);setCorrectError('')}} /></label>
+                <div className="lembur-correct-list">
+                  {correctActivityRows(correctTarget.id).map((row) => {
+                    const time = correctTimes[row.entryId] ?? { startTime: '', endTime: '' }
+                    const range = correctDate && time.startTime && time.endTime ? buildPontianakRange(correctDate, time.startTime, time.endTime) : null
+                    return (
+                      <div key={row.entryId} className="lembur-correct-row">
+                        <strong>{row.participantName}</strong>
+                        <div className="lembur-correct-times">
+                          <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={time.startTime} disabled={correctBusy} onChange={event=>{setCorrectTimes((prev)=>({ ...prev, [row.entryId]: { ...time, startTime: event.target.value } }));setCorrectError('')}} /></label>
+                          <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={time.endTime} disabled={correctBusy} onChange={event=>{setCorrectTimes((prev)=>({ ...prev, [row.entryId]: { ...time, endTime: event.target.value } }));setCorrectError('')}} /></label>
+                          <div className="lembur-duration-compact"><span>Durasi baru</span><strong>{range ? formatDurationMinutes(range.durationMinutes) : '–'}</strong>{time.endTime <= time.startTime && time.startTime && time.endTime && <small>+1 hari</small>}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <label className="sla-context-field"><span className="sla-context-label">Alasan Koreksi *</span><textarea className="sla-context-select" rows={3} value={correctReason} disabled={correctBusy} onChange={event=>{setCorrectReason(event.target.value);setCorrectError('')}} placeholder="Jelaskan alasan koreksi tanggal/jam" /></label>
+                {correctError && <Alert tone="danger">{correctError}</Alert>}
+                <div className="lembur-delete-actions"><Button variant="ghost" disabled={correctBusy} onClick={closeCorrection}>Batal</Button><Button variant="primary" disabled={correctBusy||!correctReason.trim()} onClick={handleCorrection}>{correctBusy?'Menyimpan...':'Simpan Koreksi'}</Button></div>
               </div>
             </div>
           )}

@@ -1360,6 +1360,7 @@ export default function SLAPelayananTeknikPage({
             onRefresh={refreshLemburAndApprovals}
             approvalTarget={canManageUp3Operations && periodKeyFromLabel(period) === approvalTarget?.periodMonth ? approvalTarget : null}
             onApprovalTargetHandled={onApprovalTargetHandled}
+            canCorrectApprovedWork={isSuperAdmin || isAdminUp3}
           />
         )
       ) : (

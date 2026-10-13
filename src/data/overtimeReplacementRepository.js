@@ -257,6 +257,15 @@ export async function softDeleteOvertimeActivity(activityId, reason) {
 export async function softDeleteOvertimeEntry(entryId, reason) {
   return rpc('soft_delete_overtime_entry_l5', { p_entry_id: entryId, p_reason: reason })
 }
+export async function correctApprovedOvertimeWork({ activityId, overtimeDate, participants, reason, expectedUpdatedAt }) {
+  return rpc('correct_approved_overtime_work_l6', {
+    p_activity_id: activityId,
+    p_overtime_date: overtimeDate,
+    p_participants: participants,
+    p_reason: reason,
+    p_expected_updated_at: expectedUpdatedAt,
+  })
+}
 export async function listOvertimeHistory(activityId) {
   return rpc('list_overtime_history_l5', { p_activity_id: activityId })
 }

@@ -6269,6 +6269,11 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .lembur-form-actions-right { display: flex; align-items: center; gap: 8px; }
 .lembur-toast { position: fixed; top: 20px; right: 20px; z-index: 1400; display: flex; align-items: center; gap: 8px; max-width: min(360px, calc(100vw - 32px)); padding: 10px 14px; border: 1px solid #9bc9ad; border-radius: 9px; background: #effaf3; color: #23613b; font-size: 13px; font-weight: 700; box-shadow: 0 12px 32px rgba(7, 26, 51, .18); }
 .lembur-delete-modal { width: min(calc(100vw - 32px), 620px); padding: 18px; }
+.lembur-correct-modal { width: min(calc(100vw - 32px), 680px); padding: 18px; }
+.lembur-correct-list { display: grid; gap: 12px; margin: 12px 0; }
+.lembur-correct-row { padding: 12px; border: 1px solid #dfe6ea; border-radius: 9px; background: #f8fafb; }
+.lembur-correct-row > strong { display: block; margin-bottom: 8px; color: var(--pln-navy); }
+.lembur-correct-times { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
 .lembur-delete-header, .lembur-delete-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lembur-delete-header { margin-bottom: 12px; }
 .lembur-delete-header h2 { margin: 2px 0 0; color: var(--pln-navy); font-size: 20px; }
