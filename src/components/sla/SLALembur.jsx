@@ -1892,23 +1892,24 @@ export default function SLALembur({
                               <div className="lembur-duration-compact"><span>Durasi</span><strong>{memberRange ? formatDurationMinutes(memberRange.durationMinutes) : '–'}</strong>{member.endTime <= member.startTime && <small>+1 hari</small>}</div>
                               {draft.participants.length > 1 ? <IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={()=>removeParticipant(member.tempId)}><Icon name="close" size={15} /></IconButton> : <span />}
                             </div>
-                            {!isRevision ? (
+                            {(!isRevision || isRevisionTarget(v2info)) ? (
                               <div className="lembur-member-briefing">
-                                <p className="sla-table-hint">Foto briefing wajib diunggah untuk {v2info.name} · Status: {evidenceLoading ? 'Memuat...' : briefingDone ? 'Lengkap' : 'Belum lengkap'}</p>
+                                <p className="sla-table-hint">Foto briefing wajib diunggah untuk {v2info.name} · Status: {evidenceLoading ? 'Memuat...' : briefingDone ? 'Lengkap' : 'Belum lengkap'}{isRevision ? ` · revisi ${v2info.name}` : ''}</p>
                                 <div className="lembur-upload-grid lembur-evidence-grid">
                                   {briefingRequirements.map((requirement) => (
                                     <EvidenceUploadCard
                                       key={`${v2info.key}-${requirement.type}`}
                                       requirement={requirement}
                                       position={1}
-                                      existingList={scopedExistingFor(v2info.entryId ?? v2info.key, requirement.type)}
+                                      existingList={isRevision ? effectiveExistingFor(v2info, requirement.type) : scopedExistingFor(v2info.entryId ?? v2info.key, requirement.type)}
                                       stagedList={files[stagedKeyFor(v2info.key, requirement.type)] ?? []}
                                       evidenceUrls={evidenceUrls}
                                       isImageEvidence={isImageEvidence}
                                       inputDisabled={submitting || initialDeadlinePassed || formReadOnly}
                                       actionDisabled={submitting || formReadOnly}
                                       locked={false}
-                                      isPartialRevision={false}
+                                      isPartialRevision={Boolean(isRevision)}
+                                      revisionParticipantName={isRevision ? v2info.name : undefined}
                                       onStage={(req, stagedFiles) => stageEvidence(req, stagedFiles, v2info.key)}
                                       onRemoveStaged={(_type, stagedId) => removeStagedEvidence(stagedKeyFor(v2info.key, requirement.type), stagedId)}
                                       onPreview={previewEvidence}
@@ -1918,7 +1919,7 @@ export default function SLALembur({
                                 </div>
                               </div>
                             ) : (
-                              <p className="lembur-evidence-locked-note">{isRevisionTarget(v2info) ? `Revisi khusus ${v2info.name}. Ganti evidence pada bagian C di bawah.` : `Dikunci. Evidence milik ${v2info.name} tidak ikut direvisi.`}</p>
+                              <p className="lembur-evidence-locked-note">{`Dikunci. Evidence milik ${v2info.name} tidak ikut direvisi.`}</p>
                             )}
                           </div>
                         )
@@ -1973,11 +1974,11 @@ export default function SLALembur({
                         {v2Participants.map((participant, participantIndex) => {
                           const complete = participantComplete(participant)
                           const targetRevision = isRevisionTarget(participant)
-                          // Revisi: hanya target yang mengganti (semua tipe
-                          // sebagai override khusus); peserta lain ringkasan
-                          // terkunci. Briefing pengajuan awal ada di kartu
-                          // pegawai bagian B.
-                          const visibleRequirements = evidenceRequirements
+                          // Revisi: hanya target yang mengganti (SPK/proses/
+                          // selesai sebagai override khusus); peserta lain
+                          // ringkasan terkunci. Foto briefing tetap di kartu
+                          // pegawai bagian B, tidak pindah ke bagian C.
+                          const visibleRequirements = sharedRequirements
                           if (!targetRevision) {
                             return (
                               <div key={participant.key} className="lembur-participant-evidence">
@@ -2001,7 +2002,7 @@ export default function SLALembur({
                               {(participant.startTime || participant.endTime) && (
                                 <p className="sla-table-hint">Jam {participant.startTime || '–'}–{participant.endTime || '–'}</p>
                               )}
-                              <p className="lembur-evidence-locked-note">Revisi khusus {participant.name}. Yang tampil di bawah adalah evidence yang berlaku untuk {participant.name} saat ini; yang diganti hanya berlaku untuk {participant.name}, evidence bersama dan peserta lain tidak berubah.</p>
+                              <p className="lembur-evidence-locked-note">Revisi khusus {participant.name}. Yang tampil di bawah adalah SPK, proses, dan selesai yang berlaku untuk {participant.name} saat ini; foto briefing tetap di kartu {participant.name} pada bagian B. Yang diganti hanya berlaku untuk {participant.name}, evidence bersama dan peserta lain tidak berubah.</p>
                               <div className="lembur-upload-grid lembur-evidence-grid">
                                 {visibleRequirements.map((requirement, cardIndex) => {
                                   const existingList = effectiveExistingFor(participant, requirement.type)
