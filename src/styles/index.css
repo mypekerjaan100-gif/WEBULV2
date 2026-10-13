@@ -5123,6 +5123,31 @@ img.sp-pegawai-photo {
 .sp-pegawai-photo-field {
   grid-column: 1 / -1;
 }
+.sp-pegawai-photo-zoom {
+  display: inline-grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.sp-pegawai-viewer {
+  width: min(calc(100vw - 32px), 560px);
+}
+.sp-pegawai-viewer-body {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+}
+.sp-pegawai-viewer-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 260px);
+  object-fit: contain;
+  border-radius: 12px;
+  background: #0f1c24;
+}
 .sp-pegawai-photo-drop {
   width: 96px;
   height: 96px;

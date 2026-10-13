@@ -155,10 +155,36 @@ export default function SLADatabasePegawai({
   // Signed URL kedaluwarsa 300 detik; refresh berkala agar foto tidak hilang
   // di halaman idle setelah approval/foto baru muncul.
   const [photoUrlToken, setPhotoUrlToken] = useState(0)
+  // Viewer foto profil pada detail: { name, photoId, url, loading, error }.
+  const [photoViewer, setPhotoViewer] = useState(null)
   useEffect(() => {
     const timer = setInterval(() => setPhotoUrlToken((t) => t + 1), 240000)
     return () => clearInterval(timer)
   }, [])
+  useEffect(() => {
+    if (!photoViewer) return undefined
+    const onKey = (event) => {
+      if (event.key === 'Escape') setPhotoViewer(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [photoViewer])
+
+  const openPhotoViewer = (name, photo) => {
+    if (!photo) return
+    const cached = photoUrls[photo.id] ?? null
+    setPhotoViewer({ name, photoId: photo.id, url: cached, loading: !cached, error: '' })
+    import('../../data/employeePhotoRepository.js')
+      .then(({ createEmployeePhotoSignedUrl }) => createEmployeePhotoSignedUrl(photo.id))
+      .then(({ signedUrl }) => {
+        setPhotoViewer((prev) => (prev?.photoId === photo.id ? { ...prev, url: signedUrl, loading: false } : prev))
+      })
+      .catch((error) => {
+        setPhotoViewer((prev) => (prev?.photoId === photo.id
+          ? { ...prev, loading: false, error: error.message || 'Foto gagal dimuat.' }
+          : prev))
+      })
+  }
   const [photoStaged, setPhotoStaged] = useState(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState('')
@@ -476,6 +502,7 @@ export default function SLADatabasePegawai({
     photoObjectUrlRef.current = null
     setPhotoStaged(null)
     setPhotoError('')
+    setPhotoViewer(null)
     setDetail(null)
   }
 
@@ -897,11 +924,20 @@ export default function SLADatabasePegawai({
           <div className="sla-context-field sp-pegawai-photo-field">
             <span className="sla-context-label">Foto Pegawai</span>
             {viewPhoto && viewPhotoUrl ? (
-              <img
-                src={viewPhotoUrl}
-                alt={`Foto pegawai ${data.name}`}
-                className="sp-pegawai-photo sp-pegawai-photo-large"
-              />
+              <button
+                type="button"
+                className="sp-pegawai-photo-zoom"
+                onClick={() => openPhotoViewer(data.name, viewPhoto)}
+                aria-label={`Perbesar foto pegawai ${data.name}`}
+                title="Klik untuk memperbesar"
+              >
+                <img
+                  src={viewPhotoUrl}
+                  alt={`Foto pegawai ${data.name}`}
+                  className="sp-pegawai-photo sp-pegawai-photo-large"
+                />
+                <span className="sla-table-hint">Klik untuk memperbesar</span>
+              </button>
             ) : (
               <span className="sp-pegawai-photo sp-pegawai-photo-placeholder" aria-label="Foto belum tersedia">
                 {photoInitials(data.name)}
@@ -1695,6 +1731,37 @@ export default function SLADatabasePegawai({
                 </>
               )}
               <button type="button" className="sla-btn" onClick={() => closeDetail()}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {photoViewer && (
+        <div className="sla-modal-overlay" onClick={() => setPhotoViewer(null)}>
+          <div
+            className="sla-modal sp-pegawai-viewer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Foto pegawai ${photoViewer.name}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sla-modal-header">
+              <h3 className="sla-modal-title">Foto Pegawai — {photoViewer.name}</h3>
+              <button type="button" className="sla-modal-close" onClick={() => setPhotoViewer(null)}>{'\u00d7'}</button>
+            </div>
+            <div className="sla-modal-body sp-pegawai-viewer-body">
+              {photoViewer.loading && !photoViewer.url ? (
+                <span className="sp-pegawai-photo-loading" aria-live="polite">Memuat foto...</span>
+              ) : photoViewer.url ? (
+                <img src={photoViewer.url} alt={`Foto pegawai ${photoViewer.name}`} className="sp-pegawai-viewer-img" />
+              ) : (
+                <p className="sla-blocked-note">{photoViewer.error || 'Foto tidak tersedia.'}</p>
+              )}
+            </div>
+            <div className="sla-modal-actions">
+              <button type="button" className="sla-btn" onClick={() => setPhotoViewer(null)}>
                 Tutup
               </button>
             </div>
