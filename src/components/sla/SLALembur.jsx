@@ -131,6 +131,60 @@ function statusBadgeKey(record) {
   return status
 }
 
+function historyStatusLabel(status) {
+  return {
+    DRAFT: 'Draft',
+    SUBMITTED: 'Dikirim',
+    CORRECTION_REQUIRED: 'Perlu Revisi',
+    APPROVED: 'Disetujui',
+    CLOSED: 'Ditutup',
+  }[status ?? ''] ?? (status || '–')
+}
+
+// Marker revisi lama: RESUBMITTED berstatus tetap tanpa entry_id.
+// Dibuat sebelum pencatatan per entry; kepemilikannya diatribusikan ke
+// peserta yang pernah ditolak (rejectionCount > 0), bukan semua peserta.
+function isLegacyRevisionMarker(h) {
+  return (h.entry_id ?? null) == null
+    && h.event === 'RESUBMITTED'
+    && (h.previous_status ?? null) === (h.new_status ?? null)
+}
+
+// Judul + keterangan riwayat berbahasa Indonesia. Baris lama
+// 'RESUBMITTED + status tetap + Revision updated' dipetakan sebagai
+// Revisi Disimpan tanpa menghapus catatan audit.
+function historyEventText(h) {
+  switch (h.event) {
+    case 'CREATED':
+      return { title: 'Draft Dibuat', desc: 'Pengajuan dibuat sebagai draft.' }
+    case 'SUBMITTED':
+      return {
+        title: h.previous_status === 'CORRECTION_REQUIRED' ? 'Diajukan Ulang' : 'Pengajuan Dikirim',
+        desc: 'Menunggu persetujuan.',
+      }
+    case 'REJECTED':
+      return { title: 'Dikembalikan Untuk Revisi', desc: null }
+    case 'RESUBMITTED':
+      if ((h.previous_status ?? null) === (h.new_status ?? null)
+        && (h.notes ?? '') === 'Revision updated') {
+        return { title: 'Revisi Disimpan', desc: 'Perubahan disimpan, belum diajukan ulang.' }
+      }
+      return { title: 'Diajukan Ulang', desc: 'Dikirim untuk persetujuan.' }
+    case 'REVISION_SAVED':
+      return { title: 'Revisi Disimpan', desc: 'Perubahan disimpan, belum diajukan ulang.' }
+    case 'UPDATED':
+      return { title: 'Draft Diperbarui', desc: 'Perubahan draft disimpan.' }
+    case 'APPROVED':
+      return { title: 'Disetujui', desc: null }
+    case 'CLOSED':
+      return { title: 'Ditutup', desc: h.reason ?? null }
+    case 'DELETED':
+      return { title: 'Dihapus', desc: h.reason ?? null }
+    default:
+      return { title: h.event, desc: null }
+  }
+}
+
 function isWorkType(lemburType) {
   return lemburType?.startsWith('WORK:')
 }
@@ -190,6 +244,15 @@ export default function SLALembur({
   const [employeeLoading, setEmployeeLoading] = useState(false)
   const [evidence, setEvidence] = useState([])
   const [files, setFiles] = useState({})
+  // Evidence per peserta (PARTICIPANT_V2): entry ID permanen + mode aktivitas.
+  const [participantEntries, setParticipantEntries] = useState([])
+  const [evidenceMode, setEvidenceMode] = useState('LEGACY_SHARED')
+  // Token reload: setiap pembukaan form memicu pemuatan evidence ulang,
+  // termasuk saat aktivitas + peserta sama (efek deps tidak berubah).
+  const [evidenceReloadToken, setEvidenceReloadToken] = useState(0)
+  const [evidenceLoading, setEvidenceLoading] = useState(false)
+  // Model evidence V2: SPK/Proses/Selesai diunggah sekali sebagai evidence
+  // bersama; Foto Briefing wajib diunggah per pegawai (scoped).
   const [message, setMessage] = useState(null)
   const [isSubmitting, setSubmitting] = useState(false)
   const [dirty, setDirty] = useState(true)
@@ -216,6 +279,7 @@ export default function SLALembur({
     setRejectReason('')
   }
   const [detailEvidence, setDetailEvidence] = useState([])
+  const [detailEntries, setDetailEntries] = useState([])
   const [detailHistory, setDetailHistory] = useState([])
   const [detailLoading, setDetailLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
@@ -246,7 +310,7 @@ export default function SLALembur({
     if (approvalTarget?.source !== 'lembur' || !approvalTarget.token || approvalTarget.token === handledApprovalToken.current) return
     handledApprovalToken.current = approvalTarget.token
     setDetailActivityId(approvalTarget.id)
-    setDetailEntryId(null)
+    setDetailEntryId(approvalTarget.entryId ?? null)
     onApprovalTargetHandled?.()
   }, [approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -355,7 +419,12 @@ export default function SLALembur({
   const replacementEvidenceReq = isReplacement ? (REPLACEMENT_TYPES[draft.lemburType]?.evidence ?? []) : []
   const evidenceRequirements = isWork ? workEvidenceReq : replacementEvidenceReq
   const activeRecords = activeActivityId ? records.filter((record) => record.id === activeActivityId) : []
-  const activeRecord = activeRecords.find((record) => recordReviewStatus(record) === 'CORRECTION_REQUIRED') ?? activeRecords[0] ?? null
+  // Status revisi mengikuti peserta yang dipilih, bukan baris koreksi pertama.
+  const activeRecord = (activeRevisionEntryId
+    ? activeRecords.find((record) => record.entryId === activeRevisionEntryId) ?? null
+    : null)
+    ?? activeRecords.find((record) => recordReviewStatus(record) === 'CORRECTION_REQUIRED')
+    ?? activeRecords[0] ?? null
   const isRevision = recordReviewStatus(activeRecord) === 'CORRECTION_REQUIRED'
   const initialDeadline = deadlineInfo?.overtimeDate === draft.date && deadlineInfo.effectiveDeadlineAt
     ? new Date(deadlineInfo.effectiveDeadlineAt)
@@ -376,6 +445,75 @@ export default function SLALembur({
   const isPartialApprovalRevision = Boolean(isRevision && activeHasApproved && (activeRevisionEntryId ?? activeRevisionRecord))
   const formReadOnly = activeInitialExpired || activeRevisionExpired
   const isEvidenceOnlyRevision = Boolean(isPartialApprovalRevision)
+  // Model evidence per peserta: aktivitas V2, atau draft pekerjaan baru
+  // (selalu tersimpan sebagai V2). Revisi selalu berbasis entry.
+  const isV2Work = Boolean(isWork && (evidenceMode === 'PARTICIPANT_V2' || !activeActivityId))
+  const isEntryRevision = Boolean(isWork && (activeRevisionEntryId ?? activeRevisionRecord))
+  const correctionEntryId = activeRevisionEntryIdRef.current ?? activeRevisionEntryId
+  // Revisi V2 mengunci baris peserta lain; hanya peserta yang ditolak yang
+  // dapat diubah jamnya. Server juga menolak perubahan jam APPROVED/SUBMITTED.
+  const isParticipantLocked = (tempId) => {
+    if (!isV2Work || !isRevision || !correctionEntryId) return false
+    const participant = (draft.participants ?? []).find((item) => item.tempId === tempId)
+    const entry = participantEntries.find((item) => item.employeeId === participant?.employeeId)
+    return (entry?.entryId ?? null) !== correctionEntryId
+  }
+  const SHARED_EVIDENCE_KEY = 'shared'
+  const v2Participants = (isV2Work ? draft.participants ?? [] : []).map((participant) => {
+    const entry = participantEntries.find((item) => item.employeeId === participant.employeeId)
+    const employee = employeeOptions.find((item) => item.id === participant.employeeId)
+    return {
+      key: entry?.entryId ?? participant.tempId,
+      tempId: participant.tempId,
+      employeeId: participant.employeeId,
+      entryId: entry?.entryId ?? null,
+      name: entry?.employeeName ?? employee?.name ?? 'Peserta',
+      approvalStatus: entry?.approvalStatus ?? null,
+      startTime: participant.startTime ?? '',
+      endTime: participant.endTime ?? '',
+    }
+  })
+  const stagedKeyFor = (participantKey, evidenceType) => (
+    isV2Work ? `${participantKey}:${evidenceType}` : evidenceType
+  )
+  const sharedStagedKey = (evidenceType) => `${SHARED_EVIDENCE_KEY}:${evidenceType}`
+  // Kepemilikan baris mengacu ke kolom entry_id (row.entryId), bukan
+  // _scopeEntryId yang hanya konteks query effective-evidence.
+  const ownerEntryIdOf = (row) => row.entryId ?? null
+  // Briefing selalu milik entry peserta; tipe lain memakai evidence bersama
+  // pada pengajuan awal. Revisi menilai efektif (scoped menimpa shared).
+  const briefingRequirementComplete = (participant, requirement) => {
+    const scope = participant.entryId ?? participant.key
+    const activeCount = scopedExistingFor(scope, requirement.type).length
+    const stagedCount = (files[stagedKeyFor(participant.key, requirement.type)] ?? []).length
+    return requirement.allowMultiple
+      ? activeCount + stagedCount > 0
+      : stagedCount > 0 || activeCount === 1
+  }
+  const effectiveRequirementComplete = (participant, requirement) => {
+    const scope = participant.entryId ?? participant.key
+    const scopedActive = scopedExistingFor(scope, requirement.type).length
+    const sharedActive = sharedExistingFor(requirement.type).length
+    const activeCount = scopedActive > 0 ? scopedActive : sharedActive
+    const stagedCount = (files[stagedKeyFor(participant.key, requirement.type)] ?? []).length
+      + (files[sharedStagedKey(requirement.type)] ?? []).length
+    return requirement.allowMultiple
+      ? activeCount + stagedCount > 0
+      : stagedCount > 0 || activeCount === 1
+  }
+  const isRevisionTarget = (participant) => {
+    const target = correctionEntryId
+    return (participant.entryId ?? null) === target
+      || (participant.entryId ?? participant.key) === target
+  }
+  const participantComplete = (participant) => {
+    if (isRevision) {
+      if (!isRevisionTarget(participant)) return true
+      return evidenceRequirements.every((requirement) => effectiveRequirementComplete(participant, requirement))
+    }
+    return sharedComplete
+      && briefingRequirements.every((requirement) => briefingRequirementComplete(participant, requirement))
+  }
 
   const evidenceByType = evidence.reduce((acc, r) => {
     acc[r.evidenceType] = acc[r.evidenceType] || []
@@ -383,16 +521,54 @@ export default function SLALembur({
     return acc
   }, {})
   const evidenceSingle = Object.fromEntries(Object.entries(evidenceByType).map(([k,v])=>[k, v.find(x=>x.status==='ACTIVE')||null]))
+  // Dihitung setelah evidenceByType ada (menghindari akses sebelum inisialisasi).
+  const sharedExistingFor = (evidenceType) => (
+    (evidenceByType[evidenceType] ?? []).filter(
+      (row) => row.status === 'ACTIVE' && ownerEntryIdOf(row) == null,
+    )
+  )
+  const scopedExistingFor = (scopeEntryId, evidenceType) => (
+    (evidenceByType[evidenceType] ?? []).filter(
+      (row) => row.status === 'ACTIVE' && ownerEntryIdOf(row) != null && ownerEntryIdOf(row) === scopeEntryId,
+    )
+  )
+  // Evidence efektif target revisi: override khusus bila ada, jika belum
+  // ada pakai file bersama yang berlaku untuknya. Tampil sekali per tipe.
+  const effectiveExistingFor = (participant, evidenceType) => {
+    const scope = participant.entryId ?? participant.key
+    const scoped = scopedExistingFor(scope, evidenceType)
+    return scoped.length > 0 ? scoped : sharedExistingFor(evidenceType)
+  }
+  // Foto Briefing selalu per pegawai; tipe lain evidence bersama.
+  const briefingRequirements = evidenceRequirements.filter((requirement) => requirement.type === 'FOTO_BRIEFING')
+  const sharedRequirements = evidenceRequirements.filter((requirement) => requirement.type !== 'FOTO_BRIEFING')
+  // Urutan deklarasi penting: sharedComplete dipakai participantComplete
+  // yang dieksekusi v2CompleteCount/evidenceComplete di bawahnya.
+  const sharedRequirementComplete = (requirement) => {
+    const activeCount = sharedExistingFor(requirement.type).length
+    const stagedCount = (files[sharedStagedKey(requirement.type)] ?? []).length
+    return requirement.allowMultiple ? activeCount + stagedCount > 0 : stagedCount > 0 || activeCount === 1
+  }
+  const sharedCompleteCount = sharedRequirements.filter(sharedRequirementComplete).length
+  const sharedComplete = sharedRequirements.length > 0 && sharedRequirements.every(sharedRequirementComplete)
+  const v2CompleteCount = v2Participants.filter(participantComplete).length
 
-  const evidenceComplete = evidenceRequirements.length > 0 && evidenceRequirements.every((requirement) => {
+  const legacyRequirementComplete = (requirement) => {
     const activeCount = (evidenceByType[requirement.type] ?? []).filter((row) => row.status === 'ACTIVE').length
     const stagedCount = (files[requirement.type] ?? []).length
     return requirement.allowMultiple ? activeCount + stagedCount > 0 : stagedCount > 0 || activeCount === 1
-  })
+  }
+  const evidenceComplete = isV2Work
+    ? v2Participants.length > 0 && v2Participants.every(participantComplete)
+    : evidenceRequirements.length > 0 && evidenceRequirements.every(legacyRequirementComplete)
   const evidenceRequirementComplete = (requirement) => {
-    const activeCount = (evidenceByType[requirement.type] ?? []).filter((row) => row.status === 'ACTIVE').length
-    const stagedCount = (files[requirement.type] ?? []).length
-    return requirement.allowMultiple ? activeCount + stagedCount > 0 : stagedCount > 0 || activeCount === 1
+    if (!isV2Work) return legacyRequirementComplete(requirement)
+    return v2Participants.length > 0 && v2Participants.every((participant) => {
+      if (isRevision && !isRevisionTarget(participant)) return true
+      if (isRevision) return effectiveRequirementComplete(participant, requirement)
+      if (requirement.type === 'FOTO_BRIEFING') return briefingRequirementComplete(participant, requirement)
+      return sharedRequirementComplete(requirement)
+    })
   }
   const evidenceDoneCount = evidenceRequirements.filter(evidenceRequirementComplete).length
 
@@ -412,29 +588,109 @@ export default function SLALembur({
     return () => { cancelled = true }
   }, [canMutate, contractScope.contractId, up3Id, employeeQueryDate])
 
+  const tagScopedRows = (rows, scopeEntryId) => rows.map((row) => ({
+    ...row,
+    _scopeEntryId: row.entry_id ?? scopeEntryId,
+  }))
+  // Effective-evidence per entry memuat ulang baris shared untuk tiap peserta;
+  // dedupe berdasarkan id agar tidak terhitung ganda.
+  const dedupeEvidenceRows = (rows) => {
+    const seen = new Set()
+    return (rows ?? []).filter((row) => {
+      if (row?.id == null) return true
+      if (seen.has(row.id)) return false
+      seen.add(row.id)
+      return true
+    })
+  }
+
+  const refreshParticipantEntries = async (activityId) => {
+    if (!activityId) {
+      setParticipantEntries([])
+      setEvidenceMode('LEGACY_SHARED')
+      return { entries: [], mode: 'LEGACY_SHARED' }
+    }
+    try {
+      const { listOvertimeActivityEntries } = await import('../../data/overtimeReplacementRepository.js')
+      const rows = await listOvertimeActivityEntries(activityId)
+      const mode = rows[0]?.evidenceMode ?? 'LEGACY_SHARED'
+      setParticipantEntries(rows)
+      setEvidenceMode(mode)
+      return { entries: rows, mode }
+    } catch {
+      return { entries: participantEntries, mode: evidenceMode }
+    }
+  }
+
   const refreshEvidence = async (activityId = activeActivityId, entryId = activeRevisionEntryIdRef.current) => {
     if (!activityId) { setEvidence([]); return }
     const { listOvertimeEvidence, listOvertimeEntryEffectiveEvidence } = await import('../../data/overtimeEvidenceRepository.js')
+    if (isV2Work) {
+      const { entries } = await refreshParticipantEntries(activityId)
+      const targets = entryId
+        ? entries.filter((item) => item.entryId === entryId)
+        : entries
+      const merged = []
+      for (const target of targets) {
+        const rows = await listOvertimeEntryEffectiveEvidence(activityId, target.entryId)
+        merged.push(...tagScopedRows(rows, target.entryId))
+      }
+      if (activeActivityIdRef.current === activityId) setEvidence(dedupeEvidenceRows(merged))
+      return
+    }
     const rows = entryId
       ? await listOvertimeEntryEffectiveEvidence(activityId, entryId)
       : await listOvertimeEvidence(activityId)
-    if (activeActivityIdRef.current === activityId) setEvidence(rows)
+    if (activeActivityIdRef.current === activityId
+      && (activeRevisionEntryIdRef.current ?? null) === (entryId ?? null)) setEvidence(rows)
   }
 
   useEffect(() => {
     let cancelled=false
-    if (!activeActivityId) { setEvidence([]); return undefined }
+    if (!activeActivityId) { setEvidence([]); setEvidenceLoading(false); return undefined }
+    const requestActivityId = activeActivityId
+    const requestEntryId = activeRevisionEntryId
     setEvidence([])
+    setEvidenceLoading(true)
     import('../../data/overtimeEvidenceRepository.js')
-      .then(({ listOvertimeEvidence, listOvertimeEntryEffectiveEvidence }) => (
-        activeRevisionEntryId
-          ? listOvertimeEntryEffectiveEvidence(activeActivityId, activeRevisionEntryId)
-          : listOvertimeEvidence(activeActivityId)
-      ))
-      .then(rows => { if(!cancelled) setEvidence(rows) })
-      .catch(err => { if(!cancelled) setMessage(err.message || 'Gagal memuat evidence.') })
+      .then(async ({ listOvertimeEvidence, listOvertimeEntryEffectiveEvidence }) => {
+        if (isV2Work) {
+          const { entries } = await refreshParticipantEntries(requestActivityId)
+          if (cancelled) return []
+          const targets = requestEntryId
+            ? entries.filter((item) => item.entryId === requestEntryId)
+            : entries
+          const merged = []
+          for (const target of targets) {
+            const rows = await listOvertimeEntryEffectiveEvidence(requestActivityId, target.entryId)
+            merged.push(...tagScopedRows(rows, target.entryId))
+          }
+          return dedupeEvidenceRows(merged)
+        }
+        if (requestEntryId) {
+          return listOvertimeEntryEffectiveEvidence(requestActivityId, requestEntryId)
+        }
+        return listOvertimeEvidence(requestActivityId)
+      })
+      .then(rows => {
+        if (cancelled) return
+        // Abaikan respons basi bila target sudah berganti (buka-tutup cepat
+        // atau pindah peserta sebelum fetch selesai).
+        if (activeActivityIdRef.current !== requestActivityId
+          || (activeRevisionEntryIdRef.current ?? null) !== (requestEntryId ?? null)) return
+        setEvidence(rows)
+        setEvidenceLoading(false)
+      })
+      .catch(err => {
+        if (cancelled) return
+        if (activeActivityIdRef.current !== requestActivityId
+          || (activeRevisionEntryIdRef.current ?? null) !== (requestEntryId ?? null)) return
+        setEvidenceLoading(false)
+        setMessage(err.message || 'Gagal memuat evidence.')
+      })
     return () => { cancelled=true }
-  }, [activeActivityId, activeRevisionEntryId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeActivityId, activeRevisionEntryId, evidenceMode, evidenceReloadToken])
 
   useEffect(() => {
     let cancelled = false
@@ -473,6 +729,8 @@ export default function SLALembur({
     setActiveWorkCategory(null)
     setEvidence([])
     setFiles({})
+    setParticipantEntries([])
+    setEvidenceMode('LEGACY_SHARED')
     setDirty(true)
     setMessage(null)
   }
@@ -544,11 +802,17 @@ export default function SLALembur({
     setActiveActivityId(first.id)
     setActiveRevisionEntryId(clickedStatus === 'CORRECTION_REQUIRED' ? (record.entryId ?? null) : null)
     setEvidence([])
+    setEvidenceLoading(true)
+    // Paksa muat ulang meski aktivitas + peserta sama dengan sesi sebelumnya.
+    setEvidenceReloadToken((token) => token + 1)
     setFiles({})
+    setParticipantEntries([])
+    setEvidenceMode(first.evidenceMode ?? 'LEGACY_SHARED')
     setDirty(false)
     setMessage(null)
     setFormStep('form')
     setFormOpen(true)
+    refreshParticipantEntries(first.id).catch(() => {})
   }
 
   const validateReplacement = () => {
@@ -643,20 +907,53 @@ export default function SLALembur({
         workTitle: draft.workTitle,
         workLocation: draft.workLocation,
         participants,
+        // Target revisi eksplisit: server hanya menulis ulang entry ini.
+        revisionEntryId: isEntryRevision
+          ? (activeRevisionEntryIdRef.current ?? activeRevisionEntryId)
+          : null,
       }, { skipRefresh: true })
     }
     if (!result?.ok || !result.activityId) throw new Error(result?.message || 'Draft Lembur gagal disimpan.')
     setActiveActivityId(result.activityId)
     activeActivityIdRef.current = result.activityId
     if (isWork) setActiveWorkCategory(workCategory)
+    if (isWork) {
+      const revisionId = activeRevisionEntryIdRef.current ?? activeRevisionEntryId
+      const revisionEmployee = revisionId
+        ? participantEntries.find((item) => item.entryId === revisionId)?.employeeId ?? null
+        : null
+      const { entries } = await refreshParticipantEntries(result.activityId)
+      // Legacy save membuat ulang entry (ID baru); petakan ulang target revisi
+      // berdasarkan pegawai agar upload tidak salah sasaran.
+      if (revisionId && revisionEmployee) {
+        const remapped = entries.find((item) => item.employeeId === revisionEmployee)?.entryId ?? null
+        if (remapped && remapped !== revisionId) {
+          setActiveRevisionEntryId(remapped)
+          activeRevisionEntryIdRef.current = remapped
+        }
+      }
+    }
     return result.activityId
   }
 
-  const stageEvidence = async (requirement, fileOrFiles) => {
+  const stageEvidence = async (requirement, fileOrFiles, participantKey = null) => {
     const incoming = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]
     const pending = incoming.filter(Boolean)
     if (!pending.length || initialDeadlinePassed || deadlineUnavailable || formReadOnly) return
+    // Foto Briefing wajib per pegawai (server menolak baris bersama).
+    if (participantKey === SHARED_EVIDENCE_KEY && requirement.type === 'FOTO_BRIEFING') {
+      setMessage('Foto Briefing wajib diunggah pada kartu masing-masing pegawai.')
+      return
+    }
+    // Evidence bersama tidak dapat diubah saat revisi (server menolak).
+    if (participantKey === SHARED_EVIDENCE_KEY && isRevision) {
+      setMessage('Evidence bersama dikunci saat revisi. Unggah evidence khusus peserta revisi.')
+      return
+    }
     const queue = requirement.allowMultiple ? pending : pending.slice(0, 1)
+    const storageKey = participantKey === SHARED_EVIDENCE_KEY
+      ? sharedStagedKey(requirement.type)
+      : (isV2Work && participantKey ? `${participantKey}:${requirement.type}` : requirement.type)
     setSubmitting(true)
     setMessage(`Memproses ${requirement.label}...`)
     try {
@@ -666,16 +963,17 @@ export default function SLALembur({
         const processed = await prepareOvertimeEvidenceFile(file, requirement.type)
         stagedItems.push({
           id: `${requirement.type}-${Date.now()}-${Math.random()}`,
+          participantKey: isV2Work ? participantKey : null,
           processed,
           previewUrl: processed.file.type.startsWith('image/') ? URL.createObjectURL(processed.file) : null,
         })
       }
       setFiles((current) => ({
         ...current,
-        [requirement.type]: requirement.allowMultiple
-          ? [...(current[requirement.type] ?? []), ...stagedItems]
+        [storageKey]: requirement.allowMultiple
+          ? [...(current[storageKey] ?? []), ...stagedItems]
           : (() => {
-              (current[requirement.type] ?? []).forEach((entry) => {
+              (current[storageKey] ?? []).forEach((entry) => {
                 if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl)
               })
               return stagedItems
@@ -691,20 +989,116 @@ export default function SLALembur({
     }
   }
 
-  const removeStagedEvidence = (evidenceType, stagedId) => {
+  const removeStagedEvidence = (storageKeyOrType, stagedId) => {
     setFiles((current) => {
-      const removed = (current[evidenceType] ?? []).find((item) => item.id === stagedId)
+      const removed = (current[storageKeyOrType] ?? []).find((item) => item.id === stagedId)
       if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
       return {
         ...current,
-        [evidenceType]: (current[evidenceType] ?? []).filter((item) => item.id !== stagedId),
+        [storageKeyOrType]: (current[storageKeyOrType] ?? []).filter((item) => item.id !== stagedId),
       }
     })
   }
 
   const uploadStagedEvidence = async (activityId) => {
     const { listOvertimeEvidence, listOvertimeEntryEffectiveEvidence, uploadOvertimeEvidence } = await import('../../data/overtimeEvidenceRepository.js')
-    const revisionEntryId = isPartialApprovalRevision ? (activeRevisionEntryIdRef.current ?? activeRevisionEntryId) : null
+    // Model V2: evidence bersama (non-briefing) diunggah sekali dengan
+    // entryId null pada draft awal; Foto Briefing selalu scoped per entry.
+    // Revisi hanya mengunggah scoped milik target (semua tipe) sebagai
+    // override agar peserta lain tidak ikut berubah.
+    if (isV2Work) {
+      const { entries } = await refreshParticipantEntries(activityId)
+      if (!entries.length) throw new Error('Peserta lembur belum tersedia. Simpan draft ulang.')
+      const removeStagedItem = (storageKey, staged) => {
+        if (staged.previewUrl) URL.revokeObjectURL(staged.previewUrl)
+        setFiles((current) => ({
+          ...current,
+          [storageKey]: (current[storageKey] ?? []).filter((item) => item.id !== staged.id),
+        }))
+      }
+      const uploadScopedStaged = async (entryId, participantKey, requirement) => {
+        const storageKey = stagedKeyFor(participantKey, requirement.type)
+        const stagedItems = files[storageKey] ?? []
+        // Hanya evidence yang benar-benar milik entry ini yang boleh
+        // digantikan (server menolak supersede baris shared).
+        const scopedExisting = (evidenceByType[requirement.type] ?? []).filter(
+          (row) => row.status === 'ACTIVE' && ownerEntryIdOf(row) === entryId,
+        )
+        for (let index = 0; index < stagedItems.length; index += 1) {
+          const staged = stagedItems[index]
+          await uploadOvertimeEvidence({
+            activityId,
+            entryId,
+            evidenceType: requirement.type,
+            file: staged.processed.file,
+            processedFile: staged.processed,
+            sortOrder: requirement.allowMultiple
+              ? scopedExisting.length + index
+              : 0,
+            supersedesEvidenceId: requirement.allowMultiple
+              ? null
+              : (scopedExisting.find((row) => row.evidenceType === requirement.type)?.id ?? null),
+          })
+          removeStagedItem(storageKey, staged)
+        }
+      }
+      const resolveEntryId = (participant) => {
+        const target = entries.find((item) => item.employeeId === participant.employeeId)
+        const entryId = target?.entryId ?? participant.entryId
+        if (!entryId) throw new Error(`Entry peserta ${participant.name} belum tersedia. Simpan draft ulang.`)
+        return entryId
+      }
+      if (!isRevision) {
+        for (const requirement of sharedRequirements) {
+          const storageKey = sharedStagedKey(requirement.type)
+          const stagedItems = files[storageKey] ?? []
+          const sharedActive = (evidenceByType[requirement.type] ?? []).filter(
+            (row) => row.status === 'ACTIVE' && ownerEntryIdOf(row) == null,
+          )
+          for (let index = 0; index < stagedItems.length; index += 1) {
+            const staged = stagedItems[index]
+            await uploadOvertimeEvidence({
+              activityId,
+              entryId: null,
+              evidenceType: requirement.type,
+              file: staged.processed.file,
+              processedFile: staged.processed,
+              sortOrder: requirement.allowMultiple
+                ? sharedActive.length + index
+                : 0,
+              supersedesEvidenceId: requirement.allowMultiple
+                ? null
+                : (sharedActive.find((row) => row.evidenceType === requirement.type)?.id ?? null),
+            })
+            removeStagedItem(storageKey, staged)
+          }
+        }
+        for (const participant of v2Participants) {
+          const entryId = resolveEntryId(participant)
+          for (const requirement of briefingRequirements) {
+            await uploadScopedStaged(entryId, participant.key, requirement)
+          }
+        }
+      } else {
+        const participant = v2Participants.find(isRevisionTarget)
+        if (!participant) throw new Error('Peserta revisi tidak ditemukan. Muat ulang lalu coba lagi.')
+        const entryId = resolveEntryId(participant)
+        for (const requirement of evidenceRequirements) {
+          await uploadScopedStaged(entryId, participant.key, requirement)
+        }
+      }
+      const merged = []
+      for (const target of entries) {
+        const rows = await listOvertimeEntryEffectiveEvidence(activityId, target.entryId)
+        merged.push(...tagScopedRows(rows, target.entryId))
+      }
+      setEvidence(dedupeEvidenceRows(merged))
+      return
+    }
+    // Revisi pekerjaan selalu berbasis entry agar peserta lain tidak ikut berubah.
+    const revisionEntryId = isWork
+      ? (activeRevisionEntryIdRef.current ?? activeRevisionEntryId)
+      : null
     for (const requirement of evidenceRequirements) {
       const stagedItems = files[requirement.type] ?? []
       for (let index = 0; index < stagedItems.length; index += 1) {
@@ -776,6 +1170,12 @@ export default function SLALembur({
   }
 
   const removeEvidence = async (entry) => {
+    // Evidence bersama V2 boleh dihapus pada draft awal; server menolak bila
+    // status tak memungkinkan (mis. revisi atau sebagian peserta approved).
+    if (isV2Work && !entry.entryId && isRevision) {
+      setMessage('Evidence bersama dikunci saat revisi. Unggah evidence khusus peserta revisi.')
+      return
+    }
     if (isPartialApprovalRevision && !entry.entryId) {
       setMessage('Evidence awal tidak dapat dihapus karena sebagian peserta sudah disetujui. Unggah foto pengganti khusus peserta revisi.')
       return
@@ -798,10 +1198,14 @@ export default function SLALembur({
     setSubmitProcess({ status: 'loading', error: '' })
     try {
       const resubmitting = isRevision
-      const partialResubmitEntryId = isPartialApprovalRevision ? (activeRevisionEntryIdRef.current ?? activeRevisionEntryId) : null
       let activityId = activeActivityId
       if (!activityId || dirty) activityId = await persistDraft()
       await uploadStagedEvidence(activityId)
+      // Resolve ulang target revisi setelah simpan: legacy membuat ulang
+      // entry (ID baru) dan persistDraft memetakan ulang targetnya.
+      const partialResubmitEntryId = (resubmitting && isEntryRevision)
+        ? (activeRevisionEntryIdRef.current ?? activeRevisionEntryId)
+        : null
       const result = resubmitting && partialResubmitEntryId
         ? await (await import('../../data/overtimeReplacementRepository.js')).resubmitOvertimeEntry(partialResubmitEntryId).then((entryId) => ({ ok: true, entryId })).catch((error) => ({ ok: false, message: error?.message }))
         : resubmitting
@@ -894,11 +1298,13 @@ export default function SLALembur({
     return text || 'Data Lembur gagal dihapus.'
   }
 
+  // null = belum terverifikasi (scope hilang/gagal baca); false = terbukti
+  // belum sesuai; true = terverifikasi sesuai.
   const verifyParticipantStatus = async (record, entryId, expectedStatuses) => {
     try {
       const contractId = record.contractId ?? contractScope?.contractId
       const scopeUp3Id = record.up3Id ?? up3Id
-      if (!contractId || !scopeUp3Id) return true
+      if (!contractId || !scopeUp3Id) return null
       const rows = record.type === 'WORK'
         ? await listOvertimeWork({ contractId, up3Id: scopeUp3Id, unitId: null, periodMonth: record.periodMonth ?? periodMonth ?? null })
         : await listOvertimeReplacements({ contractId, up3Id: scopeUp3Id, unitId: null, periodMonth: record.periodMonth ?? periodMonth ?? null })
@@ -906,7 +1312,7 @@ export default function SLALembur({
       if (!match) return false
       return expectedStatuses.includes(recordReviewStatus(match))
     } catch {
-      return true
+      return null
     }
   }
 
@@ -927,7 +1333,7 @@ export default function SLALembur({
       }
       await onRefresh?.()
       const verified = await verifyParticipantStatus(record, entryId, ['APPROVED'])
-      if (!verified) throw new Error('Approval peserta belum tersimpan. Muat ulang lalu coba lagi.')
+      if (verified === false) throw new Error('Approval peserta belum tersimpan. Muat ulang lalu coba lagi.')
       closeDetail()
       setToast(participantName ? `${participantName} berhasil disetujui.` : 'Lembur berhasil disetujui.')
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal disetujui.')) } finally{ setApprovalBusy(false) }
@@ -948,7 +1354,7 @@ export default function SLALembur({
       }
       await onRefresh?.()
       const verified = await verifyParticipantStatus(record, entryId, ['CORRECTION_REQUIRED', 'CLOSED'])
-      if (!verified) throw new Error('Penolakan peserta belum tersimpan. Muat ulang lalu coba lagi.')
+      if (verified === false) throw new Error('Penolakan peserta belum tersimpan. Muat ulang lalu coba lagi.')
       closeDetail()
       setToast(res?.message || 'Lembur ditolak dan dikembalikan untuk revisi.')
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
@@ -1042,18 +1448,71 @@ export default function SLALembur({
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const paginated = filtered.slice((currentPage-1)*rowsPerPage, currentPage*rowsPerPage)
   useEffect(()=>{ setCurrentPage(1) }, [filters, rowsPerPage, records.length])
+  const loadDetailData = async (activityId, entryIdForDetail) => {
+    const evidenceModule = await import('../../data/overtimeEvidenceRepository.js')
+    let evidenceResult
+    if (entryIdForDetail) {
+      evidenceResult = {
+        entries: [],
+        grouped: false,
+        evidence: await evidenceModule.listOvertimeEntryEffectiveEvidence(activityId, entryIdForDetail),
+      }
+    } else {
+      const { listOvertimeActivityEntries } = await import('../../data/overtimeReplacementRepository.js')
+      const entries = await listOvertimeActivityEntries(activityId).catch(() => [])
+      const mode = entries[0]?.evidenceMode ?? 'LEGACY_SHARED'
+      if (mode !== 'PARTICIPANT_V2' || entries.length <= 1) {
+        evidenceResult = {
+          entries: [],
+          grouped: false,
+          evidence: await evidenceModule.listOvertimeEvidence(activityId),
+        }
+      } else {
+        const merged = []
+        for (const target of entries) {
+          const rows = await evidenceModule.listOvertimeEntryEffectiveEvidence(activityId, target.entryId)
+          merged.push(...rows.map((row) => ({ ...row, _scopeEntryId: row.entry_id ?? target.entryId })))
+        }
+        evidenceResult = { entries, grouped: true, evidence: merged }
+      }
+    }
+    const [hist, fin] = await Promise.all([
+      listOvertimeHistory(activityId).catch(() => []),
+      canViewFinancial
+        ? import('../../data/overtimeReplacementRepository.js').then(m => m.listOvertimeEntryFinancial(activityId)).catch(() => [])
+        : Promise.resolve([]),
+    ])
+    return { ...evidenceResult, history: hist || [], financial: fin || [] }
+  }
   useEffect(()=>{
-    if (!detailActivityId) { setDetailEvidence([]); setDetailHistory([]); setDetailEvidenceUrls({}); setDetailFinancial([]); return }
+    if (!detailActivityId) { setDetailEvidence([]); setDetailEntries([]); setDetailHistory([]); setDetailEvidenceUrls({}); setDetailFinancial([]); return undefined }
     let cancelled=false
     setDetailLoading(true)
-    const entryIdForDetail = detailEntryId
-    Promise.all([
-      import('../../data/overtimeEvidenceRepository.js').then(m=> entryIdForDetail ? m.listOvertimeEntryEffectiveEvidence(detailActivityId, entryIdForDetail) : m.listOvertimeEvidence(detailActivityId)),
-      listOvertimeHistory(detailActivityId).catch(()=>[]),
-      canViewFinancial ? import('../../data/overtimeReplacementRepository.js').then(m=>m.listOvertimeEntryFinancial(detailActivityId)).catch(()=>[]) : Promise.resolve([])
-    ]).then(([evs, hist, fin])=>{ if(!cancelled){ setDetailEvidence(evs); setDetailHistory(hist||[]); setDetailFinancial(fin||[]) } }).catch(()=>{ if(!cancelled){ setDetailEvidence([]); setDetailHistory([]); setDetailFinancial([]) } }).finally(()=>{ if(!cancelled) setDetailLoading(false) })
+    loadDetailData(detailActivityId, detailEntryId)
+      .then(({ evidence: evs, entries, grouped, history, financial })=>{ if(!cancelled){ setDetailEvidence(evs); setDetailEntries(grouped ? entries : []); setDetailHistory(history); setDetailFinancial(financial) } })
+      .catch(()=>{ if(!cancelled){ setDetailEvidence([]); setDetailEntries([]); setDetailHistory([]); setDetailFinancial([]) } })
+      .finally(()=>{ if(!cancelled) setDetailLoading(false) })
     return ()=>{ cancelled=true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailActivityId, detailEntryId, canViewFinancial])
+  // Perubahan status oleh role lain (mis. UP3 approve saat detail terbuka di
+  // sesi ULP) memuat ulang evidence + riwayat tanpa spinner.
+  const openDetailSignature = detailActivityId
+    ? records.filter((record) => record.id === detailActivityId).map((record) => `${record.entryId}:${recordReviewStatus(record)}:${record.updatedAt ?? ''}`).join('|')
+    : ''
+  const prevDetailSignatureRef = useRef('')
+  useEffect(() => {
+    if (!detailActivityId) { prevDetailSignatureRef.current = ''; return undefined }
+    let cancelled = false
+    if (prevDetailSignatureRef.current && prevDetailSignatureRef.current !== openDetailSignature) {
+      loadDetailData(detailActivityId, detailEntryId)
+        .then(({ evidence: evs, entries, grouped, history, financial })=>{ if(!cancelled){ setDetailEvidence(evs); setDetailEntries(grouped ? entries : []); setDetailHistory(history); setDetailFinancial(financial) } })
+        .catch(() => {})
+    }
+    prevDetailSignatureRef.current = openDetailSignature
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDetailSignature, detailActivityId, detailEntryId])
   useEffect(() => {
     let cancelled = false
     const images = detailEvidence.filter((entry) => entry.status === 'ACTIVE' && isImageEvidence(entry))
@@ -1087,8 +1546,16 @@ export default function SLALembur({
       return !participantKeys.has(`${h.event}|${h.occurred_at}`)
     })
   })()
+  // Atribusi marker revisi lama: catatan batch bersama (dibuat/dikirim)
+  // tetap tampil untuk semua; marker revisi tanpa pemilik hanya tampil
+  // pada peserta yang pernah ditolak agar tidak bocor ke peserta lain.
+  const detailEntryRejectionCount = detailRecords[0]?.rejectionCount ?? 0
   const visibleDetailHistory = detailEntryId != null
-    ? dedupedDetailHistory.filter((h) => h.entry_id == null || h.entry_id === detailEntryId)
+    ? dedupedDetailHistory.filter((h) => {
+      if ((h.entry_id ?? null) != null) return h.entry_id === detailEntryId
+      if (isLegacyRevisionMarker(h)) return detailEntryRejectionCount > 0
+      return true
+    })
     : dedupedDetailHistory
   const detailActivity = detailRecords[0] || null
   const detailIsSingleParticipant = detailEntryId != null && detailActivityRecords.length > 1
@@ -1136,6 +1603,20 @@ export default function SLALembur({
   }
   const removeParticipant = (tempId) => {
     setDraft(c=>({ ...c, participants: c.participants.filter(p=>p.tempId!==tempId)}))
+    setFiles((current) => {
+      const next = { ...current }
+      let changed = false
+      Object.keys(next).forEach((key) => {
+        if (key === tempId || key.startsWith(`${tempId}:`)) {
+          (next[key] ?? []).forEach((item) => {
+            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+          })
+          delete next[key]
+          changed = true
+        }
+      })
+      return changed ? next : current
+    })
     setDirty(true)
   }
 
@@ -1150,6 +1631,24 @@ export default function SLALembur({
     : REPLACEMENT_TYPES[draft.lemburType]?.label
   const activeDetailEvidence = detailEvidence.filter((entry) => entry.status === 'ACTIVE')
   const photoDetailEvidence = activeDetailEvidence.filter(isImageEvidence)
+  // Detail V2: evidence bersama tampil sekali sebagai grup sendiri, bukan
+  // diulang di setiap peserta; grup peserta hanya berisi override khusus.
+  const detailSharedEvidence = activeDetailEvidence.filter(
+    (entry, index, list) => (entry.entryId ?? null) == null
+      && list.findIndex((item) => item.id === entry.id) === index,
+  )
+  const detailEvidenceGroups = detailEntries.map((target) => ({
+    name: target.employeeName ?? 'Peserta',
+    items: activeDetailEvidence.filter(
+      (entry) => (entry.entryId ?? null) === target.entryId,
+    ),
+  }))
+  const detailEvidenceDisplayGroups = [
+    ...(detailSharedEvidence.length
+      ? [{ name: 'Evidence Bersama', items: detailSharedEvidence, shared: true }]
+      : []),
+    ...detailEvidenceGroups,
+  ]
   const ulpCount = (orgUnits ?? []).filter((unit) => unit.type === 'ULP').length
   const up3ScopeName = (orgUnits ?? []).find((unit) => unit.uuid === up3Id || unit.legacyKey === up3Id)?.displayName
   const showUlpColumn = isSuperAdmin || isManagement || !canMutate
@@ -1208,7 +1707,7 @@ export default function SLALembur({
               ) : (
               <>
               <div className="lembur-form-heading">
-                 <div><span className="lembur-kicker">{activeActivityId ? 'Lanjutkan Draft' : 'Tambah Lembur'}</span><h2>{currentTypeLabel}</h2></div>
+                  <div><span className="lembur-kicker">{isRevision && activeRevisionParticipantName ? `Revisi Pengajuan · ${activeRevisionParticipantName}` : activeActivityId ? 'Lanjutkan Draft' : 'Tambah Lembur'}</span><h2>{currentTypeLabel}</h2></div>
                  <div className="lembur-heading-actions">
                    {!activeActivityId && <Button variant="ghost" size="small" disabled={submitting} onClick={()=>setFormStep(isWork ? 'work' : 'main')}>← Ubah Jenis</Button>}
                    {activeActivityId && <Button variant="secondary" size="small" disabled={submitting} onClick={openNewForm}>Draft Baru</Button>}
@@ -1242,7 +1741,7 @@ export default function SLALembur({
                 </section>
 
                 <section className="lembur-form-section">
-                  <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">B</span><div className="lembur-section-heading-text"><h3>Pegawai & Waktu</h3><p>Peserta, jam kerja, dan durasi otomatis</p></div></div>
+                   <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">B</span><div className="lembur-section-heading-text"><h3>{isMultiWork && isV2Work ? 'Pegawai, Waktu & Foto Briefing' : 'Pegawai & Waktu'}</h3><p>{isMultiWork && isV2Work ? 'Satu kartu per pegawai: data, jam kerja, dan foto briefing' : 'Peserta, jam kerja, dan durasi otomatis'}</p></div></div>
                   {isReplacement && <div className="lembur-time-grid is-replacement">
                     <label className="sla-context-field"><span className="sla-context-label">Pegawai yang Digantikan *</span><select className="sla-context-select" value={draft.replacedEmployeeId} disabled={employeeLoading} onChange={e=>updateDraft({ replacedEmployeeId:e.target.value, participantEmployeeId:'' })}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
                     <label className="sla-context-field"><span className="sla-context-label">Pegawai Pengganti *</span><select className="sla-context-select" value={draft.participantEmployeeId} disabled={!replacedEmployee} onChange={e=>updateDraft({ participantEmployeeId:e.target.value })}><option value="">Pilih pegawai pengganti</option>{participantOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
@@ -1251,14 +1750,178 @@ export default function SLALembur({
                     <div className="lembur-duration-compact"><span>Durasi</span><strong>{range ? formatDurationMinutes(range.durationMinutes) : '–'}</strong>{draft.endTime <= draft.startTime && <small>+1 hari</small>}</div>
                   </div>}
                   {isAdministrasi && (()=>{ const participant=draft.participants[0]; const participantRange=buildPontianakRange(draft.date, participant?.startTime||draft.startTime, participant?.endTime||draft.endTime); return <div className="lembur-time-grid is-single"><label className="sla-context-field"><span className="sla-context-label">Pegawai Lembur *</span><select className="sla-context-select" value={participant?.employeeId || ''} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat pegawai...':'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label><label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={participant?.startTime||draft.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /></label><label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={participant?.endTime||draft.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /></label><div className="lembur-duration-compact"><span>Durasi</span><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{participant?.endTime<=participant?.startTime&&<small>+1 hari</small>}</div></div>})()}
-                   {isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur{isEvidenceOnlyRevision && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''}</strong><Button variant="secondary" size="small" disabled={isEvidenceOnlyRevision} onClick={addParticipant}>+ Tambah Pegawai</Button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading || isEvidenceOnlyRevision} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} disabled={isEvidenceOnlyRevision} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} disabled={isEvidenceOnlyRevision} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision} onClick={()=>removeParticipant(participant.tempId)}><Icon name="close" size={15} /></IconButton>:<span />}</div>})}</div>}
+                   {isMultiWork && isV2Work ? (
+                    <div className="lembur-member-list">
+                      <div className="lembur-participants-heading"><strong>Peserta Lembur{isRevision && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''}</strong><Button variant="secondary" size="small" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={addParticipant}>+ Tambah Pegawai</Button></div>
+                      {draft.participants.filter((member) => {
+                        if (!isRevision || !isV2Work) return true
+                        const info = v2Participants.find((item) => item.tempId === member.tempId)
+                        return (info?.entryId ?? null) === (activeRevisionEntryIdRef.current ?? activeRevisionEntryId)
+                      }).map((member) => {
+                        const v2info = v2Participants.find((item) => item.tempId === member.tempId) ?? { key: member.tempId, tempId: member.tempId, employeeId: member.employeeId, entryId: null, name: 'Peserta', startTime: member.startTime, endTime: member.endTime }
+                        const memberRange = buildPontianakRange(draft.date, member.startTime, member.endTime)
+                        const otherIds = draft.participants.filter((item) => item.tempId !== member.tempId).map((item) => item.employeeId)
+                        const memberOptions = employeeOptions.filter((employee) => !otherIds.includes(employee.id))
+                        // Target revisi boleh mengubah jamnya; identitas pegawai
+                        // tetap dikunci. Server menolak perubahan jam
+                        // APPROVED/SUBMITTED dan data pekerjaan bersama.
+                        const memberIsRevisionTarget = Boolean(isRevision)
+                          && (v2info.entryId ?? null) === (activeRevisionEntryIdRef.current ?? activeRevisionEntryId)
+                        const memberLocked = isEvidenceOnlyRevision || isParticipantLocked(member.tempId)
+                        const memberTimeLocked = memberLocked && !(isRevision && memberIsRevisionTarget)
+                        const briefingDone = briefingRequirements.every((requirement) => briefingRequirementComplete(v2info, requirement))
+                        return (
+                          <div key={member.tempId} className="lembur-member-card">
+                            <div className="lembur-member-fields">
+                              <label className="sla-context-field"><span className="sla-context-label">Pegawai *</span><select className="sla-context-select" value={member.employeeId} disabled={employeeLoading || memberLocked} onChange={e=>updateParticipant(member.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{memberOptions.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+                              <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={member.startTime} disabled={memberTimeLocked} onChange={e=>updateParticipant(member.tempId,{startTime:e.target.value})} /></label>
+                              <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={member.endTime} disabled={memberTimeLocked} onChange={e=>updateParticipant(member.tempId,{endTime:e.target.value})} /></label>
+                              <div className="lembur-duration-compact"><span>Durasi</span><strong>{memberRange ? formatDurationMinutes(memberRange.durationMinutes) : '–'}</strong>{member.endTime <= member.startTime && <small>+1 hari</small>}</div>
+                              {draft.participants.length > 1 ? <IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={()=>removeParticipant(member.tempId)}><Icon name="close" size={15} /></IconButton> : <span />}
+                            </div>
+                            {!isRevision ? (
+                              <div className="lembur-member-briefing">
+                                <p className="sla-table-hint">Foto briefing wajib diunggah untuk {v2info.name} · Status: {evidenceLoading ? 'Memuat...' : briefingDone ? 'Lengkap' : 'Belum lengkap'}</p>
+                                <div className="lembur-upload-grid lembur-evidence-grid">
+                                  {briefingRequirements.map((requirement) => (
+                                    <EvidenceUploadCard
+                                      key={`${v2info.key}-${requirement.type}`}
+                                      requirement={requirement}
+                                      position={1}
+                                      existingList={scopedExistingFor(v2info.entryId ?? v2info.key, requirement.type)}
+                                      stagedList={files[stagedKeyFor(v2info.key, requirement.type)] ?? []}
+                                      evidenceUrls={evidenceUrls}
+                                      isImageEvidence={isImageEvidence}
+                                      inputDisabled={submitting || initialDeadlinePassed || formReadOnly}
+                                      actionDisabled={submitting || formReadOnly}
+                                      locked={false}
+                                      isPartialRevision={false}
+                                      onStage={(req, stagedFiles) => stageEvidence(req, stagedFiles, v2info.key)}
+                                      onRemoveStaged={(_type, stagedId) => removeStagedEvidence(stagedKeyFor(v2info.key, requirement.type), stagedId)}
+                                      onPreview={previewEvidence}
+                                      onRemoveSaved={removeEvidence}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="lembur-evidence-locked-note">{isRevisionTarget(v2info) ? `Revisi khusus ${v2info.name}. Ganti evidence pada bagian C di bawah.` : `Dikunci. Evidence milik ${v2info.name} tidak ikut direvisi.`}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                   ) : isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur{isEvidenceOnlyRevision && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''}</strong><Button variant="secondary" size="small" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={addParticipant}>+ Tambah Pegawai</Button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading || isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} disabled={isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} disabled={isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={()=>removeParticipant(participant.tempId)}><Icon name="close" size={15} /></IconButton>:<span />}</div>})}</div>}
                 </section>
 
                 </div>
                  <section className="lembur-form-section lembur-evidence-section">
-                    <div className="lembur-section-heading lembur-evidence-heading"><span className="lembur-step-badge" aria-hidden="true">C</span><div className="lembur-section-heading-text"><h3>Evidence{isPartialApprovalRevision && activeRevisionParticipantName ? ` · ${activeRevisionParticipantName}` : ''}</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{evidenceDoneCount}/{evidenceRequirements.length} lengkap</span></div>
+                    <div className="lembur-section-heading lembur-evidence-heading"><span className="lembur-step-badge" aria-hidden="true">C</span><div className="lembur-section-heading-text"><h3>{isV2Work ? 'Evidence Bersama' : 'Evidence'}</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB{isV2Work ? ' · SPK, proses & selesai diunggah sekali untuk semua pegawai; foto briefing ada di kartu tiap pegawai' : ''}{(isPartialApprovalRevision || isEntryRevision) && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''} · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{isV2Work ? `${v2CompleteCount}/${v2Participants.length} peserta lengkap` : `${evidenceDoneCount}/${evidenceRequirements.length} lengkap`}</span></div>
                     {isPartialApprovalRevision && <p className="lembur-evidence-locked-note">Revisi evidence khusus {activeRevisionParticipantName}. Evidence awal milik peserta yang sudah disetujui tidak berubah dan tidak dapat dihapus.</p>}
                     {!isPartialApprovalRevision && activeHasApproved && <p className="lembur-evidence-locked-note">Evidence dikunci karena sebagian peserta sudah disetujui.</p>}
+                    {isV2Work && isRevision && <p className="lembur-evidence-locked-note">Revisi khusus {activeRevisionParticipantName || 'peserta yang ditolak'}. Evidence peserta lain dikunci dan tidak ikut berubah.</p>}
+                    {evidenceLoading && <p className="sla-table-hint">Memuat evidence...</p>}
+                    {isV2Work ? (
+                      <>
+                      {!isRevision && (
+                      <div className="lembur-shared-evidence">
+                        <div className="lembur-participant-evidence-heading">
+                          <strong>Evidence Bersama</strong>
+                          <span className={`lembur-evidence-status is-${sharedComplete ? 'complete' : 'partial'}`}>
+                            {sharedComplete ? 'Lengkap' : `${sharedCompleteCount}/${sharedRequirements.length}`}
+                          </span>
+                        </div>
+                        <p className="sla-table-hint">Satu upload berlaku untuk seluruh pegawai dalam pengajuan ini.{isRevision ? ' Dikunci saat revisi.' : ''}</p>
+                        <div className="lembur-upload-grid lembur-evidence-grid">
+                          {sharedRequirements.map((requirement, cardIndex) => (
+                            <EvidenceUploadCard
+                              key={`shared-${requirement.type}`}
+                              requirement={requirement}
+                              position={cardIndex + 1}
+                              existingList={sharedExistingFor(requirement.type)}
+                              stagedList={files[sharedStagedKey(requirement.type)] ?? []}
+                              evidenceUrls={evidenceUrls}
+                              isImageEvidence={isImageEvidence}
+                              inputDisabled={submitting || initialDeadlinePassed || formReadOnly || isRevision}
+                              actionDisabled={submitting || formReadOnly || isRevision}
+                              locked={false}
+                              isPartialRevision={false}
+                              onStage={(req, stagedFiles) => stageEvidence(req, stagedFiles, SHARED_EVIDENCE_KEY)}
+                              onRemoveStaged={(_type, stagedId) => removeStagedEvidence(sharedStagedKey(requirement.type), stagedId)}
+                              onPreview={previewEvidence}
+                              onRemoveSaved={removeEvidence}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      )}
+                      {isRevision && (
+                      <div className="lembur-participant-evidence-list">
+                        {v2Participants.map((participant, participantIndex) => {
+                          const complete = participantComplete(participant)
+                          const targetRevision = isRevisionTarget(participant)
+                          // Revisi: hanya target yang mengganti (semua tipe
+                          // sebagai override khusus); peserta lain ringkasan
+                          // terkunci. Briefing pengajuan awal ada di kartu
+                          // pegawai bagian B.
+                          const visibleRequirements = evidenceRequirements
+                          if (!targetRevision) {
+                            return (
+                              <div key={participant.key} className="lembur-participant-evidence">
+                                <div className="lembur-participant-evidence-heading">
+                                  <span className="lembur-evidence-position" aria-hidden="true">{participantIndex + 1}</span>
+                                  <strong>{participant.name}</strong>
+                                </div>
+                                <p className="lembur-evidence-locked-note">Dikunci. Evidence milik {participant.name} tidak ikut direvisi.</p>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div key={participant.key} className={`lembur-participant-evidence${complete ? ' is-complete' : ''}`}>
+                              <div className="lembur-participant-evidence-heading">
+                                <span className="lembur-evidence-position" aria-hidden="true">{participantIndex + 1}</span>
+                                <strong>{participant.name}</strong>
+                                <span className={`lembur-evidence-status is-${complete ? 'complete' : 'partial'}`}>
+                                  {complete ? 'Lengkap' : 'Belum lengkap'}
+                                </span>
+                              </div>
+                              {(participant.startTime || participant.endTime) && (
+                                <p className="sla-table-hint">Jam {participant.startTime || '–'}–{participant.endTime || '–'}</p>
+                              )}
+                              <p className="lembur-evidence-locked-note">Revisi khusus {participant.name}. Yang tampil di bawah adalah evidence yang berlaku untuk {participant.name} saat ini; yang diganti hanya berlaku untuk {participant.name}, evidence bersama dan peserta lain tidak berubah.</p>
+                              <div className="lembur-upload-grid lembur-evidence-grid">
+                                {visibleRequirements.map((requirement, cardIndex) => {
+                                  const existingList = effectiveExistingFor(participant, requirement.type)
+                                  const stagedList = files[stagedKeyFor(participant.key, requirement.type)] ?? []
+                                  return (
+                                    <EvidenceUploadCard
+                                      key={`${participant.key}-${requirement.type}`}
+                                      requirement={requirement}
+                                      position={cardIndex + 1}
+                                      existingList={existingList}
+                                      stagedList={stagedList}
+                                      evidenceUrls={evidenceUrls}
+                                      isImageEvidence={isImageEvidence}
+                                      inputDisabled={submitting || initialDeadlinePassed || formReadOnly}
+                                      actionDisabled={submitting || formReadOnly}
+                                      locked={false}
+                                      isPartialRevision={Boolean(isRevision)}
+                                      revisionParticipantName={participant.name}
+                                      onStage={(req, stagedFiles) => stageEvidence(req, stagedFiles, participant.key)}
+                                      onRemoveStaged={(_type, stagedId) => removeStagedEvidence(stagedKeyFor(participant.key, requirement.type), stagedId)}
+                                      onPreview={previewEvidence}
+                                      onRemoveSaved={removeEvidence}
+                                    />
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      )}
+                      </>
+                    ) : (
                    <div className="lembur-upload-grid lembur-evidence-grid">
                      {evidenceRequirements.map((requirement, cardIndex) => {
                        const existingList = (evidenceByType[requirement.type] || []).filter((entry) => entry.status === 'ACTIVE')
@@ -1285,11 +1948,12 @@ export default function SLALembur({
                        )
                      })}
                    </div>
+                    )}
                   </section>
                 </div>
 
-                 {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <Alert tone="info" className="lembur-message">{message}</Alert>}
-                  <div className="lembur-form-actions"><Button variant="secondary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly} onClick={saveDraft}>{isSubmitting?'Memproses...':'Simpan Draft'}</Button><div className="lembur-form-actions-right"><Button variant="ghost" onClick={closeForm}>Batal</Button><Button variant="primary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly||!evidenceComplete} onClick={submitDraft}>Ajukan Lembur</Button></div></div>
+                  {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <Alert tone="info" className="lembur-message">{message}</Alert>}
+                   <div className="lembur-form-actions"><Button variant="secondary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly} onClick={saveDraft}>{isSubmitting ? 'Memproses...' : isEntryRevision && activeRevisionParticipantName ? `Simpan Revisi ${activeRevisionParticipantName}` : 'Simpan Draft'}</Button><div className="lembur-form-actions-right"><Button variant="ghost" onClick={closeForm}>Batal</Button><Button variant="primary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly||!evidenceComplete} onClick={submitDraft}>{isEntryRevision && activeRevisionParticipantName ? `Ajukan Ulang ${activeRevisionParticipantName}` : 'Ajukan Lembur'}</Button></div></div>
               </fieldset>
               </>
               )}
@@ -1380,7 +2044,7 @@ export default function SLALembur({
                       <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(record)} tone={statusTone(record)}>{display}</StatusBadge>{status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <div className="lembur-revision-meta"><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <strong>REVISI TERAKHIR</strong>}</div>}</td>
                       <td className="lembur-table-actions-cell">
                         <div className="lembur-table-actions">
-                          {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>Lanjutkan Draft</Button>}
+                          {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>{recordReviewStatus(record) === 'CORRECTION_REQUIRED' ? 'Revisi Pengajuan' : 'Lanjutkan Draft'}</Button>}
                            <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
                            {canDeleteRecord(record) && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus</Button>}
                         </div>
@@ -1441,15 +2105,28 @@ export default function SLALembur({
                       </table></div>
                     </section>
                     <section className="lembur-detail-section"><h3>Keterangan</h3><div className="lembur-detail-description">{detailActivity.workTitle&&<strong>{detailActivity.workTitle}</strong>}{detailActivity.workLocation&&<span>{detailActivity.workLocation}</span>}<p>{detailActivity.description}</p></div></section>
-                    <section className="lembur-detail-section"><h3>Evidence</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
+                    <section className="lembur-detail-section"><h3>Evidence{detailEvidenceGroups.length ? ' · per peserta' : ''}</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:detailEvidenceGroups.length ? <div className="lembur-participant-evidence-list">{detailEvidenceDisplayGroups.map((group)=><div key={`${group.shared ? 'bersama' : 'peserta'}-${group.name}`} className="lembur-participant-evidence"><div className="lembur-participant-evidence-heading"><strong>{group.name}</strong><span className="lembur-evidence-status is-complete">{group.items.length} file</span></div>{group.items.length?<div className="lembur-detail-evidence-grid">{group.items.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">{group.shared ? 'Belum ada evidence bersama.' : detailSharedEvidence.length ? 'Memakai evidence bersama di atas.' : 'Belum ada evidence peserta ini.'}</div>}</div>)}</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
                     <section className="lembur-detail-section"><h3>Riwayat{detailEntryId != null && detailActivityRecords.length > 1 ? ` · ${detailActivity?.participantName ?? ''}` : ''}</h3>
                       {visibleDetailHistory.length ? (
                         <div className="lembur-history-timeline">
-                          {visibleDetailHistory.map(h=>(
-                            <div key={h.id} className="lembur-history-item">
-                              <span className="lembur-history-dot" /><div><small>{new Date(h.occurred_at).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})} · {h.actor_user_id?.slice(0,8)}</small><strong>{h.event}</strong><p>{h.previous_status} → {h.new_status}{h.reason&&` · ${h.reason}`}</p>{h.notes&&<p>{h.notes}</p>}</div>
-                            </div>
-                          ))}
+                          {visibleDetailHistory.map(h=>{
+                            const text = historyEventText(h)
+                            const statusChanged = (h.previous_status ?? null) !== (h.new_status ?? null)
+                            const showNotes = h.notes
+                              && h.notes !== 'Revision updated'
+                              && h.notes !== 'Draft updated'
+                            return (
+                              <div key={h.id} className="lembur-history-item">
+                                <span className="lembur-history-dot" /><div><small>{new Date(h.occurred_at).toLocaleString('id-ID',{timeZone:'Asia/Pontianak'})}</small><strong>{text.title}</strong>
+                                {statusChanged && <p>{historyStatusLabel(h.previous_status)} → {historyStatusLabel(h.new_status)}</p>}
+                                {h.event === 'REJECTED' && h.reason ? <p className="lembur-history-reason">Alasan: {h.reason}</p> : null}
+                                {h.event !== 'REJECTED' && h.reason ? <p>{h.reason}</p> : null}
+                                {text.desc && <p>{text.desc}</p>}
+                                {showNotes && <p>{h.notes}</p>}
+                                {isLegacyRevisionMarker(h) && detailEntryId == null && <p className="sla-table-hint">Catatan lama: peserta tidak tercatat.</p>}</div>
+                              </div>
+                            )
+                          })}
                         </div>
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>

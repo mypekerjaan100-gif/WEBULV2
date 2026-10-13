@@ -25,7 +25,7 @@ assert(card.includes('input[type=file]') || card.includes('type="file"'), 'Input
 assert(lembur.includes("import EvidenceUploadCard from './EvidenceUploadCard.jsx'"), 'SLALembur harus memakai EvidenceUploadCard')
 assert(lembur.includes('<EvidenceUploadCard'), 'Section evidence harus merender EvidenceUploadCard')
 assert(lembur.includes('evidenceDoneCount'), 'Header evidence harus menampilkan progress')
-assert(lembur.includes('<h3>Evidence</h3>'), 'Heading Evidence harus dipertahankan')
+assert(lembur.includes("'Evidence Bersama'") && lembur.includes('<h3>{isV2Work'), 'Heading Evidence Bersama/kondisional harus ada')
 
 // Tidak ada lagi teks instruksi berulang per kartu.
 assert(!card.includes('klik pilih file, lalu Simpan Draft'), 'Instruksi berulang per kartu harus dihapus')

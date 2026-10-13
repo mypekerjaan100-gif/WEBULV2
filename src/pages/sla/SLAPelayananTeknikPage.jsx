@@ -61,6 +61,7 @@ import { getOrganizationScope, invalidateOrganizationMap } from '../../data/orgI
 import { initialPensionPoliciesForUp3 } from '../../data/pensiunPelayananTeknik.js'
 import {
   expireInitialOvertimeDrafts,
+  getOvertimeSyncVersion,
   listOvertimeReplacements,
   listOvertimeWork,
   saveOvertimeReplacementDraft,
@@ -701,10 +702,44 @@ export default function SLAPelayananTeknikPage({
     await onApprovalChange?.()
   }, [refreshLembur, onApprovalChange])
 
+  const lemburSyncKeyRef = useRef(null)
   useEffect(() => {
-    if (moduleId !== 'lembur' || !authUserId) return
+    if (moduleId !== 'lembur' || !authUserId) return undefined
     refreshLembur()
-    return () => { lemburRequestId.current += 1 }
+    // Sinkron lintas role: cek versi ringan dulu, refresh penuh hanya bila
+    // ada perubahan (approval/revisi/upload di sesi lain).
+    const syncOnce = async () => {
+      try {
+        const version = await getOvertimeSyncVersion({
+          contractId: orgMap?.contractUuid,
+          up3Id: orgMap?.up3Uuid,
+          unitId: lemburUnitUuid,
+          periodMonth: lemburPeriodMonth,
+        })
+        const key = `${version.version ?? 'none'}|${version.activityCount}|${version.submittedCount}`
+        if (lemburSyncKeyRef.current !== key) {
+          lemburSyncKeyRef.current = key
+          await refreshLembur({ background: true })
+        }
+      } catch {
+        // Abaikan; dicoba lagi pada tick berikutnya.
+      }
+    }
+    const onFocus = () => {
+      syncOnce().catch(() => {})
+    }
+    window.addEventListener('focus', onFocus)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncOnce().catch(() => {})
+      }
+    }, 30000)
+    return () => {
+      lemburRequestId.current += 1
+      window.removeEventListener('focus', onFocus)
+      clearInterval(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moduleId, authUserId, refreshLembur])
 
   const saveLembur = async (id, draft, options = {}) => {

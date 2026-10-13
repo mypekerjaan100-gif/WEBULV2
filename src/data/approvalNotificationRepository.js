@@ -49,21 +49,42 @@ const APPROVAL_SOURCES = [
         listOvertimeReplacements({ contractId, up3Id, unitId: null, periodMonth: null }),
         listOvertimeWork({ contractId, up3Id, unitId: null, periodMonth: null }),
       ])
-      const activities = new Map()
-      for (const row of [...replacementRows, ...workRows]) {
-        const reviewStatus = row.type === 'WORK' ? row.entryStatus ?? row.status : row.status
-        if (reviewStatus === 'SUBMITTED' && !activities.has(row.id)) activities.set(row.id, row)
+      const items = []
+      for (const row of replacementRows) {
+        if (row.status !== 'SUBMITTED') continue
+        items.push({
+          id: row.entryId ? `${row.id}:${row.entryId}` : row.id,
+          source: 'lembur',
+          entryId: row.entryId ?? null,
+          participantName: row.participant_name ?? row.participantName ?? '',
+          unitId: row.unitId,
+          unitName: unitName(units, row.unitId),
+          title: activityName(row),
+          date: row.date ?? null,
+          periodMonth: row.periodMonth ?? null,
+          sortAt: row.submittedAt ?? row.updatedAt ?? row.date,
+        })
       }
-      return [...activities.values()].map((row) => ({
-        id: row.id,
-        source: 'lembur',
-        unitId: row.unitId,
-        unitName: unitName(units, row.unitId),
-        title: activityName(row),
-        date: row.date ?? null,
-        periodMonth: row.periodMonth ?? null,
-        sortAt: row.submittedAt ?? row.updatedAt ?? row.date,
-      }))
+      // Lembur Pekerjaan: satu notifikasi per peserta agar approval dan
+      // evidence selalu terbuka pada peserta yang tepat.
+      for (const row of workRows) {
+        const reviewStatus = row.entryStatus ?? row.status
+        if (reviewStatus !== 'SUBMITTED') continue
+        const participantName = row.participant_name ?? row.participantName ?? ''
+        items.push({
+          id: row.entryId ? `${row.id}:${row.entryId}` : row.id,
+          source: 'lembur',
+          entryId: row.entryId ?? null,
+          participantName,
+          unitId: row.unitId,
+          unitName: unitName(units, row.unitId),
+          title: participantName ? `${activityName(row)} · ${participantName}` : activityName(row),
+          date: row.date ?? null,
+          periodMonth: row.periodMonth ?? null,
+          sortAt: row.submittedAt ?? row.updatedAt ?? row.date,
+        })
+      }
+      return items
     },
   },
   {

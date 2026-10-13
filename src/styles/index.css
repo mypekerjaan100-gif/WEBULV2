@@ -5452,6 +5452,86 @@ img.sp-pegawai-photo {
   }
 }
 
+/* Evidence per peserta (Lembur Pekerjaan PARTICIPANT_V2) */
+.lembur-participant-evidence-list {
+  display: grid;
+  gap: 12px;
+}
+.lembur-participant-evidence {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--color-surface);
+  display: grid;
+  gap: 10px;
+}
+.lembur-participant-evidence.is-complete {
+  border-color: var(--color-primary);
+}
+.lembur-participant-evidence-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lembur-participant-evidence-heading > strong {
+  flex: 1 1 auto;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+/* Kartu gabungan pegawai + briefing (Lembur Pekerjaan V2) */
+.lembur-member-list {
+  display: grid;
+  gap: 12px;
+}
+.lembur-member-card {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--color-surface);
+  display: grid;
+  gap: 10px;
+}
+.lembur-member-fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(110px, 1fr) minmax(110px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+}
+.lembur-member-briefing {
+  display: grid;
+  gap: 8px;
+  border-top: 1px dashed var(--color-border);
+  padding-top: 10px;
+}
+@media (max-width: 720px) {
+  .lembur-member-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Alasan penolakan pada timeline riwayat */
+.lembur-history-reason {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  font-size: 12px;
+}
+
+/* Evidence bersama (Lembur Pekerjaan V2) */
+.lembur-shared-evidence {
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--color-surface);
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 /* Status/Approval badges in table */
 .sla-pegawai-table .sla-status-badge {
   font-size: 11px;
@@ -7985,6 +8065,14 @@ img.sp-pegawai-photo {
 }
 :root[data-theme='dark'] .mdp-day:hover:not(:disabled) {
   background: var(--surface-hover, var(--color-bg));
+}
+
+:root[data-theme='dark'] .lembur-participant-evidence {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+}
+:root[data-theme='dark'] .lembur-participant-evidence-heading > strong {
+  color: var(--text-primary);
 }
 
 :root[data-theme='dark'] .sla-table thead th,

@@ -14,6 +14,7 @@ export default function EvidenceUploadCard({
   inputDisabled,
   actionDisabled,
   locked,
+  lockedNote,
   isPartialRevision = false,
   revisionParticipantName = '',
   onStage,
@@ -149,7 +150,7 @@ export default function EvidenceUploadCard({
         </ul>
       )}
       {locked && (
-        <p className="lembur-evidence-locked-note">Dikunci karena sebagian peserta sudah disetujui.</p>
+        <p className="lembur-evidence-locked-note">{lockedNote ?? 'Dikunci karena sebagian peserta sudah disetujui.'}</p>
       )}
     </div>
   )

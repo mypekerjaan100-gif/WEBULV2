@@ -184,9 +184,12 @@ function mapWorkRecord(row) {
     updatedAt: row.updated_at,
     rejectionCount: Number(row.entry_rejection_count ?? row.rejection_count ?? 0),
     activityRejectionCount: Number(row.rejection_count ?? 0),
-    revisionDeadlineAt: row.entry_revision_deadline_at ?? row.revision_deadline_at,
+    // Kolom entry selalu ada dari RPC: null eksplisit berarti peserta ini
+    // tidak punya batas revisi (jangan warisi batas batch peserta lain).
+    revisionDeadlineAt: ('entry_revision_deadline_at' in row) ? row.entry_revision_deadline_at : row.revision_deadline_at,
     activityRevisionDeadlineAt: row.revision_deadline_at,
     closureReason: row.closure_reason,
+    evidenceMode: row.evidence_mode ?? 'LEGACY_SHARED',
   }
 }
 
@@ -210,6 +213,7 @@ export async function saveOvertimeWorkDraft({
   workTitle,
   workLocation,
   participants,
+  revisionEntryId,
 }) {
   return rpc('save_overtime_work_draft_l3', {
     p_activity_id: activityId ?? null,
@@ -221,6 +225,7 @@ export async function saveOvertimeWorkDraft({
     p_work_title: workTitle ?? null,
     p_work_location: workLocation ?? null,
     p_participants: participants,
+    p_revision_entry_id: revisionEntryId ?? null,
   })
 }
 
@@ -255,6 +260,34 @@ export async function listOvertimeHistory(activityId) {
 export async function getOvertimeDetail(activityId) {
   return rpc('get_overtime_detail_l5', { p_activity_id: activityId })
 }
+export async function listOvertimeActivityEntries(activityId) {
+  const rows = await rpc('list_overtime_activity_entries', { p_activity_id: activityId })
+  return (rows ?? []).map((row) => ({
+    entryId: row.entry_id,
+    employeeId: row.employee_id,
+    employeeName: row.employee_name,
+    approvalStatus: row.approval_status,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    evidenceMode: row.activity_evidence_mode ?? 'LEGACY_SHARED',
+  }))
+}
+
+export async function getOvertimeSyncVersion({ contractId, up3Id, unitId, periodMonth }) {
+  const rows = await rpc('get_overtime_sync_version', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId ?? null,
+    p_period_month: periodMonth ?? null,
+  })
+  const row = (rows ?? [])[0] ?? {}
+  return {
+    version: row.version ?? null,
+    activityCount: Number(row.activity_count ?? 0),
+    submittedCount: Number(row.submitted_count ?? 0),
+  }
+}
+
 export async function listOvertimeEntryFinancial(activityId) {
   const rows = await rpc('list_overtime_entry_financial_l5', { p_activity_id: activityId })
   return (rows ?? []).map((row) => ({
