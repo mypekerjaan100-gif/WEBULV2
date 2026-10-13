@@ -697,7 +697,7 @@ export default function SLADatabasePegawai({
           contractId: resolvedContractUuid,
           up3Id: resolvedUp3Uuid,
         })
-        setActionMessage(role === 'ulp' ? 'Pengajuan edit dikirim (Pending).' : 'Perubahan pegawai tersimpan ke Supabase.')
+        setActionMessage(role === 'ulp' ? 'Perubahan pegawai berhasil disimpan langsung.' : 'Perubahan pegawai tersimpan ke Supabase.')
       }
       closeDetail()
       await onRefreshEmployees?.()
@@ -1109,8 +1109,8 @@ export default function SLADatabasePegawai({
           </select>
           {role === 'ulp' && (
             <span className="sla-table-hint">
-              Perpindahan Kantor Jaga dalam unit ini akan menjadi pengajuan Pending
-              Approval. Transfer antar-ULP hanya Admin UP3.
+              Perpindahan Kantor Jaga dalam unit ini langsung tersimpan.
+              Transfer antar-ULP hanya Admin UP3.
             </span>
           )}
         </div>
@@ -1561,8 +1561,9 @@ export default function SLADatabasePegawai({
         {contractScope.contractName}. Unit/jabatan di-resolve dari Master
         Organisasi/Master Jabatan via unitId/positionId. Tarif Lembur/Jam
         disimpan sebagai histori. Admin ULP hanya mengelola unit sendiri dan
-        perubahannya menjadi Pending Approval; perpindahan antar-ULP hanya Admin
-        UP3. Tambah/edit/approval kini tersimpan ke Supabase.
+        edit langsung tersimpan tanpa approval; tambah pegawai tetap Pending
+        Approval dan perpindahan antar-ULP hanya Admin UP3. Tambah/edit/approval
+        kini tersimpan ke Supabase.
       </p>
       {actionMessage && <p className="sla-flat-note" style={{ color: 'var(--sla-success, #1a7f37)' }}>{actionMessage}</p>}
       {actionError && <p className="sla-blocked-note">{actionError}</p>}
@@ -1678,8 +1679,9 @@ export default function SLADatabasePegawai({
                 <>
                   {role === 'ulp' && (
                     <span className="sla-export-note">
-                      Perubahan akan dikirim sebagai pengajuan dan menjadi data resmi
-                      setelah disetujui Admin UP3.
+                      {detail.mode === 'add'
+                        ? 'Tambah pegawai akan dikirim sebagai pengajuan dan menjadi data resmi setelah disetujui Admin UP3.'
+                        : 'Edit pegawai unit ini langsung tersimpan tanpa approval.'}
                     </span>
                   )}
                   <button
