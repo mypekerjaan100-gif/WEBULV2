@@ -255,6 +255,10 @@ export default function SLALembur({
   // Model evidence V2: SPK/Proses/Selesai diunggah sekali sebagai evidence
   // bersama; Foto Briefing wajib diunggah per pegawai (scoped).
   const [message, setMessage] = useState(null)
+  // Warning data belum lengkap: { message, target } dengan target = kunci
+  // field pertama yang bermasalah agar dapat ditandai dan difokuskan.
+  const [validationError, setValidationError] = useState(null)
+  const fieldRefs = useRef({})
   const [isSubmitting, setSubmitting] = useState(false)
   const [dirty, setDirty] = useState(true)
   const activeActivityIdRef = useRef(activeActivityId)
@@ -710,10 +714,45 @@ export default function SLALembur({
     return () => { cancelled = true }
   }, [evidence])
 
+  const fieldRef = (key) => (node) => {
+    if (node) fieldRefs.current[key] = node
+    else delete fieldRefs.current[key]
+  }
+  const fieldInvalidClass = (key) => (validationError?.target === key ? ' is-invalid' : '')
+  const dismissFieldError = (...keys) => {
+    if (!keys.length) return
+    setValidationError((current) => (current && keys.includes(current.target) ? null : current))
+  }
+  const failValidation = (result) => {
+    const error = result?.message ? { message: result.message, target: result.target ?? null } : null
+    setValidationError(error)
+    if (!error) return
+    // Arahkan pengguna ke field pertama yang belum lengkap; bila tidak ada
+    // field spesifik, arahkan ke banner warning.
+    requestAnimationFrame(() => {
+      const anchor = (error.target && fieldRefs.current[error.target]) || fieldRefs.current['validation-banner']
+      anchor?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+      if (anchor && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(anchor.tagName ?? '')) {
+        try { anchor.focus({ preventScroll: true }) } catch (focusError) { anchor.focus() }
+      }
+    })
+  }
+
+  const DRAFT_PATCH_ERROR_KEYS = {
+    date: 'date',
+    workTitle: 'workTitle',
+    workLocation: 'workLocation',
+    description: 'description',
+    replacedEmployeeId: 'replacedEmployee',
+    participantEmployeeId: 'participantEmployee',
+    startTime: 'time',
+    endTime: 'time',
+  }
   const updateDraft = (patch) => {
     setDraft(c=>({ ...c, ...patch }))
     setDirty(true)
     setMessage(null)
+    dismissFieldError(...Object.keys(patch ?? {}).map((key) => DRAFT_PATCH_ERROR_KEYS[key]).filter(Boolean))
   }
 
   const releaseStagedFiles = (stagedFiles = files) => {
@@ -734,6 +773,7 @@ export default function SLALembur({
     setEvidenceMode('LEGACY_SHARED')
     setDirty(true)
     setMessage(null)
+    setValidationError(null)
   }
 
   const openNewForm = () => {
@@ -746,6 +786,7 @@ export default function SLALembur({
     releaseStagedFiles()
     setFormOpen(false)
     setFormStep('main')
+    setValidationError(null)
   }
 
   const editDraft = (record) => {
@@ -811,64 +852,79 @@ export default function SLALembur({
     setEvidenceMode(first.evidenceMode ?? 'LEGACY_SHARED')
     setDirty(false)
     setMessage(null)
+    setValidationError(null)
     setFormStep('form')
     setFormOpen(true)
     refreshParticipantEntries(first.id).catch(() => {})
   }
 
+  // Validasi terstruktur: pesan + kunci field pertama yang belum lengkap
+  // agar form dapat menampilkan warning, menandai field, dan fokus ke sana.
+  const invalid = (message, target = null) => ({ message, target })
+  const participantLabel = (participant, index) => {
+    const employeeName = employeeOptions.find((option) => option.id === participant.employeeId)?.name
+    return `Peserta ${index + 1}${employeeName ? ` (${employeeName})` : ''}`
+  }
+
   const validateReplacement = () => {
-    if (!REPLACEMENT_TYPES[draft.lemburType]) return 'Pilih jenis Pengganti Cuti, Sakit, atau Izin.'
-    if (!range || range.durationMinutes <1) return 'Tanggal dan jam lembur tidak valid.'
-    if (!draft.date.startsWith(String(periodMonth).slice(0,7))) return 'Tanggal lembur harus berada dalam periode yang dipilih.'
-    if (!replacedEmployee || !participantEmployee) return 'Pilih kedua pegawai.'
-    if (replacedEmployee.id===participantEmployee.id) return 'Pegawai yang digantikan dan pengganti harus berbeda.'
-    if (replacedEmployee.unitId !== participantEmployee.unitId) return 'Kedua pegawai harus berasal dari ULP yang sama.'
-    if (unitId && replacedEmployee.unitId !== unitId) return 'Pegawai berada di luar ULP akun.'
+    if (!REPLACEMENT_TYPES[draft.lemburType]) return invalid('Pilih jenis Pengganti Cuti, Sakit, atau Izin.')
+    if (!draft.date) return invalid('Tanggal lembur wajib diisi.', 'date')
+    if (!range || range.durationMinutes <1) return invalid('Jam mulai dan jam selesai tidak valid.', 'time')
+    if (!draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
+    if (!replacedEmployee) return invalid('Pilih pegawai yang digantikan.', 'replacedEmployee')
+    if (!participantEmployee) return invalid('Pilih pegawai pengganti.', 'participantEmployee')
+    if (replacedEmployee.id===participantEmployee.id) return invalid('Pegawai yang digantikan dan pengganti harus berbeda.', 'participantEmployee')
+    if (replacedEmployee.unitId !== participantEmployee.unitId) return invalid('Kedua pegawai harus berasal dari ULP yang sama.', 'participantEmployee')
+    if (unitId && replacedEmployee.unitId !== unitId) return invalid('Pegawai berada di luar ULP akun.', 'replacedEmployee')
     return null
   }
 
   const validateWork = () => {
-    if (!workCategory) return 'Pilih kategori pekerjaan.'
-    if (!draft.date) return 'Tanggal wajib diisi.'
-    if (!draft.date.startsWith(String(periodMonth).slice(0,7))) return 'Tanggal lembur harus berada dalam periode yang dipilih.'
-    if (!draft.description || !draft.description.trim()) return 'Keterangan pekerjaan wajib diisi.'
+    if (!workCategory) return invalid('Pilih kategori pekerjaan.')
+    if (!draft.date) return invalid('Tanggal wajib diisi.', 'date')
+    if (!draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
+    if (!draft.description || !draft.description.trim()) return invalid('Keterangan pekerjaan wajib diisi.', 'description')
     if (isMultiWork) {
-      if (!draft.workTitle?.trim()) return 'Uraian pekerjaan wajib diisi.'
-      if (!draft.workLocation?.trim()) return 'Lokasi pekerjaan wajib diisi.'
-      if (!draft.participants?.length) return 'Tambahkan minimal satu pegawai.'
+      if (!draft.workTitle?.trim()) return invalid('Uraian pekerjaan wajib diisi.', 'workTitle')
+      if (!draft.workLocation?.trim()) return invalid('Lokasi pekerjaan wajib diisi.', 'workLocation')
+      if (!draft.participants?.length) return invalid('Tambahkan minimal satu pegawai.', 'participants')
       const seen=new Set()
-      for (const p of draft.participants) {
-        if (!p.employeeId) return 'Pilih pegawai untuk setiap peserta.'
-        if (seen.has(p.employeeId)) return 'Pegawai tidak boleh duplikat dalam satu aktivitas.'
+      for (let index = 0; index < draft.participants.length; index += 1) {
+        const p = draft.participants[index]
+        const label = participantLabel(p, index)
+        const employeeKey = `p-${p.tempId}-employee`
+        const timeKey = `p-${p.tempId}-time`
+        if (!p.employeeId) return invalid(`Pilih pegawai untuk ${label}.`, employeeKey)
+        if (seen.has(p.employeeId)) return invalid(`${label}: pegawai tidak boleh duplikat dalam satu aktivitas.`, employeeKey)
         seen.add(p.employeeId)
         const emp = employeeOptions.find(e=>e.id===p.employeeId)
-        if (!emp) return 'Pegawai peserta tidak ditemukan dalam scope.'
-        if (unitId && emp.unitId !== unitId) return 'Peserta berada di luar ULP akun.'
+        if (!emp) return invalid(`${label} tidak ditemukan dalam scope.`, employeeKey)
+        if (unitId && emp.unitId !== unitId) return invalid(`${label} berada di luar ULP akun.`, employeeKey)
         const r = buildPontianakRange(draft.date, p.startTime, p.endTime)
-        if (!r || r.durationMinutes<1) return 'Jam peserta tidak valid.'
+        if (!r || r.durationMinutes<1) return invalid(`Jam ${label} tidak valid. Periksa jam mulai dan jam selesai.`, timeKey)
       }
       const units = draft.participants.map(p=> employeeOptions.find(e=>e.id===p.employeeId)?.unitId).filter(Boolean)
-      if (new Set(units).size>1) return 'Semua peserta harus dari ULP yang sama.'
-      if (unitId && units[0]!==unitId) return 'Peserta berada di luar ULP akun.'
+      if (new Set(units).size>1) return invalid('Semua peserta harus dari ULP yang sama.', 'participants')
+      if (unitId && units[0]!==unitId) return invalid('Peserta berada di luar ULP akun.', `p-${draft.participants[0].tempId}-employee`)
     } else if (isAdministrasi) {
       const p = draft.participants[0] || { employeeId: draft.participantEmployeeId, startTime: draft.startTime, endTime: draft.endTime }
       const empId = p.employeeId || draft.participantEmployeeId
-      if (!empId) return 'Pilih pegawai lembur.'
+      if (!empId) return invalid('Pilih pegawai lembur.', 'admin-employee')
       const emp = employeeOptions.find(e=>e.id===empId)
-      if (!emp) return 'Pegawai tidak ditemukan.'
-      if (unitId && emp.unitId!==unitId) return 'Pegawai berada di luar ULP akun.'
+      if (!emp) return invalid('Pegawai tidak ditemukan.', 'admin-employee')
+      if (unitId && emp.unitId!==unitId) return invalid('Pegawai berada di luar ULP akun.', 'admin-employee')
       const r = buildPontianakRange(draft.date, p.startTime||draft.startTime, p.endTime||draft.endTime)
-      if (!r || r.durationMinutes<1) return 'Jam lembur tidak valid.'
+      if (!r || r.durationMinutes<1) return invalid('Jam lembur tidak valid. Periksa jam mulai dan jam selesai.', 'admin-time')
     }
     return null
   }
 
   const validateDraft = () => {
-    if (!isRevision && draft.date && !deadlineReady) return deadlineLoadError || 'Deadline pengajuan masih diverifikasi. Coba lagi setelah proses selesai.'
-    if (initialDeadlinePassed) return `Batas pengajuan telah lewat. ${initialDeadlineMessage(draft.date, deadlineInfo)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan H+${deadlineInfo.effectiveSubmissionDays}.`
+    if (!isRevision && draft.date && !deadlineReady) return invalid(deadlineLoadError || 'Deadline pengajuan masih diverifikasi. Coba lagi setelah proses selesai.')
+    if (initialDeadlinePassed) return invalid(`Batas pengajuan telah lewat. ${initialDeadlineMessage(draft.date, deadlineInfo)} Silakan pilih tanggal lembur yang masih berada dalam batas pengajuan H+${deadlineInfo.effectiveSubmissionDays}.`, 'date')
     if (isReplacement) return validateReplacement()
     if (isWork) return validateWork()
-    return 'Pilih jenis lembur.'
+    return invalid('Pilih jenis lembur.')
   }
 
   const persistDraft = async () => {
@@ -1136,7 +1192,8 @@ export default function SLALembur({
 
   const saveDraft = async () => {
     const validation = validateDraft()
-    if (validation) { setMessage(validation); return }
+    if (validation) { failValidation(validation); return }
+    setValidationError(null)
     setSubmitting(true)
     try {
       const activityId = await persistDraft()
@@ -1193,8 +1250,11 @@ export default function SLALembur({
 
   const runSubmitDraft = async () => {
     const validation = validateDraft()
-    if (validation) { setMessage(validation); return false }
-    if (!evidenceComplete) { setMessage('Lengkapi seluruh evidence wajib sebelum mengajukan Lembur.'); return false }
+    if (validation) { failValidation(validation); return false }
+    // Simpan Draft boleh tanpa evidence lengkap; evidence wajib hanya
+    // untuk Ajukan Lembur.
+    if (!evidenceComplete) { failValidation({ message: 'Lengkapi seluruh evidence wajib sebelum mengajukan Lembur.', target: 'evidence' }); return false }
+    setValidationError(null)
     setSubmitting(true)
     setSubmitProcess({ status: 'loading', error: '' })
     try {
@@ -1586,6 +1646,7 @@ export default function SLALembur({
     setFiles({})
     setDirty(true)
     setMessage(null)
+    setValidationError(null)
   }
 
   const chooseMainType = (type) => {
@@ -1602,15 +1663,26 @@ export default function SLALembur({
     setFormStep('form')
   }
 
+  const PARTICIPANT_PATCH_ERROR_SUFFIX = { employeeId: 'employee', startTime: 'time', endTime: 'time' }
   const addParticipant = () => {
     setDraft(c=>({ ...c, participants: [...c.participants, { tempId:`p${Date.now()}`, employeeId:'', startTime:'18:00', endTime:'22:00'}] }))
     setDirty(true)
+    dismissFieldError('participants')
   }
   const updateParticipant = (tempId, patch) => {
     setDraft(c=>({ ...c, participants: c.participants.map(p=> p.tempId===tempId ? { ...p, ...patch } : p)}))
     setDirty(true)
+    const suffixes = Object.keys(patch ?? {}).map((key) => PARTICIPANT_PATCH_ERROR_SUFFIX[key]).filter(Boolean)
+    dismissFieldError(
+      ...suffixes.flatMap((suffix) => [`p-${tempId}-${suffix}`, `admin-${suffix}`]),
+    )
   }
   const removeParticipant = (tempId) => {
+    setValidationError((current) => (
+      current && (current.target === 'participants' || String(current.target ?? '').startsWith(`p-${tempId}-`))
+        ? null
+        : current
+    ))
     setDraft(c=>({ ...c, participants: c.participants.filter(p=>p.tempId!==tempId)}))
     setFiles((current) => {
       const next = { ...current }
@@ -1722,7 +1794,12 @@ export default function SLALembur({
                    {activeActivityId && <Button variant="secondary" size="small" disabled={submitting} onClick={openNewForm}>Draft Baru</Button>}
                    <IconButton label="Tutup" className="lembur-icon-button" onClick={closeForm}><Icon name="close" size={17} /></IconButton>
                  </div>
-              </div>
+               </div>
+              {validationError && (
+                <Alert tone="warning" title="Data Belum Lengkap" className="lembur-validation-alert">
+                  <span ref={fieldRef('validation-banner')}>{validationError.message}</span>
+                </Alert>
+              )}
 
               <fieldset disabled={formReadOnly} className="lembur-form-fieldset">
                 <div className={`lembur-form-workspace ${formLayoutClass}`}>
@@ -1731,9 +1808,9 @@ export default function SLALembur({
                   <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">A</span><div className="lembur-section-heading-text"><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
                    <div className={`lembur-form-grid ${formLayoutClass}`}>
                       <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
-                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" className="sla-context-select" value={draft.date} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
-                      {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input className="sla-context-select" value={draft.workTitle} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input className="sla-context-select" value={draft.workLocation} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
-                       {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea className="sla-context-select" value={draft.description} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
+                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" ref={fieldRef('date')} className={`sla-context-select${fieldInvalidClass('date')}`} value={draft.date} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                      {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input ref={fieldRef('workTitle')} className={`sla-context-select${fieldInvalidClass('workTitle')}`} value={draft.workTitle} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input ref={fieldRef('workLocation')} className={`sla-context-select${fieldInvalidClass('workLocation')}`} value={draft.workLocation} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
+                       {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea ref={fieldRef('description')} className={`sla-context-select${fieldInvalidClass('description')}`} value={draft.description} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
                       {isEvidenceOnlyRevision && <Alert tone="info" className="lembur-deadline-helper">Revisi khusus evidence untuk {activeRevisionParticipantName}. Data pekerjaan dan peserta dikunci agar evidence peserta yang sudah disetujui tidak berubah.</Alert>}
                      {replacementDescription && <div className="lembur-description-preview lembur-grid-full"><span>Keterangan otomatis</span>{replacementDescription}</div>}
                         {draft.date && !isRevision && !deadlineReady && deadlineLoadStatus !== 'error' && (
@@ -1749,16 +1826,16 @@ export default function SLALembur({
                   </div>
                 </section>
 
-                <section className="lembur-form-section">
+                <section className="lembur-form-section" ref={fieldRef('participants')}>
                    <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">B</span><div className="lembur-section-heading-text"><h3>{isMultiWork && isV2Work ? 'Pegawai, Waktu & Foto Briefing' : 'Pegawai & Waktu'}</h3><p>{isMultiWork && isV2Work ? 'Satu kartu per pegawai: data, jam kerja, dan foto briefing' : 'Peserta, jam kerja, dan durasi otomatis'}</p></div></div>
                   {isReplacement && <div className="lembur-time-grid is-replacement">
-                    <label className="sla-context-field"><span className="sla-context-label">Pegawai yang Digantikan *</span><select className="sla-context-select" value={draft.replacedEmployeeId} disabled={employeeLoading} onChange={e=>updateDraft({ replacedEmployeeId:e.target.value, participantEmployeeId:'' })}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
-                    <label className="sla-context-field"><span className="sla-context-label">Pegawai Pengganti *</span><select className="sla-context-select" value={draft.participantEmployeeId} disabled={!replacedEmployee} onChange={e=>updateDraft({ participantEmployeeId:e.target.value })}><option value="">Pilih pegawai pengganti</option>{participantOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
-                    <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={draft.startTime} onChange={e=>updateDraft({ startTime:e.target.value })} /></label>
-                    <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={draft.endTime} onChange={e=>updateDraft({ endTime:e.target.value })} /></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Pegawai yang Digantikan *</span><select ref={fieldRef('replacedEmployee')} className={`sla-context-select${fieldInvalidClass('replacedEmployee')}`} value={draft.replacedEmployeeId} disabled={employeeLoading} onChange={e=>updateDraft({ replacedEmployeeId:e.target.value, participantEmployeeId:'' })}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Pegawai Pengganti *</span><select ref={fieldRef('participantEmployee')} className={`sla-context-select${fieldInvalidClass('participantEmployee')}`} value={draft.participantEmployeeId} disabled={!replacedEmployee} onChange={e=>updateDraft({ participantEmployeeId:e.target.value })}><option value="">Pilih pegawai pengganti</option>{participantOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" ref={fieldRef('time')} className={`sla-context-select${fieldInvalidClass('time')}`} value={draft.startTime} onChange={e=>updateDraft({ startTime:e.target.value })} /></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className={`sla-context-select${fieldInvalidClass('time')}`} value={draft.endTime} onChange={e=>updateDraft({ endTime:e.target.value })} /></label>
                     <div className="lembur-duration-compact"><span>Durasi</span><strong>{range ? formatDurationMinutes(range.durationMinutes) : '–'}</strong>{draft.endTime <= draft.startTime && <small>+1 hari</small>}</div>
                   </div>}
-                  {isAdministrasi && (()=>{ const participant=draft.participants[0]; const participantRange=buildPontianakRange(draft.date, participant?.startTime||draft.startTime, participant?.endTime||draft.endTime); return <div className="lembur-time-grid is-single"><label className="sla-context-field"><span className="sla-context-label">Pegawai Lembur *</span><select className="sla-context-select" value={participant?.employeeId || ''} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat pegawai...':'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label><label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={participant?.startTime||draft.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /></label><label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={participant?.endTime||draft.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /></label><div className="lembur-duration-compact"><span>Durasi</span><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{participant?.endTime<=participant?.startTime&&<small>+1 hari</small>}</div></div>})()}
+                  {isAdministrasi && (()=>{ const participant=draft.participants[0]; const participantRange=buildPontianakRange(draft.date, participant?.startTime||draft.startTime, participant?.endTime||draft.endTime); return <div className="lembur-time-grid is-single"><label className="sla-context-field"><span className="sla-context-label">Pegawai Lembur *</span><select ref={fieldRef('admin-employee')} className={`sla-context-select${fieldInvalidClass('admin-employee')}`} value={participant?.employeeId || ''} disabled={employeeLoading} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat pegawai...':'Pilih pegawai'}</option>{employeeOptions.map(emp=> <option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></label><label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" ref={fieldRef('admin-time')} className={`sla-context-select${fieldInvalidClass('admin-time')}`} value={participant?.startTime||draft.startTime} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /></label><label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className={`sla-context-select${fieldInvalidClass('admin-time')}`} value={participant?.endTime||draft.endTime} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /></label><div className="lembur-duration-compact"><span>Durasi</span><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{participant?.endTime<=participant?.startTime&&<small>+1 hari</small>}</div></div>})()}
                    {isMultiWork && isV2Work ? (
                     <div className="lembur-member-list">
                       <div className="lembur-participants-heading"><strong>Peserta Lembur{isRevision && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''}</strong><Button variant="secondary" size="small" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={addParticipant}>+ Tambah Pegawai</Button></div>
@@ -1782,9 +1859,9 @@ export default function SLALembur({
                         return (
                           <div key={member.tempId} className="lembur-member-card">
                             <div className="lembur-member-fields">
-                              <label className="sla-context-field"><span className="sla-context-label">Pegawai *</span><select className="sla-context-select" value={member.employeeId} disabled={employeeLoading || memberLocked} onChange={e=>updateParticipant(member.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{memberOptions.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
-                              <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={member.startTime} disabled={memberTimeLocked} onChange={e=>updateParticipant(member.tempId,{startTime:e.target.value})} /></label>
-                              <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={member.endTime} disabled={memberTimeLocked} onChange={e=>updateParticipant(member.tempId,{endTime:e.target.value})} /></label>
+                              <label className="sla-context-field"><span className="sla-context-label">Pegawai *</span><select ref={fieldRef(`p-${member.tempId}-employee`)} className={`sla-context-select${fieldInvalidClass(`p-${member.tempId}-employee`)}`} value={member.employeeId} disabled={employeeLoading || memberLocked} onChange={e=>updateParticipant(member.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>{memberOptions.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+                              <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" ref={fieldRef(`p-${member.tempId}-time`)} className={`sla-context-select${fieldInvalidClass(`p-${member.tempId}-time`)}`} value={member.startTime} disabled={memberTimeLocked} onChange={e=>updateParticipant(member.tempId,{startTime:e.target.value})} /></label>
+                              <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className={`sla-context-select${fieldInvalidClass(`p-${member.tempId}-time`)}`} value={member.endTime} disabled={memberTimeLocked} onChange={e=>updateParticipant(member.tempId,{endTime:e.target.value})} /></label>
                               <div className="lembur-duration-compact"><span>Durasi</span><strong>{memberRange ? formatDurationMinutes(memberRange.durationMinutes) : '–'}</strong>{member.endTime <= member.startTime && <small>+1 hari</small>}</div>
                               {draft.participants.length > 1 ? <IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={()=>removeParticipant(member.tempId)}><Icon name="close" size={15} /></IconButton> : <span />}
                             </div>
@@ -1820,11 +1897,11 @@ export default function SLALembur({
                         )
                       })}
                     </div>
-                   ) : isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur{isEvidenceOnlyRevision && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''}</strong><Button variant="secondary" size="small" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={addParticipant}>+ Tambah Pegawai</Button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select className="sla-context-select" value={participant.employeeId} disabled={employeeLoading || isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" className="sla-context-select" value={participant.startTime} disabled={isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className="sla-context-select" value={participant.endTime} disabled={isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={()=>removeParticipant(participant.tempId)}><Icon name="close" size={15} /></IconButton>:<span />}</div>})}</div>}
+                   ) : isMultiWork && <div className="lembur-participants"><div className="lembur-participants-heading"><strong>Peserta Lembur{isEvidenceOnlyRevision && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''}</strong><Button variant="secondary" size="small" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={addParticipant}>+ Tambah Pegawai</Button></div><div className="lembur-participant-labels"><span>Pegawai</span><span>Jam Mulai</span><span>Jam Selesai</span><span>Durasi</span><span></span></div>{draft.participants.map((participant)=>{ const participantRange=buildPontianakRange(draft.date,participant.startTime,participant.endTime); const otherIds=draft.participants.filter(item=>item.tempId!==participant.tempId).map(item=>item.employeeId); const options=employeeOptions.filter(employee=>!otherIds.includes(employee.id)); return <div key={participant.tempId} className="lembur-participant-row"><select ref={fieldRef(`p-${participant.tempId}-employee`)} className={`sla-context-select${fieldInvalidClass(`p-${participant.tempId}-employee`)}`} value={participant.employeeId} disabled={employeeLoading || isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{employeeId:e.target.value})}><option value="">{employeeLoading?'Memuat...':'Pilih pegawai'}</option>{options.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><input type="time" ref={fieldRef(`p-${participant.tempId}-time`)} className={`sla-context-select${fieldInvalidClass(`p-${participant.tempId}-time`)}`} value={participant.startTime} disabled={isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{startTime:e.target.value})} /><input type="time" className={`sla-context-select${fieldInvalidClass(`p-${participant.tempId}-time`)}`} value={participant.endTime} disabled={isEvidenceOnlyRevision || isParticipantLocked(participant.tempId)} onChange={e=>updateParticipant(participant.tempId,{endTime:e.target.value})} /><strong>{participantRange?formatDurationMinutes(participantRange.durationMinutes):'–'}</strong>{draft.participants.length>1?<IconButton label="Hapus peserta" className="lembur-row-remove" disabled={isEvidenceOnlyRevision || (isRevision && isV2Work)} onClick={()=>removeParticipant(participant.tempId)}><Icon name="close" size={15} /></IconButton>:<span />}</div>})}</div>}
                 </section>
 
                 </div>
-                 <section className="lembur-form-section lembur-evidence-section">
+                 <section className="lembur-form-section lembur-evidence-section" ref={fieldRef('evidence')}>
                     <div className="lembur-section-heading lembur-evidence-heading"><span className="lembur-step-badge" aria-hidden="true">C</span><div className="lembur-section-heading-text"><h3>{isV2Work ? 'Evidence Bersama' : 'Evidence'}</h3><p>Foto JPG, PNG, atau WebP · dikompres otomatis maks. 1 MB{isV2Work ? ' · SPK, proses & selesai diunggah sekali untuk semua pegawai; foto briefing ada di kartu tiap pegawai' : ''}{(isPartialApprovalRevision || isEntryRevision) && activeRevisionParticipantName ? ` · revisi ${activeRevisionParticipantName}` : ''} · simpan lewat Simpan Draft atau Ajukan Lembur.</p></div><span className={`lembur-evidence-progress${evidenceComplete ? ' is-complete' : ''}`}>{isV2Work ? `${v2CompleteCount}/${v2Participants.length} peserta lengkap` : `${evidenceDoneCount}/${evidenceRequirements.length} lengkap`}</span></div>
                     {isPartialApprovalRevision && <p className="lembur-evidence-locked-note">Revisi evidence khusus {activeRevisionParticipantName}. Evidence awal milik peserta yang sudah disetujui tidak berubah dan tidak dapat dihapus.</p>}
                     {!isPartialApprovalRevision && activeHasApproved && <p className="lembur-evidence-locked-note">Evidence dikunci karena sebagian peserta sudah disetujui.</p>}

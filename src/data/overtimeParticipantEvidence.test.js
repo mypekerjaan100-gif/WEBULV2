@@ -97,6 +97,12 @@ const entryDeleteMigrationUrl = new URL(
 const entryDeleteSql = readFileSync(fileURLToPath(entryDeleteMigrationUrl), 'utf8')
 assert(entryDeleteSql.includes('soft_delete_overtime_entry_l5'), 'RPC hapus peserta hilang')
 assert(entryDeleteSql.includes('Hanya peserta yang belum disetujui'), 'Proteksi hapus target approved hilang')
+assert(component.includes('Data Belum Lengkap'), 'Judul warning data belum lengkap hilang')
+assert(component.includes('is-invalid'), 'Penanda field belum lengkap hilang')
+assert(component.includes('validation-banner'), 'Anchor banner warning hilang')
+assert(component.includes('failValidation'), 'Alur warning validasi hilang')
+assert(component.includes('Lokasi pekerjaan wajib diisi.'), 'Pesan lokasi wajib hilang')
+assert(component.includes('Lengkapi seluruh evidence wajib sebelum mengajukan Lembur.'), 'Batas evidence saat ajukan hilang')
 
 const historyMigrationUrl = new URL(
   '../../supabase/migrations/20261014190000_overtime_history_revision_saved.sql',
