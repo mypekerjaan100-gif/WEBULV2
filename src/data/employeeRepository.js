@@ -200,6 +200,7 @@ export async function fetchEmployeesFromSupabase({
       mapped.bank = ''
       mapped.accountNumber = ''
     }
+    mapped._financialsLoaded = hasSensitiveRead && sensitive !== undefined
 
     return mapped
   })

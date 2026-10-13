@@ -152,6 +152,13 @@ export default function SLADatabasePegawai({
   const [importResult, setImportResult] = useState(null)
   const [photoByEmployee, setPhotoByEmployee] = useState({})
   const [photoUrls, setPhotoUrls] = useState({})
+  // Signed URL kedaluwarsa 300 detik; refresh berkala agar foto tidak hilang
+  // di halaman idle setelah approval/foto baru muncul.
+  const [photoUrlToken, setPhotoUrlToken] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setPhotoUrlToken((t) => t + 1), 240000)
+    return () => clearInterval(timer)
+  }, [])
   const [photoStaged, setPhotoStaged] = useState(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState('')
@@ -208,10 +215,15 @@ export default function SLADatabasePegawai({
     }
     import('../../data/employeePhotoRepository.js')
       .then(({ createEmployeePhotoSignedUrls }) => createEmployeePhotoSignedUrls(unique))
-      .then((urls) => { if (!cancelled) setPhotoUrls(urls) })
-      .catch(() => { if (!cancelled) setPhotoUrls({}) })
+      .then((urls) => {
+        if (cancelled) return
+        // Pertahankan URL lama bila refresh gagal sebagian agar foto tidak kedip hilang.
+        setPhotoUrls((prev) => ({ ...prev, ...urls }))
+      })
+      .catch(() => {})
     return () => { cancelled = true }
-  }, [photoByEmployee, changeRequests])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoByEmployee, changeRequests, photoUrlToken])
 
   useEffect(() => () => {
     if (photoObjectUrlRef.current) URL.revokeObjectURL(photoObjectUrlRef.current)
@@ -303,13 +315,15 @@ export default function SLADatabasePegawai({
     )
     .sort((a, b) => (a.label < b.label ? -1 : 1))
 
+  // req.contractId adalah UUID Supabase; bandingkan dengan resolvedContractUuid
+  // (contractScope.contractId adalah kode lokal sehingga filter Pending selalu gagal).
   const pendingByEmployee = {}
   changeRequests.forEach((req) => {
     if (
       req.type === 'edit' &&
       req.status === 'Pending' &&
       req.employeeId &&
-      req.contractId === contractScope.contractId &&
+      req.contractId === resolvedContractUuid &&
       req.up3Id === resolvedUp3Uuid
     ) {
       ;(pendingByEmployee[req.employeeId] ??= []).push(req)
@@ -319,7 +333,7 @@ export default function SLADatabasePegawai({
     (req) =>
       req.type === 'add' &&
       req.status === 'Pending' &&
-      req.contractId === contractScope.contractId &&
+      req.contractId === resolvedContractUuid &&
       req.up3Id === resolvedUp3Uuid,
   )
 
@@ -544,6 +558,9 @@ export default function SLADatabasePegawai({
     }
     if (detail?.mode === 'edit' && !photoStaged && !form.photoAssetId && !form.hasExistingPhoto) {
       return 'Foto pegawai wajib diunggah karena pegawai ini belum memiliki foto.'
+    }
+    if (detail?.mode === 'edit' && detail.row.employee?._financialsLoaded === false) {
+      return 'Data bank/rekening/tarif belum termuat. Muat ulang halaman sebelum menyimpan agar data valid tidak terhapus.'
     }
     return null
   }
@@ -850,8 +867,33 @@ export default function SLADatabasePegawai({
         : retirementEffectiveDateFor(data.birthDate, policyAge)
       const viewPhoto = data.id ? activePhotoOf(data.id) : null
       const viewPhotoUrl = viewPhoto ? photoUrls[viewPhoto.id] : null
+      const viewPending = data.id ? (pendingByEmployee[data.id] ?? []) : []
+      const latestPending = viewPending[viewPending.length - 1] ?? null
+      const pendingPhotoId = latestPending?.rawProposed?.photo_asset_id
+        ?? latestPending?.proposed?.photoAssetId ?? ''
+      const pendingPhotoUrl = pendingPhotoId ? photoUrls[pendingPhotoId] : null
+      const pendingBirth = latestPending?.proposed?.birthDate ?? ''
       return (
         <div className="sla-detail-fields">
+          {latestPending && (
+            <div className="sla-context-field sp-pegawai-photo-field">
+              <span className="sla-status-badge sla-status-draft">Menunggu Approval</span>
+              <span className="sla-table-hint">
+                Ada {viewPending.length} pengajuan perubahan menunggu persetujuan Admin UP3. Lihat tab Approval untuk foto dan data usulan.
+                {pendingBirth && pendingBirth !== data.birthDate ? ` Tgl lahir usulan: ${pendingBirth}.` : ''}
+              </span>
+              {pendingPhotoId && (
+                <div className="sp-pegawai-photo-actions">
+                  <span className="sla-context-label">Foto usulan</span>
+                  {pendingPhotoUrl ? (
+                    <img src={pendingPhotoUrl} alt="Foto usulan pegawai" className="sp-pegawai-photo sp-pegawai-photo-thumb" />
+                  ) : (
+                    <span className="sp-pegawai-photo sp-pegawai-photo-thumb sp-pegawai-photo-placeholder">?</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="sla-context-field sp-pegawai-photo-field">
             <span className="sla-context-label">Foto Pegawai</span>
             {viewPhoto && viewPhotoUrl ? (

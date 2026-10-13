@@ -217,7 +217,6 @@ export default function SLAPelayananTeknikPage({
   const canViewReadOnlyMasterLocations = isAdminUlp
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
-  const canReadEmployeeFinancials = isSuperAdmin || canManageUp3Operations
   const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
 
   useEffect(() => {
@@ -253,9 +252,12 @@ export default function SLAPelayananTeknikPage({
     if (!authUserId) return
     let cancelled = false
     Promise.all([
+      // Semua role memuat bank/rekening/tarif; server (RLS + employee_sensitive_fields)
+      // membatasi ke pegawai yang boleh dibaca role tersebut. Tanpa ini, form ULP
+      // akan mengirim snapshot kosong dan approval menghapus data finansial valid.
       fetchEmployeesFromSupabase({
-        hasSensitiveRead: canReadEmployeeFinancials,
-        includeHourlyRates: canReadEmployeeFinancials,
+        hasSensitiveRead: true,
+        includeHourlyRates: true,
       }),
       fetchPositionsFromSupabase(),
     ])
@@ -292,7 +294,7 @@ export default function SLAPelayananTeknikPage({
         }
       })
     return () => { cancelled = true }
-  }, [authUserId, employeeReloadToken, canReadEmployeeFinancials])
+  }, [authUserId, employeeReloadToken])
 
   useEffect(() => {
     if (!authUserId) return
@@ -369,6 +371,26 @@ export default function SLAPelayananTeknikPage({
     setEmployeeReloadToken((t) => t + 1)
     await refreshEmployeeChangeRequests()
   }, [refreshEmployeeChangeRequests])
+
+  // Sinkron lintas sesi/role: approval oleh Admin UP3 di sesi lain harus
+  // terlihat di sesi ULP tanpa reload manual. Refresh ringan tiap 45 detik
+  // dan setiap jendela kembali aktif.
+  useEffect(() => {
+    if (!authUserId) return undefined
+    const onFocus = () => {
+      refreshEmployees().catch(() => {})
+    }
+    window.addEventListener('focus', onFocus)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshEmployees().catch(() => {})
+      }
+    }, 45000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      clearInterval(timer)
+    }
+  }, [authUserId, refreshEmployees])
   const [pensionPolicies, setPensionPolicies] = useState(() =>
     initialPensionPoliciesForUp3(slaContractScope.contractId, up3Id),
   )
