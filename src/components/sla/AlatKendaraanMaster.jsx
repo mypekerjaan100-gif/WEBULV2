@@ -677,8 +677,8 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
         <h2 className="sla-settings-title">Master Data Alat & Kendaraan</h2>
       </div>
       <p className="sla-flat-note">
-        Katalog dan template kebutuhan peralatan kendaraan operasional UP3 Singkawang
-        (Sei Duri, Bengkayang, Pemangkat, Sambas, Sekura, Singkawang Kota).
+        Katalog dan template kebutuhan peralatan kendaraan operasional
+        untuk scope organisasi yang dipilih.
         {!canManage && ' Akun ini hanya dapat melihat (read-only).'}
       </p>
       {loading ? (
