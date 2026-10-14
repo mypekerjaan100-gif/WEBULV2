@@ -26,6 +26,7 @@ import SLAExportPreview from '../../components/sla/SLAExportPreview.jsx'
 import SLAMasterOrganisasi from '../../components/sla/SLAMasterOrganisasi.jsx'
 import SLAMasterLokasi from '../../components/sla/SLAMasterLokasi.jsx'
 import SLAMasterJabatan from '../../components/sla/SLAMasterJabatan.jsx'
+import AlatKendaraanMaster from '../../components/sla/AlatKendaraanMaster.jsx'
 import SLADatabasePegawai from '../../components/sla/SLADatabasePegawai.jsx'
 import SLAMasterPenandatangan from '../../components/sla/SLAMasterPenandatangan.jsx'
 import SLAPengaturanSLA from '../../components/sla/SLAPengaturanSLA.jsx'
@@ -1363,6 +1364,12 @@ export default function SLAPelayananTeknikPage({
             canCorrectApprovedWork={isSuperAdmin || isAdminUp3}
           />
         )
+      ) : moduleId === 'alat-kendaraan' ? (
+        <AlatKendaraanMaster
+          contractUuid={orgMap?.contractUuid ?? null}
+          up3Uuid={orgMap?.up3Uuid ?? null}
+          canManage={isSuperAdmin || isAdminUp3}
+        />
       ) : (
         <section className="placeholder">
           <h2 className="placeholder-title">{activeModule.name}</h2>
