@@ -905,7 +905,9 @@ export default function SLALembur({
   const validateWork = () => {
     if (!workCategory) return invalid('Pilih kategori pekerjaan.')
     if (!draft.date) return invalid('Tanggal wajib diisi.', 'date')
-    if (!draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
+    // Revisi satu peserta boleh memindahkan tanggal batch (lintas periode);
+    // server memvalidasi deadline, eligibility, dan tarif tanggal baru.
+    if (!isEntryRevision && !draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
     if (!draft.description || !draft.description.trim()) return invalid('Keterangan pekerjaan wajib diisi.', 'description')
     if (isMultiWork) {
       if (!draft.workTitle?.trim()) return invalid('Uraian pekerjaan wajib diisi.', 'workTitle')
@@ -1014,6 +1016,48 @@ export default function SLALembur({
       }
     }
     return result.activityId
+  }
+
+  // Jalur revisi satu peserta: hanya jam target dari form; tanggal baru
+  // berlaku untuk seluruh batch; jam peserta lain diturunkan server dari
+  // data tersimpan sehingga tidak ikut berubah.
+  const persistRevision = async () => {
+    const revisionId = activeRevisionEntryIdRef.current ?? activeRevisionEntryId
+    if (!activeActivityId || !revisionId) throw new Error('Peserta revisi tidak ditemukan.')
+    const revisionRecord = activeRecords.find((record) => record.entryId === revisionId) ?? activeRecord
+    const revisionEmployee = participantEntries.find((item) => item.entryId === revisionId)?.employeeId
+      ?? revisionRecord?.participantEmployeeId ?? null
+    const targetPart = (draft.participants ?? []).find((item) => item.employeeId && item.employeeId === revisionEmployee)
+      ?? draft.participants[0]
+    if (!targetPart) throw new Error('Peserta revisi tidak ditemukan.')
+    const targetRange = buildPontianakRange(draft.date, targetPart.startTime, targetPart.endTime)
+    if (!targetRange || targetRange.durationMinutes < 1) throw new Error('Jam peserta revisi tidak valid.')
+    const originalDate = activeRecords[0]?.date ?? draft.date
+    if (draft.date !== originalDate) {
+      const others = activeRecords
+        .filter((record) => record.entryId !== revisionId)
+        .map((record) => record.participantName)
+        .filter(Boolean)
+      const confirmed = window.confirm(
+        `Tanggal ${revisionRecord?.participantName ?? 'peserta revisi'}${others.length ? ` dan ${others.length} peserta lain (${others.join(', ')})` : ''} akan berubah dari ${originalDate} menjadi ${draft.date}. Jam dan evidence peserta lain tetap. Lanjutkan?`,
+      )
+      if (!confirmed) return null
+    }
+    const { saveOvertimeWorkRevision } = await import('../../data/overtimeReplacementRepository.js')
+    const activityId = await saveOvertimeWorkRevision({
+      activityId: activeActivityId,
+      revisionEntryId: revisionId,
+      overtimeDate: draft.date,
+      startedAt: targetRange.startedAt,
+      endedAt: targetRange.endedAt,
+      expectedUpdatedAt: revisionRecord?.updatedAt ?? activeRecord?.updatedAt ?? null,
+    })
+    if (!activityId) throw new Error('Revisi gagal disimpan.')
+    setActiveActivityId(activityId)
+    activeActivityIdRef.current = activityId
+    // ID entry permanen pada jalur ini; cukup segarkan tanpa remap.
+    await refreshParticipantEntries(activityId)
+    return activityId
   }
 
   const stageEvidence = async (requirement, fileOrFiles, participantKey = null) => {
@@ -1219,6 +1263,21 @@ export default function SLALembur({
     setValidationError(null)
     setSubmitting(true)
     try {
+      if (isEntryRevision) {
+        const activityId = await persistRevision()
+        if (!activityId) return
+        try {
+          await uploadStagedEvidence(activityId)
+        } catch (uploadError) {
+          setDirty(false)
+          await onRefresh?.().catch(() => {})
+          throw new Error(`Revisi tanggal/jam tersimpan, tetapi evidence gagal disimpan: ${uploadError?.message || 'coba unggah lagi.'} Jangan ajukan ulang sebelum evidence lengkap.`)
+        }
+        setDirty(false)
+        setMessage('Revisi tersimpan — Data tersinkron.')
+        await onRefresh?.()
+        return
+      }
       const activityId = await persistDraft()
       await uploadStagedEvidence(activityId)
       setDirty(false)
@@ -1283,7 +1342,12 @@ export default function SLALembur({
     try {
       const resubmitting = isRevision
       let activityId = activeActivityId
-      if (!activityId || dirty) activityId = await persistDraft()
+      if (isEntryRevision && (!activityId || dirty)) {
+        activityId = await persistRevision()
+        if (!activityId) { setSubmitProcess(null); return false }
+      } else if (!activityId || dirty) {
+        activityId = await persistDraft()
+      }
       await uploadStagedEvidence(activityId)
       // Resolve ulang target revisi setelah simpan: legacy membuat ulang
       // entry (ID baru) dan persistDraft memetakan ulang targetnya.
@@ -1975,7 +2039,8 @@ export default function SLALembur({
                   <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">A</span><div className="lembur-section-heading-text"><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
                    <div className={`lembur-form-grid ${formLayoutClass}`}>
                       <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
-                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" ref={fieldRef('date')} className={`sla-context-select${fieldInvalidClass('date')}`} value={draft.date} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur{isEntryRevision ? ' Batch' : ''} *</span><input type="date" ref={fieldRef('date')} className={`sla-context-select${fieldInvalidClass('date')}`} value={draft.date} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                      {isEntryRevision && !isEvidenceOnlyRevision && <p className="sla-table-hint">Perubahan tanggal berlaku untuk seluruh peserta batch. Jam dan evidence peserta lain tetap.</p>}
                       {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input ref={fieldRef('workTitle')} className={`sla-context-select${fieldInvalidClass('workTitle')}`} value={draft.workTitle} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input ref={fieldRef('workLocation')} className={`sla-context-select${fieldInvalidClass('workLocation')}`} value={draft.workLocation} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
                        {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea ref={fieldRef('description')} className={`sla-context-select${fieldInvalidClass('description')}`} value={draft.description} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
                       {isEvidenceOnlyRevision && <Alert tone="info" className="lembur-deadline-helper">Revisi khusus evidence untuk {activeRevisionParticipantName}. Data pekerjaan dan peserta dikunci agar evidence peserta yang sudah disetujui tidak berubah.</Alert>}

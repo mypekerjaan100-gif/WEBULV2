@@ -232,6 +232,16 @@ export async function saveOvertimeWorkDraft({
 export async function submitOvertimeWork(activityId) {
   return rpc('submit_overtime_work_l3', { p_activity_id: activityId })
 }
+export async function saveOvertimeWorkRevision({ activityId, revisionEntryId, overtimeDate, startedAt, endedAt, expectedUpdatedAt }) {
+  return rpc('save_overtime_work_revision_l3', {
+    p_activity_id: activityId ?? null,
+    p_revision_entry_id: revisionEntryId ?? null,
+    p_overtime_date: overtimeDate,
+    p_started_at: startedAt,
+    p_ended_at: endedAt,
+    p_expected_updated_at: expectedUpdatedAt ?? null,
+  })
+}
 
 export async function approveOvertime(activityId) {
   return rpc('approve_overtime_l5', { p_activity_id: activityId })
