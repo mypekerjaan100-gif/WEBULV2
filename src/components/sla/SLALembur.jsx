@@ -171,6 +171,8 @@ function historyEventText(h) {
         return { title: 'Revisi Disimpan', desc: 'Perubahan disimpan, belum diajukan ulang.' }
       }
       return { title: 'Diajukan Ulang', desc: 'Dikirim untuk persetujuan.' }
+    case 'DATE_CORRECTED':
+      return { title: 'Tanggal Batch Dikoreksi', desc: null }
     case 'REVISION_SAVED':
       return { title: 'Revisi Disimpan', desc: 'Perubahan disimpan, belum diajukan ulang.' }
     case 'CORRECTED':
@@ -322,6 +324,12 @@ export default function SLALembur({
   const [correctReason, setCorrectReason] = useState('')
   const [correctError, setCorrectError] = useState('')
   const [correctBusy, setCorrectBusy] = useState(false)
+  // Koreksi tanggal batch draft/revisi (seluruh peserta pindah bersama).
+  const [batchDateTarget, setBatchDateTarget] = useState(null)
+  const [batchDateValue, setBatchDateValue] = useState('')
+  const [batchDateReason, setBatchDateReason] = useState('')
+  const [batchDateError, setBatchDateError] = useState('')
+  const [batchDateBusy, setBatchDateBusy] = useState(false)
   const [toast, setToast] = useState('')
   const [submitProcess, setSubmitProcess] = useState(null)
   const [approvalBusy, setApprovalBusy] = useState(false)
@@ -744,7 +752,9 @@ export default function SLALembur({
   const fieldInvalidClass = (key) => (validationError?.target === key ? ' is-invalid' : '')
   const dismissFieldError = (...keys) => {
     if (!keys.length) return
-    setValidationError((current) => (current && keys.includes(current.target) ? null : current))
+    // Banner kegagalan simpan (target null) ikut hilang saat pengguna
+    // mengubah form; banner field spesifik hilang saat fieldnya diperbaiki.
+    setValidationError((current) => (current && (current.target == null || keys.includes(current.target)) ? null : current))
   }
   const failValidation = (result) => {
     const error = result?.message ? { message: result.message, target: result.target ?? null } : null
@@ -906,6 +916,11 @@ export default function SLALembur({
     if (!workCategory) return invalid('Pilih kategori pekerjaan.')
     if (!draft.date) return invalid('Tanggal wajib diisi.', 'date')
     if (!draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
+    // Tanggal milik batch: revisi satu peserta tidak boleh memindahkannya
+    // (server menolak; gunakan Koreksi Tanggal Batch).
+    if (isEntryRevision && activeRecords.length && draft.date !== activeRecords[0].date) {
+      return invalid('Tanggal batch dikunci selama revisi peserta. Simpan revisi jam/evidence saja, atau gunakan Koreksi Tanggal Batch.', 'date')
+    }
     if (!draft.description || !draft.description.trim()) return invalid('Keterangan pekerjaan wajib diisi.', 'description')
     if (isMultiWork) {
       if (!draft.workTitle?.trim()) return invalid('Uraian pekerjaan wajib diisi.', 'workTitle')
@@ -1226,7 +1241,7 @@ export default function SLALembur({
       if(onRefresh) await onRefresh()
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
-      setMessage(friendlySaveError(error?.message, 'Draft atau evidence gagal disimpan.'))
+      failValidation({ message: friendlySaveError(error?.message, 'Draft atau evidence gagal disimpan.'), target: null })
     } finally { setSubmitting(false) }
   }
 
@@ -1309,7 +1324,7 @@ export default function SLALembur({
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
       const errorMessage = friendlySaveError(error?.message, 'Draft, evidence, atau pengajuan Lembur gagal disimpan.')
-      setMessage(errorMessage)
+      failValidation({ message: errorMessage, target: null })
       setSubmitProcess({ status: 'error', error: errorMessage })
       return false
     } finally { setSubmitting(false) }
@@ -1586,6 +1601,63 @@ export default function SLALembur({
       setCorrectError(error?.message || 'Koreksi gagal disimpan.')
     } finally {
       setCorrectBusy(false)
+    }
+  }
+
+  // Koreksi tanggal batch: WORK + draft/revisi + seluruh peserta masih
+  // DRAFT/CORRECTION_REQUIRED (tanpa APPROVED/SUBMITTED). Server menolak
+  // sisanya dengan penjelasan.
+  const canCorrectBatchDate = (record) => {
+    if (!record || record.type !== 'WORK' || (!isSuperAdmin && !canMutate)) return false
+    const rows = correctActivityRows(record.id)
+    if (!rows.length) return false
+    return rows.every((row) => ['DRAFT', 'CORRECTION_REQUIRED'].includes(recordReviewStatus(row)))
+  }
+
+  const openBatchDateCorrection = (record) => {
+    if (!canCorrectBatchDate(record)) return
+    setBatchDateTarget(record)
+    setBatchDateValue(record.date)
+    setBatchDateReason('')
+    setBatchDateError('')
+  }
+
+  const closeBatchDateCorrection = () => {
+    if (batchDateBusy) return
+    setBatchDateTarget(null)
+    setBatchDateValue('')
+    setBatchDateReason('')
+    setBatchDateError('')
+  }
+
+  const handleBatchDateCorrection = async () => {
+    if (!batchDateTarget || batchDateBusy) return
+    const reason = batchDateReason.trim()
+    if (!batchDateValue) { setBatchDateError('Tanggal lembur wajib diisi.'); return }
+    if (!reason) { setBatchDateError('Alasan koreksi wajib diisi.'); return }
+    setBatchDateBusy(true)
+    setBatchDateError('')
+    try {
+      const { correctWorkBatchDate } = await import('../../data/overtimeReplacementRepository.js')
+      await correctWorkBatchDate({
+        activityId: batchDateTarget.id,
+        overtimeDate: batchDateValue,
+        reason,
+        expectedUpdatedAt: batchDateTarget.updatedAt,
+      })
+      const movedPeriod = batchDateValue.slice(0, 7) !== String(batchDateTarget.date ?? '').slice(0, 7)
+      const count = correctActivityRows(batchDateTarget.id).length
+      setBatchDateTarget(null)
+      setBatchDateValue('')
+      setBatchDateReason('')
+      setToast(movedPeriod
+        ? `Tanggal ${count} peserta dipindahkan. Data tampil pada periode baru.`
+        : `Tanggal ${count} peserta dipindahkan ke ${batchDateValue}.`)
+      await onRefresh?.()
+    } catch (error) {
+      setBatchDateError(error?.message || 'Koreksi tanggal gagal disimpan.')
+    } finally {
+      setBatchDateBusy(false)
     }
   }
 
@@ -1975,7 +2047,8 @@ export default function SLALembur({
                   <div className="lembur-section-heading"><span className="lembur-step-badge" aria-hidden="true">A</span><div className="lembur-section-heading-text"><h3>Informasi Lembur</h3><p>Jenis, tanggal, dan keterangan pengajuan</p></div></div>
                    <div className={`lembur-form-grid ${formLayoutClass}`}>
                       <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
-                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" ref={fieldRef('date')} className={`sla-context-select${fieldInvalidClass('date')}`} value={draft.date} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                      <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur *</span><input type="date" ref={fieldRef('date')} className={`sla-context-select${fieldInvalidClass('date')}`} value={draft.date} disabled={isEvidenceOnlyRevision || isEntryRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                      {isEntryRevision && !isEvidenceOnlyRevision && <p className="sla-table-hint">Tanggal batch dikunci selama revisi peserta. Ubah jam/evidence {activeRevisionParticipantName || ''} saja, atau gunakan Koreksi Tanggal Batch untuk memindahkan tanggal seluruh peserta.</p>}
                       {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input ref={fieldRef('workTitle')} className={`sla-context-select${fieldInvalidClass('workTitle')}`} value={draft.workTitle} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input ref={fieldRef('workLocation')} className={`sla-context-select${fieldInvalidClass('workLocation')}`} value={draft.workLocation} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
                        {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea ref={fieldRef('description')} className={`sla-context-select${fieldInvalidClass('description')}`} value={draft.description} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
                       {isEvidenceOnlyRevision && <Alert tone="info" className="lembur-deadline-helper">Revisi khusus evidence untuk {activeRevisionParticipantName}. Data pekerjaan dan peserta dikunci agar evidence peserta yang sudah disetujui tidak berubah.</Alert>}
@@ -2300,6 +2373,7 @@ export default function SLALembur({
                         <div className="lembur-table-actions">
                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>{recordReviewStatus(record) === 'CORRECTION_REQUIRED' ? 'Revisi Pengajuan' : 'Lanjutkan Draft'}</Button>}
                            {canCorrectRecord(record) && paginated.findIndex((row) => row.id === record.id) === recordIndex && <Button variant="secondary" size="small" onClick={()=>openCorrection(record)}>Koreksi</Button>}
+                           {canCorrectBatchDate(record) && paginated.findIndex((row) => row.id === record.id) === recordIndex && <Button variant="secondary" size="small" onClick={()=>openBatchDateCorrection(record)}>Koreksi Tanggal</Button>}
                            <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
                             {canDeleteRecord(record) && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus Peserta</Button>}
                         </div>
@@ -2348,6 +2422,33 @@ export default function SLALembur({
                 <label className="sla-context-field"><span className="sla-context-label">Alasan Koreksi *</span><textarea className="sla-context-select" rows={3} value={correctReason} disabled={correctBusy} onChange={event=>{setCorrectReason(event.target.value);setCorrectError('')}} placeholder="Jelaskan alasan koreksi tanggal/jam" /></label>
                 {correctError && <Alert tone="danger">{correctError}</Alert>}
                 <div className="lembur-delete-actions"><Button variant="ghost" disabled={correctBusy} onClick={closeCorrection}>Batal</Button><Button variant="primary" disabled={correctBusy||!correctReason.trim()} onClick={handleCorrection}>{correctBusy?'Menyimpan...':'Simpan Koreksi'}</Button></div>
+              </div>
+            </div>
+          )}
+          {(isSuperAdmin || canMutate) && batchDateTarget && (
+            <div className="rekap-detail-overlay" onClick={closeBatchDateCorrection}>
+              <div className="rekap-detail-modal lembur-correct-modal" role="dialog" aria-modal="true" aria-labelledby="lembur-batchdate-title" onClick={event=>event.stopPropagation()}>
+                <div className="lembur-delete-header"><div><span className="lembur-kicker">{isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN ULP'} · SELURUH BATCH</span><h2 id="lembur-batchdate-title">Koreksi Tanggal Batch</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={batchDateBusy} onClick={closeBatchDateCorrection}><Icon name="close" size={17} /></IconButton></div>
+                <Alert tone="warning" title="Tanggal berlaku untuk seluruh batch">Tanggal {correctActivityRows(batchDateTarget.id).length} peserta pindah bersama. Jam tiap peserta ikut bergeser dengan durasi sama; nominal dihitung ulang. Hanya untuk batch tanpa peserta yang sudah diajukan/disetujui.</Alert>
+                <dl className="lembur-delete-summary"><div><dt>Jenis</dt><dd>{jenisLabel(batchDateTarget)}</dd></div><div><dt>Tanggal semula</dt><dd>{batchDateTarget.date}</dd></div><div><dt>Keterangan</dt><dd>{batchDateTarget.description}</dd></div></dl>
+                <div className="lembur-correct-list">
+                  {correctActivityRows(batchDateTarget.id).map((row) => {
+                    const t = pontianakFormValues(row.startedAt, row.endedAt)
+                    return (
+                      <div key={row.entryId} className="lembur-correct-row">
+                        <strong>{row.participantName}</strong>
+                        <div className="lembur-correct-times">
+                          <div className="lembur-duration-compact"><span>Jam</span><strong>{t.startTime}–{t.endTime}</strong>{t.endTime <= t.startTime && <small>+1 hari</small>}</div>
+                          <div className="lembur-duration-compact"><span>Status</span><strong>{displayStatus(row)}</strong></div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <label className="sla-context-field"><span className="sla-context-label">Tanggal Baru *</span><input type="date" className="sla-context-select" value={batchDateValue} disabled={batchDateBusy} onChange={event=>{setBatchDateValue(event.target.value);setBatchDateError('')}} /></label>
+                <label className="sla-context-field"><span className="sla-context-label">Alasan Koreksi *</span><textarea className="sla-context-select" rows={3} value={batchDateReason} disabled={batchDateBusy} onChange={event=>{setBatchDateReason(event.target.value);setBatchDateError('')}} placeholder="Jelaskan alasan pemindahan tanggal batch" /></label>
+                {batchDateError && <Alert tone="danger">{batchDateError}</Alert>}
+                <div className="lembur-delete-actions"><Button variant="ghost" disabled={batchDateBusy} onClick={closeBatchDateCorrection}>Batal</Button><Button variant="primary" disabled={batchDateBusy||!batchDateReason.trim()} onClick={handleBatchDateCorrection}>{batchDateBusy?'Menyimpan...':'Pindahkan Tanggal'}</Button></div>
               </div>
             </div>
           )}
