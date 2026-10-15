@@ -224,33 +224,6 @@ export default function SLADatabasePegawai({
     return () => { cancelled = true }
   }, [employees, changeRequests])
 
-  useEffect(() => {
-    let cancelled = false
-    const activeIds = Object.values(photoByEmployee)
-      .flat()
-      .filter((photo) => photo.status === 'ACTIVE' || photo.status === 'STAGED')
-      .map((photo) => photo.id)
-    const pendingAddPhotoIds = changeRequests
-      .filter((req) => req.status === 'Pending' && req.type === 'add')
-      .map((req) => req.rawProposed?.photo_asset_id ?? req.proposed?.photoAssetId ?? '')
-      .filter(Boolean)
-    const unique = [...new Set([...activeIds, ...pendingAddPhotoIds])].slice(0, 60)
-    if (!unique.length) {
-      setPhotoUrls({})
-      return undefined
-    }
-    import('../../data/employeePhotoRepository.js')
-      .then(({ createEmployeePhotoSignedUrls }) => createEmployeePhotoSignedUrls(unique))
-      .then((urls) => {
-        if (cancelled) return
-        // Pertahankan URL lama bila refresh gagal sebagian agar foto tidak kedip hilang.
-        setPhotoUrls((prev) => ({ ...prev, ...urls }))
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photoByEmployee, changeRequests, photoUrlToken])
-
   useEffect(() => () => {
     if (photoObjectUrlRef.current) URL.revokeObjectURL(photoObjectUrlRef.current)
     if (photoStaged?.previewUrl) URL.revokeObjectURL(photoStaged.previewUrl)
@@ -420,6 +393,37 @@ export default function SLADatabasePegawai({
   const visibleRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   const startRow = filtered.length > 0 ? (currentPage - 1) * pageSize + 1 : 0
   const endRow = Math.min(currentPage * pageSize, filtered.length)
+
+  // Signed URL dimuat per halaman terlihat, bukan 60 foto pertama global,
+  // agar foto pegawai di halaman/filter mana pun tetap muncul.
+  const visiblePhotoIds = useMemo(() => {
+    const ids = []
+    for (const row of visibleRows) {
+      if (row.employee) {
+        const active = (photoByEmployee[row.employee.id] ?? []).find((photo) => photo.status === 'ACTIVE')
+        if (active) ids.push(active.id)
+      } else if (row.addPending) {
+        const pendingId = row.request.rawProposed?.photo_asset_id ?? row.request.proposed?.photoAssetId ?? ''
+        if (pendingId) ids.push(pendingId)
+      }
+    }
+    return [...new Set(ids)]
+  }, [visibleRows, photoByEmployee])
+  const visiblePhotoKey = visiblePhotoIds.join(',')
+  useEffect(() => {
+    let cancelled = false
+    if (!visiblePhotoKey) return undefined
+    import('../../data/employeePhotoRepository.js')
+      .then(({ createEmployeePhotoSignedUrls }) => createEmployeePhotoSignedUrls(visiblePhotoKey.split(',')))
+      .then((urls) => {
+        if (cancelled) return
+        // Pertahankan URL lama bila refresh gagal sebagian agar foto tidak kedip hilang.
+        setPhotoUrls((prev) => ({ ...prev, ...urls }))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visiblePhotoKey, photoUrlToken])
 
   const exportMasterPegawai = () => {
     const columns = [
