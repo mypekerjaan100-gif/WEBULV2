@@ -2280,7 +2280,9 @@ export default function SLALembur({
             </div>
           )}
 
-          {!canMutate && !isManagement && <Alert tone="info" className="lembur-readonly-notice">Monitoring read-only · Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia.</Alert>}
+          {!canMutate && !isManagement && (isAdminUp3
+            ? <Alert tone="info" className="lembur-readonly-notice">Persetujuan lembur dalam scope UP3. Pengajuan dibuat Admin ULP; buka detail peserta berstatus Diajukan untuk menyetujui atau menolak.</Alert>
+            : <Alert tone="info" className="lembur-readonly-notice">Monitoring read-only · Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia.</Alert>)}
           {isUlManagement && <Alert tone="info" className="lembur-readonly-notice">Unit Layanan Singkawang · 6 ULP · monitoring read-only. Total Rp, Tarif/Jam, dan rincian 1.5x/2x tersedia di Detail.</Alert>}
           {isUpManagement && <Alert tone="info" className="lembur-readonly-notice">Unit Pelaksana Kalimantan 1 · 1 Unit Layanan terhubung (Singkawang) · monitoring read-only.</Alert>}
           {isManagement && !records.length && !loading && !loadError && (
