@@ -655,16 +655,19 @@ export default function SLAPelayananTeknikPage({
   const configMenuRef = useRef(null)
 
   // Terapkan rute dari URL (refresh / Back-Forward); modul tak dikenal/diizinkan diabaikan.
+  // Validasi modul menunggu orgMap karena izin modul admin bergantung padanya.
   const initialModuleCheckedRef = useRef(false)
   useEffect(() => {
     if (initialModuleCheckedRef.current || visibleModules.length === 0) return
+    if (orgMapStatus === 'loading') return
     initialModuleCheckedRef.current = true
     if (initialModule && !visibleModules.some((module) => module.id === initialModule)) {
       setModuleId('sla')
     }
-  }, [initialModule, visibleModules])
+  }, [initialModule, visibleModules, orgMapStatus])
   useEffect(() => {
     if (!routeRequest) return
+    if (routeRequest.module && orgMapStatus === 'loading') return
     if (routeRequest.module && routeRequest.module !== moduleId
       && visibleModules.some((module) => module.id === routeRequest.module)) {
       setModuleId(routeRequest.module)
@@ -675,7 +678,7 @@ export default function SLAPelayananTeknikPage({
       setPeriod(routeRequest.periode)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeRequest?.token])
+  }, [routeRequest?.token, orgMapStatus])
 
   useEffect(() => {
     if (configurationModules.length === 0) return undefined
@@ -871,6 +874,7 @@ export default function SLAPelayananTeknikPage({
   }, [up3Id])
 
   useEffect(() => {
+    if (orgMapStatus === 'loading') return
     const canViewActiveModule =
       !activeModule?.adminOnly ||
       canViewAdminUp3Modules ||
@@ -878,7 +882,7 @@ export default function SLAPelayananTeknikPage({
     if (!canViewActiveModule) {
       setModuleId('sla')
     }
-  }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations])
+  }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations, orgMapStatus])
 
   const isActiveReportingVersion = selectedVersion?.databaseStatus === 'ACTIVE'
   const isOwnAdminUlp = isAdminUlp && selectedUnitUuid === adminUlpAccess?.operational_unit_id

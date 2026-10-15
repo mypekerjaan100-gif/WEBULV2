@@ -59,6 +59,9 @@ export default function App() {
   const [managementScopes, setManagementScopes] = useState([])
   const [selectedManagementScopeKey, setSelectedManagementScopeKey] = useState('')
   const [managementUnitId, setManagementUnitId] = useState('')
+  // Penanda pemetaan scope async selesai; restore hash menunggu keduanya.
+  const [realScopeLoaded, setRealScopeLoaded] = useState(false)
+  const [managementScopesLoaded, setManagementScopesLoaded] = useState(false)
   const [approvalNotifications, setApprovalNotifications] = useState(EMPTY_APPROVAL_NOTIFICATIONS)
   const [approvalNotificationError, setApprovalNotificationError] = useState('')
   const [approvalTarget, setApprovalTarget] = useState(null)
@@ -146,8 +149,10 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
+    setRealScopeLoaded(false)
     if (isSuperAdmin) {
       setRealScope(null)
+      setRealScopeLoaded(true)
       return undefined
     }
     const access = contractAccess.length === 1 && ['ADMIN_UP3', 'ADMIN_ULP'].includes(contractAccess[0]?.role)
@@ -156,6 +161,7 @@ export default function App() {
     if (!access?.contract_code || !access.operational_up3_id ||
       (access.role === 'ADMIN_ULP' && !access.operational_unit_id)) {
       setRealScope(null)
+      setRealScopeLoaded(true)
       return undefined
     }
     getOrgUnits()
@@ -170,6 +176,7 @@ export default function App() {
         const contract = contracts.find((entry) => entry.id === access.contract_code)
         if (!up3?.legacyKey || !unit?.legacyKey || !contract) {
           setRealScope(null)
+          setRealScopeLoaded(true)
           return
         }
         setRealScope({
@@ -178,18 +185,23 @@ export default function App() {
           unitId: unit.legacyKey,
           role: access.role === 'ADMIN_UP3' ? 'up3' : 'ulp',
         })
+        setRealScopeLoaded(true)
       })
       .catch(() => {
-        if (!cancelled) setRealScope(null)
+        if (cancelled) return
+        setRealScope(null)
+        setRealScopeLoaded(true)
       })
     return () => { cancelled = true }
   }, [isSuperAdmin, contractAccess])
 
   useEffect(() => {
     let cancelled = false
+    setManagementScopesLoaded(false)
     if (!isManagementUserRaw) {
       setManagementScopes([])
       setSelectedManagementScopeKey('')
+      setManagementScopesLoaded(true)
       return undefined
     }
     Promise.all([listManagementOperationalScopes(), getOrgUnits()])
@@ -220,12 +232,13 @@ export default function App() {
         setSelectedManagementScopeKey((current) => nextScopes.some((scope) => scope.key === current)
           ? current
           : (nextScopes[0]?.key ?? ''))
+        setManagementScopesLoaded(true)
       })
       .catch(() => {
-        if (!cancelled) {
-          setManagementScopes([])
-          setSelectedManagementScopeKey('')
-        }
+        if (cancelled) return
+        setManagementScopes([])
+        setSelectedManagementScopeKey('')
+        setManagementScopesLoaded(true)
       })
     return () => { cancelled = true }
   }, [isManagementUserRaw])
@@ -292,14 +305,16 @@ export default function App() {
     }
   }, [isSuperAdmin, canAccessFinancial, authorizedContractIds])
 
-  // Pulihkan posisi sekali setelah sesi & hak akses siap; kanonikalisasi URL.
+  // Pulihkan posisi sekali setelah sesi, otoritas, DAN pemetaan scope
+  // (Admin UP3/ULP, manajemen) siap; kanonikalisasi URL.
   useEffect(() => {
     if (routeRestoredRef.current) return
     if (!authority || authority.loading) return
+    if (!realScopeLoaded || !managementScopesLoaded) return
     routeRestoredRef.current = true
     const canonical = applyHashRoute()
     writeRouteHash(canonical, { push: false })
-  }, [authority, applyHashRoute])
+  }, [authority, realScopeLoaded, managementScopesLoaded, applyHashRoute])
 
   // Back/Forward browser.
   useEffect(() => {
