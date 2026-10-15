@@ -169,9 +169,13 @@ export default function SLAPelayananTeknikPage({
   approvalTarget = null,
   onApprovalTargetHandled,
   onApprovalChange,
+  initialModule = null,
+  initialPeriode = null,
+  routeRequest = null,
+  onRouteChange = null,
 }) {
-  const [moduleId, setModuleId] = useState('sla')
-  const [period, setPeriod] = useState(() => defaultSlaPeriod())
+  const [moduleId, setModuleId] = useState(initialModule ?? 'sla')
+  const [period, setPeriod] = useState(() => initialPeriode ?? defaultSlaPeriod())
   const [versionId, setVersionId] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
   const [changeRequests, setChangeRequests] = useState([])
@@ -244,6 +248,13 @@ export default function SLAPelayananTeknikPage({
       setModuleId('variable-cost')
     }
   }, [canManageUp3Operations, approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Laporkan tab/periode ke URL (ditulis sebagai replace, tanpa loop).
+  const routeChangeRef = useRef(onRouteChange)
+  routeChangeRef.current = onRouteChange
+  useEffect(() => {
+    routeChangeRef.current?.({ module: moduleId, periode: period })
+  }, [moduleId, period])
 
   const refreshLocations = useCallback(async ({ preserveOnError = false } = {}) => {
     if (!preserveOnError) setLocationLoadStatus('loading')
@@ -642,6 +653,29 @@ export default function SLAPelayananTeknikPage({
   const primaryModules = visibleModules.filter((module) => ['sla', 'variable-cost', 'lembur'].includes(module.id))
   const configurationModules = visibleModules.filter((module) => !['sla', 'variable-cost', 'lembur'].includes(module.id))
   const configMenuRef = useRef(null)
+
+  // Terapkan rute dari URL (refresh / Back-Forward); modul tak dikenal/diizinkan diabaikan.
+  const initialModuleCheckedRef = useRef(false)
+  useEffect(() => {
+    if (initialModuleCheckedRef.current || visibleModules.length === 0) return
+    initialModuleCheckedRef.current = true
+    if (initialModule && !visibleModules.some((module) => module.id === initialModule)) {
+      setModuleId('sla')
+    }
+  }, [initialModule, visibleModules])
+  useEffect(() => {
+    if (!routeRequest) return
+    if (routeRequest.module && routeRequest.module !== moduleId
+      && visibleModules.some((module) => module.id === routeRequest.module)) {
+      setModuleId(routeRequest.module)
+    } else if (!routeRequest.module && moduleId !== 'sla') {
+      setModuleId('sla')
+    }
+    if (routeRequest.periode && slaPeriods.includes(routeRequest.periode) && routeRequest.periode !== period) {
+      setPeriod(routeRequest.periode)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeRequest?.token])
 
   useEffect(() => {
     if (configurationModules.length === 0) return undefined

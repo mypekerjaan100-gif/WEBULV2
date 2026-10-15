@@ -12,6 +12,8 @@ import {
   initialOrganizationUnits,
 } from './data/organisasiPelayananTeknik.js'
 import { contracts } from './data/contracts.js'
+import { pelayananTeknikModules, slaPeriods } from './data/slaPelayananTeknik.js'
+import { parseRouteHash, writeRouteHash } from './lib/routeHash.js'
 import { getOrgUnits } from './data/orgIdMap.js'
 import { useAuth } from './lib/AppAuth.jsx'
 import {
@@ -63,6 +65,10 @@ export default function App() {
   const approvalRequestId = useRef(0)
   const approvalInFlight = useRef(null)
   const lastApprovalStart = useRef(0)
+  // Permintaan sinkronisasi rute dari URL (refresh / Back-Forward).
+  const [slaRouteRequest, setSlaRouteRequest] = useState(null)
+  const [finRouteRequest, setFinRouteRequest] = useState(null)
+  const routeRestoredRef = useRef(false)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access ?? []
   const organizationAccess = authority?.actor?.organization_access ?? []
@@ -248,16 +254,79 @@ export default function App() {
     if (!isActiveContractAuthorized) setActiveContractId(null)
   }, [canAccessFinancial, currentPage, isActiveContractAuthorized, isSuperAdmin])
 
+  // Terapkan rute dari URL hash ke state (dipakai saat refresh & Back/Forward).
+  // Mengembalikan representasi kanonik untuk penulisan URL.
+  const applyHashRoute = useCallback(() => {
+    const { segments, periode } = parseRouteHash()
+    const [first, second] = segments
+    let nextContract = null
+    let nextPage = null
+    let nextModule = null
+    let nextPeriode = null
+    if (first === 'pengguna-akses' && isSuperAdmin) {
+      nextPage = 'pengguna-akses'
+    } else if (first === 'analisis-finansial' && canAccessFinancial) {
+      nextPage = 'analisis-finansial'
+      if (periode && slaPeriods.includes(periode)) nextPeriode = periode
+    } else if (first) {
+      const contract = contracts.find((entry) => entry.id === first)
+      if (contract && (isSuperAdmin || authorizedContractIds.includes(contract.id))) {
+        nextContract = contract.id
+        if (contract.id === 'pelayanan-teknik') {
+          if (second && pelayananTeknikModules.some((module) => module.id === second)) nextModule = second
+          if (periode && slaPeriods.includes(periode)) nextPeriode = periode
+        }
+      }
+    }
+    setActiveContractId(nextContract)
+    setCurrentPage(nextPage)
+    if (nextContract === 'pelayanan-teknik') {
+      setSlaRouteRequest({ module: nextModule, periode: nextPeriode, token: Date.now() })
+    }
+    if (nextPage === 'analisis-finansial' && nextPeriode) {
+      setFinRouteRequest({ periode: nextPeriode, token: Date.now() })
+    }
+    return {
+      segments: nextPage ? [nextPage] : nextContract ? [nextContract, ...(nextModule ? [nextModule] : [])] : [],
+      periode: nextPeriode,
+    }
+  }, [isSuperAdmin, canAccessFinancial, authorizedContractIds])
+
+  // Pulihkan posisi sekali setelah sesi & hak akses siap; kanonikalisasi URL.
+  useEffect(() => {
+    if (routeRestoredRef.current) return
+    if (!authority || authority.loading) return
+    routeRestoredRef.current = true
+    const canonical = applyHashRoute()
+    writeRouteHash(canonical, { push: false })
+  }, [authority, applyHashRoute])
+
+  // Back/Forward browser.
+  useEffect(() => {
+    const onHashChange = () => {
+      if (!routeRestoredRef.current) return
+      applyHashRoute()
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [applyHashRoute])
+
   const navigate = (contractId) => {
     if (contractId && !isSuperAdmin && !authorizedContractIds.includes(contractId)) return
     setActiveContractId(contractId)
     setCurrentPage(null)
+    setSlaRouteRequest(null)
+    setFinRouteRequest(null)
+    writeRouteHash({ segments: contractId ? [contractId] : [], periode: null }, { push: true })
   }
 
   const navigatePage = (pageId) => {
     if (!pageId) {
       setCurrentPage(null)
       setActiveContractId(null)
+      setSlaRouteRequest(null)
+      setFinRouteRequest(null)
+      writeRouteHash({ segments: [], periode: null }, { push: true })
       return
     }
     if (pageId === 'pengguna-akses' && !isSuperAdmin) return
@@ -265,6 +334,9 @@ export default function App() {
     if (pageId !== 'pengguna-akses' && pageId !== 'analisis-finansial' && !isSuperAdmin) return
     setCurrentPage(pageId)
     setActiveContractId(null)
+    if (pageId !== 'analisis-finansial') setFinRouteRequest(null)
+    setSlaRouteRequest(null)
+    writeRouteHash({ segments: [pageId], periode: null }, { push: true })
   }
 
   const openApprovalNotification = (item) => {
@@ -274,6 +346,9 @@ export default function App() {
     setApprovalTarget({ ...item, token: `${item.source}:${item.id}:${Date.now()}` })
     setActiveContractId(contractCode)
     setCurrentPage(null)
+    setSlaRouteRequest(null)
+    setFinRouteRequest(null)
+    writeRouteHash({ segments: [contractCode], periode: null }, { push: true })
   }
 
   const handleRoleChange = (nextRole) => {
@@ -347,7 +422,11 @@ export default function App() {
         {currentPage === 'pengguna-akses' ? (
           <UserListPage onBack={() => navigatePage(null)} />
         ) : currentPage === 'analisis-finansial' ? (
-          <FinancialAnalysisPage />
+          <FinancialAnalysisPage
+            initialPeriode={finRouteRequest?.periode ?? null}
+            routeRequest={finRouteRequest}
+            onRouteChange={({ periode }) => writeRouteHash({ segments: ['analisis-finansial'], periode }, { push: false })}
+          />
         ) : activeContract ? (
           activeContract.id === 'pelayanan-teknik' ? (
             <SLAPelayananTeknikPage
@@ -371,6 +450,13 @@ export default function App() {
               approvalTarget={approvalTarget}
               onApprovalTargetHandled={() => setApprovalTarget(null)}
               onApprovalChange={refreshApprovalNotifications}
+              initialModule={slaRouteRequest?.module ?? null}
+              initialPeriode={slaRouteRequest?.periode ?? null}
+              routeRequest={slaRouteRequest}
+              onRouteChange={({ module, periode }) => writeRouteHash(
+                { segments: ['pelayanan-teknik', ...(module && module !== 'sla' ? [module] : [])], periode },
+                { push: false },
+              )}
             />
           ) : (
             <ContractPage contract={activeContract} onBack={() => navigate(null)} />

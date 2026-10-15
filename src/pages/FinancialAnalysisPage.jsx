@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import FinancialComparisonDashboard from '../components/sla/FinancialComparisonDashboard.jsx'
 import { defaultSlaPeriod, slaPeriods } from '../data/slaPelayananTeknik.js'
 import { getOrganizationScope } from '../data/orgIdMap.js'
 import { useAuth } from '../lib/AppAuth.jsx'
 import { useSlaPreview } from '../context/SlaPreviewContext.js'
 
-export default function FinancialAnalysisPage() {
+export default function FinancialAnalysisPage({ initialPeriode = null, routeRequest = null, onRouteChange = null }) {
   const { authority } = useAuth()
   const preview = useSlaPreview()
   const actor = authority?.actor
@@ -14,10 +14,22 @@ export default function FinancialAnalysisPage() {
   const FINANCIAL_ROLES = ['TEAM_LEADER', 'MANAGER_UNIT', 'MANAGER_UP']
   const canAccess = isSuperAdmin || orgAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
 
-  const [period, setPeriod] = useState(() => defaultSlaPeriod())
+  const [period, setPeriod] = useState(() => initialPeriode ?? defaultSlaPeriod())
   const [orgMap, setOrgMap] = useState(null)
   const [orgMapError, setOrgMapError] = useState('')
   const up3Id = preview?.up3Id ?? 'up3'
+
+  const routeChangeRef = useRef(onRouteChange)
+  routeChangeRef.current = onRouteChange
+  useEffect(() => {
+    routeChangeRef.current?.({ periode: period })
+  }, [period])
+  useEffect(() => {
+    if (routeRequest?.periode && slaPeriods.includes(routeRequest.periode) && routeRequest.periode !== period) {
+      setPeriod(routeRequest.periode)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeRequest?.token])
 
   useEffect(() => {
     if (!canAccess) return
