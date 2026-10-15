@@ -4856,15 +4856,11 @@ summary:focus-visible {
   max-width: 100%;
 }
 
-.alkes-master .sla-preview-table.alkes-table {
-  min-width: 0;
-}
-
-.alkes-master .alkes-table {
+.alkes-master table.alkes-table {
   min-width: 560px;
 }
 
-.alkes-master .alkes-table--wide {
+.alkes-master table.alkes-table--wide {
   min-width: 760px;
 }
 
@@ -4873,24 +4869,36 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* Toolbar: judul di kiri, kontrol berkelompok di kanan. */
+/* Toolbar: judul mengisi kiri, kontrol berkelompok rapat di kanan. */
+.alkes-master .sla-settings-toolbar > .sla-settings-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .alkes-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
   align-items: center;
-  margin-left: auto;
+  justify-content: flex-end;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
+.alkes-toolbar-actions .sla-btn {
+  flex: none;
+}
+
 .alkes-master .alkes-search {
-  width: 100%;
+  flex: 1 1 160px;
+  width: auto;
   max-width: 240px;
   min-width: 0;
 }
 
 .alkes-master .alkes-filter {
-  width: 100%;
+  flex: 0 1 auto;
+  width: auto;
   max-width: 160px;
   min-width: 0;
 }
