@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../lib/AppAuth.jsx'
 import { callUserManagement } from '../../lib/userManagement.js'
 
@@ -468,6 +468,8 @@ function CreateUserModal({ onClose, onSuccess }) {
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const bodyRef = useRef(null)
+  const errorRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -479,10 +481,20 @@ function CreateUserModal({ onClose, onSuccess }) {
         scopes: data?.scopes || [],
         internalOrganizationUnits: data?.internalOrganizationUnits || [],
       })
-      setLoadingOptions(false)
+    }).catch((err) => {
+      if (!cancelled) setError(err?.message || 'Gagal memuat opsi pembuatan akun.')
+    }).finally(() => {
+      if (!cancelled) setLoadingOptions(false)
     })
     return () => { cancelled = true }
   }, [])
+
+  // Pastikan pesan gagal selalu terlihat: gulir ke atas modal dan fokus ke pesan.
+  useEffect(() => {
+    if (!error) return
+    bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    errorRef.current?.focus({ preventScroll: true })
+  }, [error])
 
   const contractRole = role === 'ADMIN_UP3' || role === 'ADMIN_ULP'
   const organizationRole = MANAGEMENT_ROLE_LEVEL[role]
@@ -542,9 +554,9 @@ function CreateUserModal({ onClose, onSuccess }) {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="modal-form">
-          <div className="modal-body">
+          <div className="modal-body" ref={bodyRef}>
             {error && (
-              <div className="invite-error-box">
+              <div className="invite-error-box" ref={errorRef} tabIndex={-1}>
                 <p>{error}</p>
               </div>
             )}
