@@ -7317,6 +7317,43 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   height: 16px;
 }
 
+/* ---------- Financial dashboard loading ---------- */
+.vc-fin-loading {
+  display: grid;
+  gap: 12px;
+}
+
+.vc-fin-loading-status {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.vc-fin-loading-status::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid #cbd8e4;
+  border-top-color: var(--pln-blue);
+  animation: vc-fin-spin 0.9s linear infinite;
+}
+
+@keyframes vc-fin-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-fin-loading-status::before {
+    animation: none;
+  }
+}
+
 /* ---------- Reusable process modal ---------- */
 .ui-process-backdrop {
   background: rgba(7, 26, 51, 0.45);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { getVariableFinancialDashboard, getVariableFinancialTrend, listVariableUnitPrices, periodLabelToMonth } from '../../data/variableCostRepository.js'
 import { fetchSpreadsheetSummary, realizationForUnit, SPREADSHEET_INDICATOR_CODES } from '../../data/spreadsheetVariableCost.js'
 import { variableCostLabelsByCode } from '../../data/slaPelayananTeknik.js'
-import { Alert, Button, DataTable, FilterBar, FilterField, KpiCard, Modal, StatePanel, StatusBadge } from '../ui/Primitives.jsx'
+import { Alert, Button, DataTable, FilterBar, FilterField, KpiCard, Modal, StatusBadge } from '../ui/Primitives.jsx'
 
 const ALL_UNITS = 'ALL'
 // 3.1a tidak ditagihkan di Rekap, jadi tidak direkonsiliasi sebagai pendapatan.
@@ -14,6 +14,69 @@ function periodEndOf(periodMonth) {
   if (!match) return periodMonth
   const end = new Date(Number(match[1]), Number(match[2]), 0)
   return `${match[1]}-${match[2]}-${String(end.getDate()).padStart(2, '0')}`
+}
+
+function DashboardMainSkeleton() {
+  return (
+    <div className="vc-fin-loading" aria-busy="true">
+      <p className="vc-fin-loading-status" role="status">Menyiapkan Dashboard Finansial… Memuat target, harga satuan, dan realisasi spreadsheet.</p>
+      <div className="vc-fin-kpis" aria-hidden="true">
+        {[0, 1, 2, 3].map((item) => (
+          <div key={item} className="vc-fin-kpi">
+            <span className="vc-skeleton" style={{ width: 130 }} />
+            <strong><span className="vc-skeleton" style={{ width: '62%', height: 26 }} /></strong>
+            <span className="vc-skeleton" style={{ width: 150 }} />
+          </div>
+        ))}
+      </div>
+      <section className="vc-fin-section" aria-hidden="true">
+        <div className="vc-fin-section-title"><div><span>PER ULP</span><h4>TARGET VS REALISASI PER ULP</h4></div></div>
+        <div className="vc-fin-chart">
+          {[0, 1, 2, 3, 4].map((item) => (
+            <div key={item} className="vc-fin-chart-row">
+              <strong><span className="vc-skeleton" style={{ width: 120 }} /></strong>
+              <div className="vc-fin-bars">
+                <div className="vc-fin-bar-line"><span className="vc-skeleton" style={{ width: '78%', height: 12 }} /></div>
+                <div className="vc-fin-bar-line"><span className="vc-skeleton" style={{ width: '56%', height: 12 }} /></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="vc-fin-section" aria-hidden="true">
+        <div className="vc-fin-section-title"><div><span>RINCIAN</span><h4>PER INDIKATOR</h4></div></div>
+        <div className="vc-skeleton-table">
+          {[0, 1, 2, 3, 4, 5, 6].map((item) => (
+            <div key={item} className="vc-skeleton-row">
+              <span className="vc-skeleton" style={{ flex: 2 }} />
+              <span className="vc-skeleton" style={{ flex: 1 }} />
+              <span className="vc-skeleton" style={{ flex: 1 }} />
+              <span className="vc-skeleton" style={{ flex: 1 }} />
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function TrendSkeleton() {
+  return (
+    <div className="vc-fin-loading" aria-busy="true">
+      <p className="vc-fin-loading-status" role="status">Memuat tren finansial…</p>
+      <div className="vc-fin-chart" aria-hidden="true">
+        {[0, 1, 2, 3, 4, 5].map((item) => (
+          <div key={item} className="vc-fin-chart-row">
+            <strong><span className="vc-skeleton" style={{ width: 90 }} /></strong>
+            <div className="vc-fin-bars">
+              <div className="vc-fin-bar-line"><span className="vc-skeleton" style={{ width: '70%', height: 12 }} /></div>
+              <div className="vc-fin-bar-line"><span className="vc-skeleton" style={{ width: '52%', height: 12 }} /></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function formatRp(value) {
@@ -243,8 +306,9 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
   const missingPrices = Number(summary.missing_price_count ?? 0) > 0
   const sheetIncompleteCount = Number(summary.sheet_missing_count ?? 0)
   const sheetErrorCount = Object.keys(sheetErrors ?? {}).length
-  const sheetPending = sheetLoading && Object.keys(sheetSummaries ?? {}).length === 0
-  const financialIncomplete = incompleteTargets || missingPrices || sheetIncompleteCount > 0 || sheetErrorCount > 0 || sheetPending || Boolean(unitPriceError)
+  const isMainLoading = loading || sheetLoading
+  const isMainReady = !isMainLoading && !error && Boolean(displayDashboard)
+  const financialIncomplete = incompleteTargets || missingPrices || sheetIncompleteCount > 0 || sheetErrorCount > 0 || Boolean(unitPriceError)
   const maxUnitAmount = Math.max(1, ...(displayDashboard?.units ?? []).flatMap((row) => [Number(row.target_amount ?? 0), Number(row.actual_amount ?? 0)]))
   const detailCells = selectedIndicator
     ? (displayDashboard?.cells ?? []).filter((cell) => cell.indicator_code === selectedIndicator.indicator_code)
@@ -268,7 +332,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
   const achievementTone = (status) => status === 'Target tercapai' ? 'success' : status === 'Belum tercapai' ? 'danger' : 'warning'
 
   return (
-    <div className="vc-fin-dashboard">
+    <div className="vc-fin-dashboard" aria-busy={isMainLoading}>
       <div className="vc-fin-dashboard-head">
         <div>
           <p className="vc-fin-eyebrow">FINANCIAL PERFORMANCE</p>
@@ -277,12 +341,12 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
         </div>
         <FilterBar className="vc-fin-filters">
           <FilterField label="Periode">
-            <select className="input-select" value={period} disabled={loading} onChange={(event) => onPeriodChange?.(event.target.value)}>
+            <select className="input-select" value={period} disabled={isMainLoading} onChange={(event) => onPeriodChange?.(event.target.value)}>
               {periods.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </FilterField>
           <FilterField label="Scope / ULP">
-            <select className="input-select" value={unitId} disabled={loading} onChange={(event) => setUnitId(event.target.value)}>
+            <select className="input-select" value={unitId} disabled={isMainLoading} onChange={(event) => setUnitId(event.target.value)}>
               <option value={ALL_UNITS}>Semua ULP - Konsolidasi UP3</option>
               {authorizedUnitIds.map((id) => <option key={id} value={id}>{unitNames.get(id) ?? id}</option>)}
             </select>
@@ -291,8 +355,8 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
-      {loading && <StatePanel state="loading" title="Memuat Dashboard Finansial" />}
-      {!loading && !error && displayDashboard && (
+      {isMainLoading && !error && <DashboardMainSkeleton />}
+      {isMainReady && (
         <>
           <div className="vc-fin-warnings">
             {incompleteTargets && <Alert tone="warning">Target pendapatan belum lengkap: {summary.missing_target_count} item</Alert>}
@@ -300,12 +364,11 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
             {sheetIncompleteCount > 0 && <Alert tone="warning">Data spreadsheet belum lengkap: {sheetIncompleteCount} sel menunggu ringkasan spreadsheet.</Alert>}
             {sheetErrorCount > 0 && <Alert tone="warning">Spreadsheet gagal dimuat untuk {sheetErrorCount} indikator ({Object.keys(sheetErrors).join(', ')}). Angka indikator tersebut ditampilkan sebagai Rp0 sementara.</Alert>}
             {unitPriceError && <Alert tone="warning">Harga satuan gagal dimuat: {unitPriceError}</Alert>}
-            {sheetPending && <Alert tone="warning">Memuat realisasi spreadsheet… angka realisasi masih sementara.</Alert>}
           </div>
 
           <div className="vc-fin-kpis">
             <KpiCard className="vc-fin-kpi vc-fin-kpi-target" label={incompleteTargets ? 'TARGET TERKONFIGURASI' : 'TARGET PENDAPATAN'} value={formatRp(summary.target_amount)} helper={`${summary.configured_target_count ?? 0} dari ${(Number(summary.configured_target_count ?? 0) + Number(summary.missing_target_count ?? 0))} item`} />
-            <KpiCard className="vc-fin-kpi vc-fin-kpi-actual" label="REALISASI PENDAPATAN TERKONFIRMASI" value={sheetPending ? 'Memuat…' : formatRp(summary.actual_amount)} helper="Spreadsheet × harga akhir bulan + APPROVED + Konstruksi" />
+            <KpiCard className="vc-fin-kpi vc-fin-kpi-actual" label="REALISASI PENDAPATAN TERKONFIRMASI" value={formatRp(summary.actual_amount)} helper="Spreadsheet × harga akhir bulan + APPROVED + Konstruksi" />
             <KpiCard className="vc-fin-kpi" label="SELISIH" value={financialIncomplete ? 'Belum lengkap' : formatRp(summary.difference_amount)} helper="Realisasi dikurangi target" />
             <KpiCard className="vc-fin-kpi" label="PENCAPAIAN" value={financialIncomplete ? 'Belum lengkap' : formatPercent(summary.achievement_percent)} helper={achievementStatus(summary)} />
           </div>
@@ -364,7 +427,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
 
             {trendError && <Alert tone="danger">{trendError}</Alert>}
             <Alert tone="warning">Tren historis masih berbasis transaksi database APPROVED. Untuk indikator spreadsheet (2.1a–2.1d, 3.1b, 3.2b), angka tren dapat berbeda dari Rekap Bulanan dan KPI di atas yang sudah memakai realisasi spreadsheet × harga akhir bulan.</Alert>
-            {trendLoading ? <StatePanel state="loading" title="Memuat tren finansial" /> : !trendError && (
+            {trendLoading ? <TrendSkeleton /> : !trendError && (
               <>
                 <div className="vc-fin-chart vc-fin-trend-chart">
                   {trendMonths.map((row) => (
