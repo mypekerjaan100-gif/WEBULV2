@@ -716,7 +716,7 @@ export default function SLADatabasePegawai({
           contractId: resolvedContractUuid,
           up3Id: resolvedUp3Uuid,
         })
-        setActionMessage(role === 'ulp' ? 'Pengajuan tambah pegawai dikirim (Pending).' : 'Pegawai baru tersimpan ke Supabase.')
+        setActionMessage(role === 'ulp' ? 'Pegawai baru tersimpan langsung.' : 'Pegawai baru tersimpan ke Supabase.')
       } else {
         await submitEditWithSnapshot({
           employee: detail.row.employee,
@@ -1543,11 +1543,7 @@ export default function SLADatabasePegawai({
         rows: valid.map((r) => r.rpc),
       })
       setImportResult(result)
-      setActionMessage(
-        role === 'ulp'
-          ? `Import selesai: ${result.pending ?? 0} pengajuan Pending.`
-          : `Import selesai: ${result.inserted ?? 0} baru, ${result.updated ?? 0} update.`,
-      )
+      setActionMessage(`Import selesai: ${result.inserted ?? 0} baru, ${result.updated ?? 0} update.`)
       await onRefreshEmployees?.()
       if ((result.errors ?? []).length === 0) {
         setImportOpen(false)
@@ -1597,8 +1593,8 @@ export default function SLADatabasePegawai({
         {contractScope.contractName}. Unit/jabatan di-resolve dari Master
         Organisasi/Master Jabatan via unitId/positionId. Tarif Lembur/Jam
         disimpan sebagai histori. Admin ULP hanya mengelola unit sendiri dan
-        edit langsung tersimpan tanpa approval; tambah pegawai tetap Pending
-        Approval dan perpindahan antar-ULP hanya Admin UP3. Tambah/edit/approval
+        tambah/edit langsung tersimpan tanpa approval.
+        Perpindahan antar-ULP hanya Admin UP3. Tambah/edit
         kini tersimpan ke Supabase.
       </p>
       {actionMessage && <p className="sla-flat-note" style={{ color: 'var(--sla-success, #1a7f37)' }}>{actionMessage}</p>}
@@ -1716,7 +1712,7 @@ export default function SLADatabasePegawai({
                   {role === 'ulp' && (
                     <span className="sla-export-note">
                       {detail.mode === 'add'
-                        ? 'Tambah pegawai akan dikirim sebagai pengajuan dan menjadi data resmi setelah disetujui Admin UP3.'
+                        ? 'Tambah pegawai unit ini langsung tersimpan tanpa approval.'
                         : 'Edit pegawai unit ini langsung tersimpan tanpa approval.'}
                     </span>
                   )}
@@ -1820,7 +1816,7 @@ export default function SLADatabasePegawai({
                 Template sudah berisi <strong>{filtered.length} data lama</strong> sesuai filter — tinggal edit lalu import ulang.
                 Kunci: <strong>NIP</strong>. NIP baru = tambah, NIP existing = update.
                 Tanggal lahir format <strong>YYYY-MM-DD</strong>.
-                {role === 'ulp' ? ' Import ULP masuk Pending Approval.' : ' Import UP3 langsung tersimpan ke Supabase.'}
+                {role === 'ulp' ? ' Import ULP langsung tersimpan ke Supabase (NIP baru wajib lewat form agar foto terunggah).' : ' Import UP3 langsung tersimpan ke Supabase.'}
               </p>
               <div className="sla-master-actions" style={{ marginBottom: 12 }}>
                 <button type="button" className="sla-btn" onClick={handleDownloadTemplateWithData}>
