@@ -660,22 +660,29 @@ export default function SLAPelayananTeknikPage({
     }
   }, [configurationModules.length])
 
+  const lemburRefreshInFlight = useRef(false)
+
   const refreshLembur = useCallback(async (options = {}) => {
     if (!orgMap?.contractUuid || !orgMap?.up3Uuid || (role === 'ulp' && !lemburUnitUuid)) {
       setLemburRecords([])
       setLemburLoadStatus('idle')
       return
     }
+    // Refresh latar (sinkron/fokus) tidak boleh menumpuk dengan request berjalan;
+    // request foreground (simpan/coba lagi) tetap jalan, state dijaga requestId.
+    if (options.background && lemburRefreshInFlight.current) return
     const requestId = ++lemburRequestId.current
+    lemburRefreshInFlight.current = true
     if (!options.background) setLemburLoadStatus('loading')
     setLemburLoadError('')
     if (!options.background) setLemburRecords([])
     try {
-      await expireInitialOvertimeDrafts({
+      // Kedaluwarsa draft tidak menghambat daftar; kegagalannya diabaikan.
+      expireInitialOvertimeDrafts({
         contractId: orgMap.contractUuid,
         up3Id: orgMap.up3Uuid,
         unitId: lemburUnitUuid,
-      })
+      }).catch(() => {})
       const [repRows, workRows] = await Promise.all([
         listOvertimeReplacements({
           contractId: orgMap.contractUuid,
@@ -697,6 +704,8 @@ export default function SLAPelayananTeknikPage({
       if (requestId !== lemburRequestId.current) return
       setLemburLoadError(error.message || 'Gagal memuat data lembur. Data tersinkron tidak tersedia.')
       if (!options.background) setLemburLoadStatus('error')
+    } finally {
+      if (requestId === lemburRequestId.current) lemburRefreshInFlight.current = false
     }
   }, [orgMap?.contractUuid, orgMap?.up3Uuid, role, lemburUnitUuid, lemburPeriodMonth])
 

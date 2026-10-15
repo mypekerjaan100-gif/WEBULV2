@@ -61,6 +61,8 @@ export default function App() {
   const [approvalNotificationError, setApprovalNotificationError] = useState('')
   const [approvalTarget, setApprovalTarget] = useState(null)
   const approvalRequestId = useRef(0)
+  const approvalInFlight = useRef(null)
+  const lastApprovalStart = useRef(0)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access ?? []
   const organizationAccess = authority?.actor?.organization_access ?? []
@@ -82,31 +84,42 @@ export default function App() {
     ?? null
 
   const refreshApprovalNotifications = useCallback(async () => {
+    // Gabungkan pemicu bersamaan (mount + fokus + ganti scope) ke satu request per scope.
+    if (approvalInFlight.current && approvalInFlight.current.scopeKey === effectiveApprovalScopeKey) {
+      return approvalInFlight.current.promise
+    }
     const requestId = ++approvalRequestId.current
     if (!adminUp3Access && !managementScopes.length) {
       setApprovalNotifications(EMPTY_APPROVAL_NOTIFICATIONS)
       setApprovalNotificationError('')
       return
     }
-    try {
-      const orgUnits = await getOrgUnits()
-      const result = adminUp3Access
-        ? await listAdminUp3ApprovalNotifications({
-            contractId: adminUp3Access.contract_id,
-            up3Id: adminUp3Access.operational_up3_id,
-            units: orgUnits,
-          })
-        : await listManagementApprovalNotifications({ scopes: managementScopes, units: orgUnits })
-      if (requestId !== approvalRequestId.current) return
-      const scopedResult = { ...result, scopeKey: effectiveApprovalScopeKey }
-      setApprovalNotifications((current) => current.scopeKey === effectiveApprovalScopeKey
-        ? mergeApprovalNotifications(current, scopedResult)
-        : scopedResult)
-      setApprovalNotificationError('')
-    } catch (error) {
-      if (requestId !== approvalRequestId.current) return
-      setApprovalNotificationError(error.message || 'Notifikasi persetujuan gagal dimuat.')
-    }
+    lastApprovalStart.current = Date.now()
+    const promise = (async () => {
+      try {
+        const orgUnits = await getOrgUnits()
+        const result = adminUp3Access
+          ? await listAdminUp3ApprovalNotifications({
+              contractId: adminUp3Access.contract_id,
+              up3Id: adminUp3Access.operational_up3_id,
+              units: orgUnits,
+            })
+          : await listManagementApprovalNotifications({ scopes: managementScopes, units: orgUnits })
+        if (requestId !== approvalRequestId.current) return
+        const scopedResult = { ...result, scopeKey: effectiveApprovalScopeKey }
+        setApprovalNotifications((current) => current.scopeKey === effectiveApprovalScopeKey
+          ? mergeApprovalNotifications(current, scopedResult)
+          : scopedResult)
+        setApprovalNotificationError('')
+      } catch (error) {
+        if (requestId !== approvalRequestId.current) return
+        setApprovalNotificationError(error.message || 'Notifikasi persetujuan gagal dimuat.')
+      } finally {
+        if (approvalInFlight.current?.promise === promise) approvalInFlight.current = null
+      }
+    })()
+    approvalInFlight.current = { scopeKey: effectiveApprovalScopeKey, promise }
+    return promise
   }, [adminUp3Access?.contract_id, adminUp3Access?.operational_up3_id, effectiveApprovalScopeKey, managementScopes])
 
   useEffect(() => {
@@ -116,7 +129,11 @@ export default function App() {
 
   useEffect(() => {
     if (!effectiveApprovalAccess) return undefined
-    const refreshOnFocus = () => refreshApprovalNotifications()
+    // Throttle: fokus berulang dalam 2 menit memakai hasil/in-flight yang ada.
+    const refreshOnFocus = () => {
+      if (Date.now() - lastApprovalStart.current < 120000) return
+      refreshApprovalNotifications()
+    }
     window.addEventListener('focus', refreshOnFocus)
     return () => window.removeEventListener('focus', refreshOnFocus)
   }, [effectiveApprovalAccess, refreshApprovalNotifications])
