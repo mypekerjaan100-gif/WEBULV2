@@ -150,7 +150,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       const unitUuids = activeTab === 'target' && targetUnitId
         ? [targetUnitId]
         : isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
-      const [t, e, tebang, ind, up3t, konstruksi, konstruksiTarget, financial, revenueTargets, unitPriceData] = await Promise.all([
+      const [t, e, tebang, ind, up3t, konstruksi, konstruksiTarget, financial, unitPriceData, revenueTargets] = await Promise.all([
         unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchApprovedVariableMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, indicatorIds: TEBANG_INDICATOR_IDS, periodMonth, versionId }) : Promise.resolve([]),
