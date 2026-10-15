@@ -1,9 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
-import { getVariableFinancialDashboard, getVariableFinancialTrend, periodLabelToMonth } from '../../data/variableCostRepository.js'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { getVariableFinancialDashboard, getVariableFinancialTrend, listVariableUnitPrices, periodLabelToMonth } from '../../data/variableCostRepository.js'
+import { fetchSpreadsheetSummary, realizationForUnit, SPREADSHEET_INDICATOR_CODES } from '../../data/spreadsheetVariableCost.js'
 import { variableCostLabelsByCode } from '../../data/slaPelayananTeknik.js'
 import { Alert, Button, DataTable, FilterBar, FilterField, KpiCard, Modal, StatePanel, StatusBadge } from '../ui/Primitives.jsx'
 
 const ALL_UNITS = 'ALL'
+// 3.1a tidak ditagihkan di Rekap, jadi tidak direkonsiliasi sebagai pendapatan.
+const SPREADSHEET_BILLABLE_CODES = SPREADSHEET_INDICATOR_CODES.filter((code) => code !== '3.1a')
+
+// Akhir periode YYYY-MM-01 -> YYYY-MM-DD hari terakhir (sama dengan Rekap).
+function periodEndOf(periodMonth) {
+  const match = String(periodMonth ?? '').match(/^(\d{4})-(0[1-9]|1[0-2])-01$/)
+  if (!match) return periodMonth
+  const end = new Date(Number(match[1]), Number(match[2]), 0)
+  return `${match[1]}-${match[2]}-${String(end.getDate()).padStart(2, '0')}`
+}
 
 function formatRp(value) {
   if (value == null || value === '') return '-'
@@ -43,10 +54,58 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
   const [trendError, setTrendError] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [sheetSummaries, setSheetSummaries] = useState({})
+  const [sheetErrors, setSheetErrors] = useState({})
+  const [sheetLoading, setSheetLoading] = useState(false)
+  const [unitPrices, setUnitPrices] = useState([])
+  const [unitPriceError, setUnitPriceError] = useState('')
   const requestId = useRef(0)
   const trendRequestId = useRef(0)
+  const sheetRequestId = useRef(0)
+  const scopeKey = `${contractId ?? ''}::${up3Id ?? ''}`
+  const prevScopeKey = useRef(scopeKey)
   const periodMonth = periodLabelToMonth(period)
   const unitNames = new Map(units.map((unit) => [unit.uuid, unit.displayName]))
+
+  // Reset filter ULP saat scope kontrak/UP3 berubah agar tidak memakai unit kadaluarsa.
+  useEffect(() => {
+    if (prevScopeKey.current !== scopeKey) {
+      prevScopeKey.current = scopeKey
+      setUnitId(ALL_UNITS)
+      setAuthorizedUnitIds([])
+      setSelectedIndicator(null)
+    }
+  }, [scopeKey])
+
+  // Muat harga akhir periode + realisasi spreadsheet untuk rekonsiliasi dengan Rekap.
+  useEffect(() => {
+    if (!contractId || !up3Id || !periodMonth) return
+    const currentRequest = ++sheetRequestId.current
+    setSheetLoading(true)
+    setSheetErrors({})
+    setUnitPriceError('')
+    const pricePromise = listVariableUnitPrices({ contractId, up3Id, asOf: periodEndOf(periodMonth) })
+      .then((rows) => ({ rows: rows ?? [], error: '' }))
+      .catch((err) => ({ rows: [], error: err?.message || 'Gagal memuat harga satuan.' }))
+    const sheetPromises = SPREADSHEET_BILLABLE_CODES.map((code) => fetchSpreadsheetSummary({ indicator: code, period: periodMonth })
+      .then((summary) => ({ code, summary, error: '' }))
+      .catch((err) => ({ code, summary: null, error: err?.message || 'Data spreadsheet gagal dimuat.' })))
+    Promise.all([pricePromise, ...sheetPromises]).then(([priceResult, ...results]) => {
+      if (currentRequest !== sheetRequestId.current) return
+      setUnitPrices(priceResult.rows ?? [])
+      setUnitPriceError(priceResult.error ?? '')
+      const nextSummaries = {}
+      const nextErrors = {}
+      for (const item of results) {
+        if (item.summary) nextSummaries[item.code] = item.summary
+        if (item.error && !item.summary) nextErrors[item.code] = item.error
+      }
+      setSheetSummaries(nextSummaries)
+      setSheetErrors(nextErrors)
+      setSheetLoading(false)
+    })
+    return () => {}
+  }, [contractId, up3Id, periodMonth])
 
   useEffect(() => {
     const currentRequest = ++requestId.current
@@ -93,13 +152,102 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
     })
   }, [contractId, up3Id, periodMonth, unitId, trendMonthCount])
 
-  const summary = dashboard?.summary ?? {}
+  // Validasi filter ULP terhadap daftar resmi agar tidak memakai unit di luar scope.
+  useEffect(() => {
+    if (unitId !== ALL_UNITS && authorizedUnitIds.length > 0 && !authorizedUnitIds.includes(unitId)) {
+      setUnitId(ALL_UNITS)
+    }
+  }, [unitId, authorizedUnitIds])
+
+  const reconciledDashboard = useMemo(() => {
+    if (!dashboard) return null
+    const priceByIndicatorId = new Map((unitPrices ?? []).map((row) => [row.indicator_id, Number(row.unit_price)]))
+    const indicatorIdByCode = new Map((dashboard.indicators ?? []).map((row) => [row.indicator_code, row.indicator_id]))
+    const localUnitNames = new Map((units ?? []).map((unit) => [unit.uuid, unit.displayName]))
+    const cells = (dashboard.cells ?? []).map((cell) => {
+      if (!SPREADSHEET_BILLABLE_CODES.includes(cell.indicator_code)) {
+        return { ...cell, sheet_missing_count: 0 }
+      }
+      const summaryData = sheetSummaries[cell.indicator_code]
+      if (!summaryData) {
+        return { ...cell, actual_amount: 0, missing_price_count: 0, sheet_missing_count: 1 }
+      }
+      const indicatorId = indicatorIdByCode.get(cell.indicator_code) ?? cell.indicator_id
+      const price = indicatorId ? priceByIndicatorId.get(indicatorId) : null
+      if (price == null || Number.isNaN(price)) {
+        return { ...cell, actual_amount: 0, missing_price_count: 1, sheet_missing_count: 0 }
+      }
+      const realization = realizationForUnit(summaryData, localUnitNames.get(cell.unit_id))
+      return { ...cell, actual_amount: Number(realization ?? 0) * price, missing_price_count: 0, sheet_missing_count: 0 }
+    })
+    const finalize = (rows, keyFn) => {
+      const grouped = new Map()
+      for (const cell of cells) {
+        const key = keyFn(cell)
+        if (!grouped.has(key)) grouped.set(key, [])
+        grouped.get(key).push(cell)
+      }
+      return [...grouped.values()].map((group) => {
+        const first = group[0]
+        const targetAmount = group.filter((c) => c.target_amount != null).reduce((sum, c) => sum + Number(c.target_amount), 0)
+        const actualAmount = group.reduce((sum, c) => sum + Number(c.actual_amount ?? 0), 0)
+        const missingTarget = group.filter((c) => c.target_missing).length
+        const missingPrice = group.reduce((sum, c) => sum + Number(c.missing_price_count ?? 0), 0)
+        const sheetMissing = group.reduce((sum, c) => sum + Number(c.sheet_missing_count ?? 0), 0)
+        const configured = group.filter((c) => !c.target_missing).length
+        const complete = missingTarget === 0 && missingPrice === 0 && sheetMissing === 0
+        return {
+          ...first,
+          target_amount: targetAmount,
+          actual_amount: actualAmount,
+          missing_target_count: missingTarget,
+          missing_price_count: missingPrice,
+          sheet_missing_count: sheetMissing,
+          configured_target_count: configured,
+          difference_amount: complete ? actualAmount - targetAmount : null,
+          achievement_percent: complete && targetAmount > 0 ? (actualAmount / targetAmount) * 100 : null,
+        }
+      })
+    }
+    const indicatorRows = finalize(cells, (c) => c.indicator_code).sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+    const unitRows = finalize(cells, (c) => c.unit_id)
+    const targetAmount = cells.filter((c) => c.target_amount != null).reduce((sum, c) => sum + Number(c.target_amount), 0)
+    const actualAmount = cells.reduce((sum, c) => sum + Number(c.actual_amount ?? 0), 0)
+    const missingTarget = cells.filter((c) => c.target_missing).length
+    const missingPrice = cells.reduce((sum, c) => sum + Number(c.missing_price_count ?? 0), 0)
+    const sheetMissing = cells.reduce((sum, c) => sum + Number(c.sheet_missing_count ?? 0), 0)
+    const configured = cells.filter((c) => !c.target_missing).length
+    const complete = missingTarget === 0 && missingPrice === 0 && sheetMissing === 0
+    return {
+      ...dashboard,
+      cells,
+      indicators: indicatorRows,
+      units: unitRows,
+      summary: {
+        ...(dashboard.summary ?? {}),
+        target_amount: targetAmount,
+        actual_amount: actualAmount,
+        missing_target_count: missingTarget,
+        missing_price_count: missingPrice,
+        sheet_missing_count: sheetMissing,
+        configured_target_count: configured,
+        difference_amount: complete ? actualAmount - targetAmount : null,
+        achievement_percent: complete && targetAmount > 0 ? (actualAmount / targetAmount) * 100 : null,
+      },
+    }
+  }, [dashboard, sheetSummaries, unitPrices, units])
+
+  const displayDashboard = reconciledDashboard ?? dashboard
+  const summary = displayDashboard?.summary ?? {}
   const incompleteTargets = Number(summary.missing_target_count ?? 0) > 0
   const missingPrices = Number(summary.missing_price_count ?? 0) > 0
-  const financialIncomplete = incompleteTargets || missingPrices
-  const maxUnitAmount = Math.max(1, ...(dashboard?.units ?? []).flatMap((row) => [Number(row.target_amount ?? 0), Number(row.actual_amount ?? 0)]))
+  const sheetIncompleteCount = Number(summary.sheet_missing_count ?? 0)
+  const sheetErrorCount = Object.keys(sheetErrors ?? {}).length
+  const sheetPending = sheetLoading && Object.keys(sheetSummaries ?? {}).length === 0
+  const financialIncomplete = incompleteTargets || missingPrices || sheetIncompleteCount > 0 || sheetErrorCount > 0 || sheetPending || Boolean(unitPriceError)
+  const maxUnitAmount = Math.max(1, ...(displayDashboard?.units ?? []).flatMap((row) => [Number(row.target_amount ?? 0), Number(row.actual_amount ?? 0)]))
   const detailCells = selectedIndicator
-    ? (dashboard?.cells ?? []).filter((cell) => cell.indicator_code === selectedIndicator.indicator_code)
+    ? (displayDashboard?.cells ?? []).filter((cell) => cell.indicator_code === selectedIndicator.indicator_code)
     : []
   const trendMonths = trend?.months ?? []
   const maxTrendAmount = Math.max(1, ...trendMonths.flatMap((row) => [Number(row.target_amount ?? 0), Number(row.actual_amount ?? 0)]))
@@ -113,6 +261,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
   const achievementStatus = (row) => {
     if (Number(row.missing_target_count) > 0) return 'Target belum lengkap'
     if (Number(row.missing_price_count) > 0) return 'Harga belum lengkap'
+    if (Number(row.sheet_missing_count ?? 0) > 0) return 'Data spreadsheet belum lengkap'
     if (row.achievement_percent == null) return 'Target Rp0'
     return Number(row.achievement_percent) >= 100 ? 'Target tercapai' : 'Belum tercapai'
   }
@@ -143,16 +292,20 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
 
       {error && <Alert tone="danger">{error}</Alert>}
       {loading && <StatePanel state="loading" title="Memuat Dashboard Finansial" />}
-      {!loading && !error && dashboard && (
+      {!loading && !error && displayDashboard && (
         <>
           <div className="vc-fin-warnings">
             {incompleteTargets && <Alert tone="warning">Target pendapatan belum lengkap: {summary.missing_target_count} item</Alert>}
             {missingPrices && <Alert tone="warning">Harga belum tersedia: {summary.missing_price_count} transaksi</Alert>}
+            {sheetIncompleteCount > 0 && <Alert tone="warning">Data spreadsheet belum lengkap: {sheetIncompleteCount} sel menunggu ringkasan spreadsheet.</Alert>}
+            {sheetErrorCount > 0 && <Alert tone="warning">Spreadsheet gagal dimuat untuk {sheetErrorCount} indikator ({Object.keys(sheetErrors).join(', ')}). Angka indikator tersebut ditampilkan sebagai Rp0 sementara.</Alert>}
+            {unitPriceError && <Alert tone="warning">Harga satuan gagal dimuat: {unitPriceError}</Alert>}
+            {sheetPending && <Alert tone="warning">Memuat realisasi spreadsheet… angka realisasi masih sementara.</Alert>}
           </div>
 
           <div className="vc-fin-kpis">
             <KpiCard className="vc-fin-kpi vc-fin-kpi-target" label={incompleteTargets ? 'TARGET TERKONFIGURASI' : 'TARGET PENDAPATAN'} value={formatRp(summary.target_amount)} helper={`${summary.configured_target_count ?? 0} dari ${(Number(summary.configured_target_count ?? 0) + Number(summary.missing_target_count ?? 0))} item`} />
-            <KpiCard className="vc-fin-kpi vc-fin-kpi-actual" label="REALISASI PENDAPATAN TERKONFIRMASI" value={formatRp(summary.actual_amount)} helper="APPROVED + Konstruksi langsung" />
+            <KpiCard className="vc-fin-kpi vc-fin-kpi-actual" label="REALISASI PENDAPATAN TERKONFIRMASI" value={sheetPending ? 'Memuat…' : formatRp(summary.actual_amount)} helper="Spreadsheet × harga akhir bulan + APPROVED + Konstruksi" />
             <KpiCard className="vc-fin-kpi" label="SELISIH" value={financialIncomplete ? 'Belum lengkap' : formatRp(summary.difference_amount)} helper="Realisasi dikurangi target" />
             <KpiCard className="vc-fin-kpi" label="PENCAPAIAN" value={financialIncomplete ? 'Belum lengkap' : formatPercent(summary.achievement_percent)} helper={achievementStatus(summary)} />
           </div>
@@ -163,7 +316,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
               <div className="vc-fin-legend"><i className="is-target" /> Target <i className="is-actual" /> Realisasi</div>
             </div>
             <div className="vc-fin-chart">
-              {(dashboard.units ?? []).map((row) => (
+              {(displayDashboard.units ?? []).map((row) => (
                 <div className="vc-fin-chart-row" key={row.unit_id}>
                   <strong>{unitNames.get(row.unit_id) ?? row.unit_id}</strong>
                   <div className="vc-fin-bars">
@@ -180,8 +333,8 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
             <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
                 <thead><tr><th>Kegiatan</th><th>Target Pendapatan</th><th>Realisasi Pendapatan</th><th>Selisih</th><th>Pencapaian</th><th>Status</th></tr></thead>
                 <tbody>
-                  {(dashboard.indicators ?? []).map((row) => {
-                    const incomplete = Number(row.missing_target_count) > 0 || Number(row.missing_price_count) > 0
+                  {(displayDashboard.indicators ?? []).map((row) => {
+                    const incomplete = Number(row.missing_target_count) > 0 || Number(row.missing_price_count) > 0 || Number(row.sheet_missing_count ?? 0) > 0
                     return (
                       <tr key={row.indicator_code}>
                         <td><button type="button" className="vc-fin-indicator-link" onClick={() => setSelectedIndicator(row)}>{indicatorLabel(row)}</button></td>
@@ -210,6 +363,7 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
             </div>
 
             {trendError && <Alert tone="danger">{trendError}</Alert>}
+            <Alert tone="warning">Tren historis masih berbasis transaksi database APPROVED. Untuk indikator spreadsheet (2.1a–2.1d, 3.1b, 3.2b), angka tren dapat berbeda dari Rekap Bulanan dan KPI di atas yang sudah memakai realisasi spreadsheet × harga akhir bulan.</Alert>
             {trendLoading ? <StatePanel state="loading" title="Memuat tren finansial" /> : !trendError && (
               <>
                 <div className="vc-fin-chart vc-fin-trend-chart">
@@ -246,9 +400,10 @@ export default function VariableFinancialDashboard({ contractId, up3Id, period, 
               <DataTable className="vc-fin-table" frameClassName="vc-fin-table-wrap" sticky>
                   <thead><tr><th>ULP</th><th>Target</th><th>Realisasi</th><th>Selisih</th><th>Pencapaian</th><th>Aksi</th></tr></thead>
                   <tbody>{detailCells.map((cell) => {
-                    const incomplete = cell.target_missing || Number(cell.missing_price_count) > 0
+                    const incomplete = cell.target_missing || Number(cell.missing_price_count) > 0 || Number(cell.sheet_missing_count ?? 0) > 0
+                    const isSheetSourced = SPREADSHEET_BILLABLE_CODES.includes(cell.indicator_code)
                     const contributingIds = cell.actual_indicator_ids?.length ? cell.actual_indicator_ids : [cell.indicator_id]
-                    return <tr key={cell.unit_id}><td>{unitNames.get(cell.unit_id) ?? cell.unit_id}</td><td>{cell.target_missing ? 'Target belum diatur' : formatRp(cell.target_amount)}</td><td>{formatRp(cell.actual_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatRp(cell.difference_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatPercent(cell.achievement_percent)}</td><td>{cell.source_type === 'UNIT_RATE' ? <Button variant="secondary" size="small" onClick={() => onOpenTransactions?.(cell.indicator_code, cell.unit_id, contributingIds)}>Transaksi APPROVED</Button> : '-'}</td></tr>
+                    return <tr key={cell.unit_id}><td>{unitNames.get(cell.unit_id) ?? cell.unit_id}</td><td>{cell.target_missing ? 'Target belum diatur' : formatRp(cell.target_amount)}</td><td>{formatRp(cell.actual_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatRp(cell.difference_amount)}</td><td>{incomplete ? 'Belum lengkap' : formatPercent(cell.achievement_percent)}</td><td>{cell.source_type === 'UNIT_RATE' && !isSheetSourced ? <Button variant="secondary" size="small" onClick={() => onOpenTransactions?.(cell.indicator_code, cell.unit_id, contributingIds)}>Transaksi APPROVED</Button> : isSheetSourced ? <small>Spreadsheet</small> : '-'}</td></tr>
                   })}</tbody>
               </DataTable>
         )}
