@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry, listVariableActualRevenue, listVariableRevenueTargets, listVariableManualWo, setVariableManualWo } from '../../data/variableCostRepository.js'
+import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry, listVariableActualRevenue, listVariableRevenueTargets, listVariableManualWo, setVariableManualWo, listVariableUnitPrices } from '../../data/variableCostRepository.js'
 import { fetchSpreadsheetSummary, fetchSpreadsheetDetail, isSpreadsheetSourced, normalizeSpreadsheetUlp, realizationForUnit, SPREADSHEET_INDICATOR_CODES } from '../../data/spreadsheetVariableCost.js'
 import { supabase } from '../../lib/supabaseClient.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
@@ -16,6 +16,14 @@ const TEBANG_INDICATOR_IDS = variableCostIndicators.filter((indicator) => indica
 const SPREADSHEET_CODES = SPREADSHEET_INDICATOR_CODES.filter((code) => variableCostIndicators.some((indicator) => (indicator.code ?? indicator.point) === code))
 const ALL_KEY = 'ALL'
 const EMPTY_VALUE = '—'
+
+// Akhir periode YYYY-MM-01 -> YYYY-MM-DD hari terakhir (harga berlaku akhir bulan).
+function periodEndOf(periodMonth) {
+  const match = String(periodMonth ?? '').match(/^(\d{4})-(0[1-9]|1[0-2])-01$/)
+  if (!match) return periodMonth
+  const end = new Date(Number(match[1]), Number(match[2]), 0)
+  return `${match[1]}-${match[2]}-${String(end.getDate()).padStart(2, '0')}`
+}
 
 function formatRp(value) {
   if (value == null || value === '') return '—'
@@ -76,6 +84,8 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const [entries, setEntries] = useState([])
   const [konstruksiAmounts, setKonstruksiAmounts] = useState([])
   const [financialRows, setFinancialRows] = useState([])
+  const [unitPrices, setUnitPrices] = useState([])
+  const [unitPriceError, setUnitPriceError] = useState('')
   const [financialError, setFinancialError] = useState('')
   const [financialTargets, setFinancialTargets] = useState([])
   const [financialTargetError, setFinancialTargetError] = useState('')
@@ -127,20 +137,20 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const loadMonthly = useCallback(async () => {
     const requestId = ++monthlyRequestId.current
     if (!contractId || !up3Uuid || !periodMonth) { setLoading(false); return }
-    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setFinancialTargets([]); setFinancialTargetError(''); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
+    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUnitPrices([]); setUnitPriceError(''); setFinancialTargets([]); setFinancialTargetError(''); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
     setLoading(true); setError('')
     try {
       const versionId = await fetchActiveVersion({ contractId, up3Id: up3Uuid, periodMonth })
       if (requestId !== monthlyRequestId.current) return
       setActiveVersionId(versionId)
       if (!versionId) {
-        setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setFinancialTargets([]); setFinancialTargetError(''); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
+        setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUnitPrices([]); setUnitPriceError(''); setFinancialTargets([]); setFinancialTargetError(''); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
         return
       }
       const unitUuids = activeTab === 'target' && targetUnitId
         ? [targetUnitId]
         : isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
-      const [t, e, tebang, ind, up3t, konstruksi, konstruksiTarget, financial, revenueTargets] = await Promise.all([
+      const [t, e, tebang, ind, up3t, konstruksi, konstruksiTarget, financial, revenueTargets, unitPriceData] = await Promise.all([
         unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
         unitUuids.length ? fetchApprovedVariableMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, indicatorIds: TEBANG_INDICATOR_IDS, periodMonth, versionId }) : Promise.resolve([]),
@@ -152,12 +162,16 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
           ? listVariableActualRevenue({ contractId, up3Id: up3Uuid, periodMonth, unitId: isConsolidated ? null : effectiveUnitUuid }).then((rows) => ({ rows, error: '' })).catch((err) => ({ rows: [], error: err.message || 'Gagal memuat pendapatan' }))
           : Promise.resolve({ rows: [], error: '' }),
         canViewVariableFinancial && activeTab === 'rekap'
+          ? listVariableUnitPrices({ contractId, up3Id: up3Uuid, asOf: periodEndOf(periodMonth) }).then((rows) => ({ rows, error: '' })).catch((err) => ({ rows: [], error: err.message || 'Gagal memuat harga satuan' }))
+          : Promise.resolve({ rows: [], error: '' }),
+        canViewVariableFinancial && activeTab === 'rekap'
           ? listVariableRevenueTargets({ contractId, up3Id: up3Uuid, periodMonth, unitId: isConsolidated ? null : effectiveUnitUuid }).then((rows) => ({ rows, error: '' })).catch((err) => ({ rows: [], error: err.message || 'Gagal memuat Target Pendapatan' }))
           : Promise.resolve({ rows: [], error: '' }),
       ])
       if (requestId !== monthlyRequestId.current) return
       setTargets(t ?? []); setEntries([...(e ?? []), ...(tebang ?? [])]); setKonstruksiAmounts(konstruksi ?? []); setKonstruksiTargets(konstruksiTarget ?? []); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
       setFinancialRows(financial.rows ?? []); setFinancialError(financial.error ?? '')
+      setUnitPrices(unitPriceData.rows ?? []); setUnitPriceError(unitPriceData.error ?? '')
       setFinancialTargets(revenueTargets.rows ?? []); setFinancialTargetError(revenueTargets.error ?? '')
       if (effectiveUnitUuid && !isConsolidated) {
         const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid }).catch(() => [])
@@ -165,7 +179,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
       } else if (isConsolidated) {
         setActiveFeeders([])
       } else setActiveFeeders([])
-    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setFinancialTargets([]); setFinancialTargetError(''); setUp3Targets([]) } }
+    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUnitPrices([]); setUnitPriceError(''); setFinancialTargets([]); setFinancialTargetError(''); setUp3Targets([]) } }
     finally { if (requestId === monthlyRequestId.current) setLoading(false) }
   }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, activeTab, targetUnitId, canViewVariableFinancial, childUlps.map((u) => u.uuid).join(',')])
 
@@ -830,8 +844,44 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     }
   }
 
+  // Pendapatan indikator spreadsheet = realisasi spreadsheet × harga satuan
+  // efektif akhir periode. Harga sama untuk semua ULP dalam satu UP3.
+  const unitPriceByIndicatorId = new Map((unitPrices ?? []).map((row) => [row.indicator_id, Number(row.unit_price)]))
+  const priceForPoint = (point) => {
+    const uuid = pointToUuids.get(point)
+    if (!uuid) return null
+    const price = unitPriceByIndicatorId.get(uuid)
+    return price == null || Number.isNaN(price) ? null : price
+  }
+  const sheetUuidSet = new Set(SPREADSHEET_INDICATOR_CODES.map((code) => pointToUuids.get(code)).filter(Boolean))
+
+  function getSheetRevenue(point, scopedUnitId = null) {
+    const summary = sheetSummaries[point]
+    if (sheetErrors[point] && !summary) return { revenue: null, missingPrice: false, error: sheetErrors[point] }
+    if (!summary) return { revenue: null, missingPrice: false, error: '' }
+    const price = priceForPoint(point)
+    if (price == null) return { revenue: null, missingPrice: true, error: '' }
+    let realization = Number(summary.realization ?? 0)
+    if (scopedUnitId) {
+      const unit = childUlps.find((item) => item.uuid === scopedUnitId) ?? (effectiveUnitUuid === scopedUnitId ? effectiveUnit : null)
+      realization = realizationForUnit(summary, unit?.displayName)
+    }
+    return { revenue: realization * price, missingPrice: false, error: '' }
+  }
+
+  function renderSheetRevenue(point, scopedUnitId = null) {
+    if (point === '3.1a') return 'Tidak Ditagihkan'
+    if (sheetLoading && !sheetSummaries[point] && !sheetErrors[point]) return <span className="vc-skeleton" style={{ width: 72 }} />
+    const values = getSheetRevenue(point, scopedUnitId)
+    if (values.error) return <span className="sla-blocked-note">Data gagal dimuat</span>
+    if (unitPriceError) return <span className="sla-blocked-note">Harga gagal dimuat</span>
+    if (values.missingPrice) return <span className="sla-blocked-note">Harga belum diatur</span>
+    return formatRp(values.revenue ?? 0)
+  }
+
   function renderFinancialValue(point, scopedUnitId = null) {
     if (point === '3.1a') return 'Tidak Ditagihkan'
+    if (isSpreadsheetSourced(point)) return renderSheetRevenue(point, scopedUnitId)
     if (financialError) return <span className="sla-blocked-note">Tidak tersedia</span>
     const values = getFinancialValues(point, scopedUnitId)
     if (values.missing > 0 && values.revenue === 0) return <span className="sla-blocked-note">Harga belum tersedia ({values.missing})</span>
@@ -883,9 +933,16 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     return financial?.revenue_amount == null ? EMPTY_VALUE : formatRp(financial.revenue_amount)
   }
 
-  const pricedRevenue = financialRows.filter((row) => row.source_type === 'UNIT_RATE' && row.revenue_amount != null).reduce((sum, row) => sum + Number(row.revenue_amount), 0)
+  // Hindari hitung ganda: indikator spreadsheet memakai realisasi spreadsheet,
+  // bukan transaksi database untuk pekerjaan yang sama.
+  const dbPricedRows = financialRows.filter((row) => row.source_type === 'UNIT_RATE' && !sheetUuidSet.has(row.indicator_id))
+  const sheetRevenueScope = isConsolidated ? null : effectiveUnitUuid
+  const sheetRevenueValues = SPREADSHEET_INDICATOR_CODES.filter((code) => code !== '3.1a').map((code) => getSheetRevenue(code, sheetRevenueScope))
+  const sheetRevenueTotal = sheetRevenueValues.reduce((sum, values) => sum + (values.revenue ?? 0), 0)
+  const sheetMissingPriceCount = sheetRevenueValues.filter((values) => values.missingPrice).length
+  const pricedRevenue = dbPricedRows.filter((row) => row.revenue_amount != null).reduce((sum, row) => sum + Number(row.revenue_amount), 0) + sheetRevenueTotal
   const konstruksiRevenue = financialRows.filter((row) => row.source_type === 'KONSTRUKSI').reduce((sum, row) => sum + Number(row.revenue_amount ?? 0), 0)
-  const missingPriceCount = financialRows.filter((row) => row.source_type === 'UNIT_RATE' && row.price_missing).length
+  const missingPriceCount = dbPricedRows.filter((row) => row.price_missing).length + sheetMissingPriceCount
   const pricedTargetAmount = financialTargets.filter((row) => row.target_amount != null).reduce((sum, row) => sum + Number(row.target_amount), 0)
   const targetUnitIds = [...new Set(financialTargets.map((row) => row.unit_id))]
   const scopedKonstruksiTargets = konstruksiTargets.filter((row) => targetUnitIds.includes(row.unit_id))
@@ -962,7 +1019,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
           <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : hasWo ? formatNumber(totalWo) : <span className="text-muted">Belum diisi ULP</span>}</td>
           <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : formatNumber(realisasi)}</td>
           <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 56 }} /> : ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
-          {canViewVariableFinancial && <td>{EMPTY_VALUE}</td>}
+          {canViewVariableFinancial && <td>{renderSheetRevenue(ind.point)}</td>}
           <td>
             <button type="button" className="sla-btn" disabled={firstLoad} onClick={() => setDrillIndicator(ind)}>Detail</button>
           </td>
@@ -1009,7 +1066,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
         </td>
         <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : formatNumber(realisasi)}</td>
         <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 56 }} /> : ind.slaLinked && target != null ? pencapaian : EMPTY_VALUE}</td>
-        {canViewVariableFinancial && <td>{EMPTY_VALUE}</td>}
+        {canViewVariableFinancial && <td>{renderSheetRevenue(ind.point, effectiveUnitUuid)}</td>}
         {showRekapAction && (
           <td>
             <button type="button" className="sla-btn" disabled={firstLoad} onClick={(e) => { e.stopPropagation(); openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>Lihat Detail</button>
@@ -1079,7 +1136,7 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
             <button
               type="button"
               className="vc-refresh-btn"
-              onClick={() => loadSheetSummary('refresh')}
+              onClick={() => { loadSheetSummary('refresh'); loadMonthly() }}
               disabled={sheetLoading || !periodMonth}
               title="Perbarui data"
               aria-label="Perbarui data"
