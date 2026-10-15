@@ -99,7 +99,7 @@ function selectedTotals(snapshot, revenueCodes, costCodes, revenueOverrides = nu
   let revenueMissingPrice = 0
   let revenueSheetMissing = 0
   for (const code of revenueCodes) {
-    if (revenueOverrides && Object.prototype.hasOwn(revenueOverrides, code)) {
+    if (revenueOverrides && Object.prototype.hasOwnProperty.call(revenueOverrides, code)) {
       const override = revenueOverrides[code]
       revenue += Number(override.amount ?? 0)
       revenueMissingPrice += Number(override.missingPrice ?? 0)
