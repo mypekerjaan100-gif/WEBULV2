@@ -61,21 +61,22 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
   }
 
   return (
-    <div>
+    <div className="alkes-section">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">{title}</h2>
-        <input
-          className="sla-input sla-input-text"
-          style={{ maxWidth: 240 }}
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-          placeholder="Cari kode/nama"
-        />
-        {canManage && (
-          <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? setForm(null) : startAdd())}>
-            {form ? 'Batal' : 'Tambah'}
-          </button>
-        )}
+        <div className="alkes-toolbar-actions">
+          <input
+            className="sla-input sla-input-text alkes-search"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder="Cari kode/nama"
+          />
+          {canManage && (
+            <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? setForm(null) : startAdd())}>
+              {form ? 'Batal' : 'Tambah'}
+            </button>
+          )}
+        </div>
       </div>
       {form && canManage && (
         <div className="sla-sign-group">
@@ -109,7 +110,7 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
         </div>
       )}
       <div className="sla-preview-scroll">
-        <table className="sla-preview-table">
+        <table className="sla-preview-table alkes-table">
           <thead>
             <tr>
               <th>Kode</th>
@@ -185,21 +186,22 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
   }
 
   return (
-    <div>
+    <div className="alkes-section">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Daftar Peralatan</h2>
-        <input
-          className="sla-input sla-input-text"
-          style={{ maxWidth: 240 }}
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-          placeholder="Cari kode/nama/kategori"
-        />
-        {canManage && (
-          <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? setForm(null) : (setError(''), setForm(emptyEquipmentForm())))}>
-            {form ? 'Batal' : 'Tambah Alat'}
-          </button>
-        )}
+        <div className="alkes-toolbar-actions">
+          <input
+            className="sla-input sla-input-text alkes-search"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder="Cari kode/nama/kategori"
+          />
+          {canManage && (
+            <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? setForm(null) : (setError(''), setForm(emptyEquipmentForm())))}>
+              {form ? 'Batal' : 'Tambah Alat'}
+            </button>
+          )}
+        </div>
       </div>
       {form && canManage && (
         <div className="sla-sign-group">
@@ -250,7 +252,7 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
         </div>
       )}
       <div className="sla-preview-scroll">
-        <table className="sla-preview-table">
+        <table className="sla-preview-table alkes-table">
           <thead>
             <tr>
               <th>Kode</th>
@@ -384,27 +386,28 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }
 
   return (
-    <div>
+    <div className="alkes-section">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Kebutuhan Peralatan</h2>
-        <input
-          className="sla-input sla-input-text"
-          style={{ maxWidth: 240 }}
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-          placeholder="Cari template"
-        />
-        <select className="sla-context-select" style={{ maxWidth: 160 }} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-          <option value="Semua">Semua status</option>
-          <option value="Draft">Draft</option>
-          <option value="Aktif">Aktif</option>
-          <option value="Diarsipkan">Diarsipkan</option>
-        </select>
-        {canManage && (
-          <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? setForm(null) : (setError(''), setForm(emptyTemplateForm())))}>
-            {form ? 'Batal' : 'Buat Template'}
-          </button>
-        )}
+        <div className="alkes-toolbar-actions">
+          <input
+            className="sla-input sla-input-text alkes-search"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder="Cari template"
+          />
+          <select className="sla-context-select alkes-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="Semua">Semua status</option>
+            <option value="Draft">Draft</option>
+            <option value="Aktif">Aktif</option>
+            <option value="Diarsipkan">Diarsipkan</option>
+          </select>
+          {canManage && (
+            <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? setForm(null) : (setError(''), setForm(emptyTemplateForm())))}>
+              {form ? 'Batal' : 'Buat Template'}
+            </button>
+          )}
+        </div>
       </div>
       {form && canManage && (
         <div className="sla-sign-group">
@@ -459,7 +462,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                   ))}
                 </select>
               </div>
-              <div className="sla-context-field" style={{ maxWidth: 140 }}>
+              <div className="sla-context-field alkes-qty">
                 <span className="sla-context-label">Jumlah Kebutuhan *</span>
                 <input
                   className="sla-input sla-input-text"
@@ -490,7 +493,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
         </div>
       )}
       <div className="sla-preview-scroll">
-        <table className="sla-preview-table">
+        <table className="sla-preview-table alkes-table alkes-table--wide">
           <thead>
             <tr>
               <th>Kode</th>
@@ -664,7 +667,7 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
 
   if (!scopeReady) {
     return (
-      <section className="sla-settings">
+      <section className="sla-settings alkes-master">
         <h2 className="sla-settings-title">Master Data Alat & Kendaraan</h2>
         <p className="sla-blocked-note">Scope organisasi belum siap. Muat ulang halaman.</p>
       </section>
@@ -672,7 +675,7 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
   }
 
   return (
-    <section className="sla-settings">
+    <section className="sla-settings alkes-master">
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Master Data Alat & Kendaraan</h2>
       </div>

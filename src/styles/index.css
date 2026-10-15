@@ -4836,6 +4836,109 @@ summary:focus-visible {
   margin-top: 2px;
 }
 
+/* ---------- Master Alat & Kendaraan responsive (scoped) ---------- */
+.alkes-master {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.alkes-master > *,
+.alkes-section {
+  min-width: 0;
+}
+
+.alkes-section {
+  display: grid;
+  gap: 12px;
+}
+
+/* Tabel modul memakai lebar natural, bukan minimum global 1500px. */
+.alkes-master .sla-preview-scroll {
+  max-width: 100%;
+}
+
+.alkes-master .sla-preview-table.alkes-table {
+  min-width: 0;
+}
+
+.alkes-master .alkes-table {
+  min-width: 560px;
+}
+
+.alkes-master .alkes-table--wide {
+  min-width: 760px;
+}
+
+.alkes-master .alkes-table .sla-table-sub {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Toolbar: judul di kiri, kontrol berkelompok di kanan. */
+.alkes-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.alkes-master .alkes-search {
+  width: 100%;
+  max-width: 240px;
+  min-width: 0;
+}
+
+.alkes-master .alkes-filter {
+  width: 100%;
+  max-width: 160px;
+  min-width: 0;
+}
+
+/* Form tambah/edit: field menyusut aman, input memenuhi kolom grid. */
+.alkes-master .sla-sign-group-head {
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+}
+
+.alkes-master .sla-context-field {
+  min-width: 0;
+}
+
+.alkes-master .sla-context-field > .sla-input,
+.alkes-master .sla-context-field > .sla-context-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.alkes-master .alkes-qty {
+  max-width: 140px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .alkes-master .sla-settings-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .alkes-toolbar-actions {
+    margin-left: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .alkes-master .alkes-search,
+  .alkes-master .alkes-filter,
+  .alkes-master .alkes-qty {
+    max-width: none;
+  }
+
+  .alkes-toolbar-actions .sla-btn {
+    width: 100%;
+  }
+}
+
 /* Status badge improvements */
 .sla-status-badge {
   font-size: 11px;
