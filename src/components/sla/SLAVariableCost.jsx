@@ -133,6 +133,24 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
   const dailyRequestId = useRef(0)
   const handledApprovalToken = useRef(null)
   const approvalDetailRequestId = useRef(0)
+  const variableConfigMenuRef = useRef(null)
+
+  // Dropdown Pengaturan Variable: tutup saat klik di luar menu atau tekan Escape.
+  useEffect(() => {
+    const closeOnOutsideClick = (event) => {
+      const menu = variableConfigMenuRef.current
+      if (menu?.open && !menu.contains(event.target)) menu.open = false
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && variableConfigMenuRef.current?.open) variableConfigMenuRef.current.open = false
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
 
   const loadMonthly = useCallback(async () => {
     const requestId = ++monthlyRequestId.current
@@ -1096,11 +1114,11 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
           className="vc-primary-tabs"
           renderLabel={(tab) => <>{tab.label}{tab.id === 'persetujuan' && (approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</>}
         />
-        <details className="vc-config-menu">
+        <details className="vc-config-menu" ref={variableConfigMenuRef}>
           <summary className={configurationActive ? 'vc-config-menu-active' : ''}>Pengaturan Variable</summary>
           <div className="vc-config-menu-panel">
             {configurationTabs.map((tab) => (
-              <Button key={tab.id} variant="ghost" className={activeTab === tab.id ? 'vc-config-item-active' : ''} onClick={() => setActiveTab(tab.id)}>
+              <Button key={tab.id} variant="ghost" className={activeTab === tab.id ? 'vc-config-item-active' : ''} onClick={() => { if (variableConfigMenuRef.current) variableConfigMenuRef.current.open = false; setActiveTab(tab.id) }}>
                 {tab.label}
                 {tab.id === 'penyulang' && isUp3Role && !isManagementReadOnly && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}
               </Button>

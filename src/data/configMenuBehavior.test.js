@@ -29,3 +29,20 @@ assert(page.includes("document.removeEventListener('pointerdown'"), 'Cleanup lis
 assert(page.includes("document.removeEventListener('keydown'"), 'Cleanup listener keydown hilang')
 
 console.log(`Config menu behavior tests passed: ${passed}`)
+
+// Dropdown Pengaturan Variable memakai pola yang sama: <details> + ref,
+// listener klik luar, Escape, dan menutup saat menu dipilih.
+const variableUrl = new URL('../components/sla/SLAVariableCost.jsx', import.meta.url)
+const variable = readFileSync(fileURLToPath(variableUrl), 'utf8')
+
+assert(variable.includes('const variableConfigMenuRef = useRef(null)'), 'Ref dropdown Pengaturan Variable hilang')
+assert(variable.includes('<details className="vc-config-menu" ref={variableConfigMenuRef}>'), 'Ref harus terpasang pada dropdown Pengaturan Variable')
+assert(variable.includes("document.addEventListener('pointerdown'"), 'Listener klik luar dropdown Variable hilang')
+assert(variable.includes('!menu.contains(event.target)'), 'Klik dalam panel Variable tidak boleh menutup dropdown')
+assert(variable.includes('menu.open = false'), 'Klik luar harus menutup dropdown Variable')
+assert(variable.includes('variableConfigMenuRef.current.open = false'), 'Memilih menu Variable harus menutup dropdown')
+assert(variable.includes("event.key === 'Escape'"), 'Escape harus menutup dropdown Variable')
+assert(variable.includes("document.removeEventListener('pointerdown'"), 'Cleanup listener pointerdown Variable hilang')
+assert(variable.includes("document.removeEventListener('keydown'"), 'Cleanup listener keydown Variable hilang')
+
+console.log(`Variable config menu behavior tests passed: ${passed}`)
