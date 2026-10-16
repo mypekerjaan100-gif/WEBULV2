@@ -205,7 +205,7 @@ export function StatePanel({ state = 'empty', title, children, action, className
   )
 }
 
-export function Modal({ open, onClose, title, size = 'medium', children, footer, className = '', closeOnBackdrop = true }) {
+export function Modal({ open, onClose, title, size = 'medium', children, footer, className = '', closeOnBackdrop = true, showCloseButton = true, backdropClassName = '', describedBy, dismissDisabled = false }) {
   const titleId = useId()
   const dialogRef = useRef(null)
 
@@ -214,23 +214,23 @@ export function Modal({ open, onClose, title, size = 'medium', children, footer,
     const previous = document.activeElement
     dialogRef.current?.focus()
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose?.()
+      if (event.key === 'Escape' && !dismissDisabled) onClose?.()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       previous?.focus?.()
     }
-  }, [open, onClose])
+  }, [open, onClose, dismissDisabled])
 
   if (!open) return null
 
   return (
-    <div className="ui-modal-backdrop" onMouseDown={(event) => { if (closeOnBackdrop && event.target === event.currentTarget) onClose?.() }}>
-      <div ref={dialogRef} className={classes('ui-modal', `ui-modal-${size}`, className)} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+    <div className={classes('ui-modal-backdrop', backdropClassName)} onMouseDown={(event) => { if (closeOnBackdrop && !dismissDisabled && event.target === event.currentTarget) onClose?.() }}>
+      <div ref={dialogRef} className={classes('ui-modal', `ui-modal-${size}`, className)} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={describedBy} tabIndex={-1}>
         <header className="ui-modal-header">
           <h2 id={titleId}>{title}</h2>
-          <IconButton label="Tutup dialog" onClick={onClose}><Icon name="close" size={18} /></IconButton>
+          {showCloseButton && <IconButton label="Tutup dialog" onClick={onClose}><Icon name="close" size={18} /></IconButton>}
         </header>
         <div className="ui-modal-content">{children}</div>
         {footer && <footer className="ui-modal-footer">{footer}</footer>}
@@ -241,6 +241,81 @@ export function Modal({ open, onClose, title, size = 'medium', children, footer,
 
 export function ModalSection({ title, className = '', children }) {
   return <section className={classes('ui-modal-section', className)}>{title && <h3>{title}</h3>}{children}</section>
+}
+
+/**
+ * Dialog konfirmasi reusable: Batal / Konfirmasi + loading + error.
+ * - Selama loading, dialog tidak bisa ditutup (backdrop, Escape, tombol X
+ *   disembunyikan) dan kedua tombol dinonaktifkan untuk cegah double-submit.
+ */
+export function ConfirmationDialog({
+  open,
+  title,
+  description,
+  summary = [],
+  confirmLabel = 'Konfirmasi',
+  cancelLabel = 'Batal',
+  confirmTone = 'primary',
+  icon = 'shield',
+  loading = false,
+  error = '',
+  backdropClassName = '',
+  className = '',
+  onConfirm,
+  onCancel,
+}) {
+  const descriptionId = useId()
+  const busy = Boolean(loading)
+  const handleCancel = () => {
+    if (!busy) onCancel?.()
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={handleCancel}
+      title={title}
+      size="small"
+      showCloseButton={!busy}
+      closeOnBackdrop={!busy}
+      dismissDisabled={busy}
+      backdropClassName={classes('ui-confirm-backdrop', backdropClassName)}
+      describedBy={descriptionId}
+      className={classes('ui-confirm-dialog', className)}
+      footer={
+        <>
+          <Button variant="secondary" onClick={handleCancel} disabled={busy} autoFocus={!busy}>{cancelLabel}</Button>
+          <Button
+            variant={confirmTone}
+            onClick={onConfirm}
+            disabled={busy}
+            aria-busy={busy || undefined}
+            iconAfter={busy ? <Icon name="loader" size={16} className="ui-icon-spin" /> : undefined}
+          >
+            {busy ? 'Memproses...' : confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <div className="ui-confirm-body">
+        <span className={classes('ui-confirm-icon', `ui-confirm-${confirmTone}`)} aria-hidden="true">
+          <Icon name={icon} size={26} />
+        </span>
+        <p id={descriptionId} className="ui-confirm-description">{description}</p>
+      </div>
+      {summary.length > 0 && (
+        <dl className="ui-confirm-summary">
+          {summary.map((item) => (
+            <div key={item.label}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {error && <Alert tone="danger" className="ui-confirm-error">{error}</Alert>}
+    </Modal>
+  )
 }
 
 /**

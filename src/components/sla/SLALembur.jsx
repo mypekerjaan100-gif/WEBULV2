@@ -27,6 +27,7 @@ import Icon from '../Icon.jsx'
 import {
   Alert,
   Button,
+  ConfirmationDialog,
   FilterBar,
   FilterField,
   IconButton,
@@ -292,6 +293,8 @@ export default function SLALembur({
     setDetailEntryId(null)
     setShowReject(null)
     setRejectReason('')
+    setApproveTarget(null)
+    setApproveError('')
   }
   const [detailEvidence, setDetailEvidence] = useState([])
   const [detailEntries, setDetailEntries] = useState([])
@@ -322,10 +325,14 @@ export default function SLALembur({
   const [correctReason, setCorrectReason] = useState('')
   const [correctError, setCorrectError] = useState('')
   const [correctBusy, setCorrectBusy] = useState(false)
-  const [toast, setToast] = useState('')
+  const [toast, setToast] = useState(null)
+  const showToast = (message, tone = 'success') => setToast(message ? { message, tone } : null)
   const [submitProcess, setSubmitProcess] = useState(null)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [approvalError, setApprovalError] = useState('')
+  // Target konfirmasi Approve: { record, entryId, participantName }.
+  const [approveTarget, setApproveTarget] = useState(null)
+  const [approveError, setApproveError] = useState('')
   const [deadlineInfo, setDeadlineInfo] = useState(null)
   const [deadlineLoadStatus, setDeadlineLoadStatus] = useState('idle')
   const [deadlineLoadError, setDeadlineLoadError] = useState('')
@@ -358,6 +365,8 @@ export default function SLALembur({
   useEffect(() => {
     setApprovalError('')
     setApprovalBusy(false)
+    setApproveTarget(null)
+    setApproveError('')
   }, [detailActivityId, detailEntryId])
 
   useEffect(() => {
@@ -1467,13 +1476,25 @@ export default function SLALembur({
     }
   }
 
-  const handleApprove = async (record, entryIdOverride)=>{
-    if(!record) return
+  const openApproveConfirm = (record, entryIdOverride)=>{
+    if(!record || approvalBusy) return
     const entryId = entryIdOverride ?? (record.type === 'WORK' ? record.entryId : null)
     const participantName = record.type === 'WORK' ? record.participantName : ''
-    if(!window.confirm(`Setujui pengajuan lembur${participantName ? ` peserta ${participantName}` : ''} ini?`)) return
+    setApproveError('')
+    setApproveTarget({ record, entryId, participantName })
+  }
+  const closeApproveConfirm = ()=>{
+    if (approvalBusy) return
+    setApproveTarget(null)
+    setApproveError('')
+  }
+  const confirmApprove = async ()=>{
+    const target = approveTarget
+    if(!target || approvalBusy) return
+    const { record, entryId, participantName } = target
     setApprovalBusy(true)
     setApprovalError('')
+    setApproveError('')
     try{
       if (record.type === 'WORK') {
         if (!entryId) throw new Error('Data peserta tidak valid. Tutup detail lalu buka kembali dari baris peserta.')
@@ -1485,9 +1506,15 @@ export default function SLALembur({
       await onRefresh?.()
       const verified = await verifyParticipantStatus(record, entryId, ['APPROVED'])
       if (verified === false) throw new Error('Approval peserta belum tersimpan. Muat ulang lalu coba lagi.')
+      setApproveTarget(null)
       closeDetail()
-      setToast(participantName ? `${participantName} berhasil disetujui.` : 'Lembur berhasil disetujui.')
-    }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal disetujui.')) } finally{ setApprovalBusy(false) }
+      showToast(participantName ? `${participantName} berhasil disetujui.` : 'Lembur berhasil disetujui.', 'success')
+    }catch(e){
+      const message = friendlyApprovalError(e.message, 'Lembur gagal disetujui.')
+      setApprovalError(message)
+      setApproveError(message)
+      showToast(message, 'danger')
+    } finally{ setApprovalBusy(false) }
   }
   const handleReject = async (record, entryIdOverride)=>{
     if(!record) return
@@ -1507,7 +1534,7 @@ export default function SLALembur({
       const verified = await verifyParticipantStatus(record, entryId, ['CORRECTION_REQUIRED', 'CLOSED'])
       if (verified === false) throw new Error('Penolakan peserta belum tersimpan. Muat ulang lalu coba lagi.')
       closeDetail()
-      setToast(res?.message || 'Lembur ditolak dan dikembalikan untuk revisi.')
+      showToast(res?.message || 'Lembur ditolak dan dikembalikan untuk revisi.', 'success')
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
   }
 
@@ -1560,9 +1587,9 @@ export default function SLALembur({
       const deletedName = deleteTarget.participantName ? `Peserta ${deleteTarget.participantName} dihapus. ` : ''
       setDeleteTarget(null)
       setDeleteReason('')
-      setToast(storageCleanupFailed
+      showToast(storageCleanupFailed
         ? `${deletedName}Data dihapus, tetapi sebagian file evidence gagal dibersihkan dari Storage.`
-        : `${deletedName}Data Lembur berhasil dihapus.`)
+        : `${deletedName}Data Lembur berhasil dihapus.`, 'success')
       await onRefresh?.()
     } catch (error) {
       setDeleteError(friendlyDeleteError(error?.message))
@@ -1642,9 +1669,9 @@ export default function SLALembur({
       setCorrectDate('')
       setCorrectTimes({})
       setCorrectReason('')
-      setToast(movedPeriod
+      showToast(movedPeriod
         ? 'Koreksi tersimpan. Status tetap Disetujui. Tanggal pindah periode — data tampil pada periode baru.'
-        : 'Koreksi tersimpan. Status tetap Disetujui; nominal dihitung ulang.')
+        : 'Koreksi tersimpan. Status tetap Disetujui; nominal dihitung ulang.', 'success')
       await onRefresh?.()
     } catch (error) {
       setCorrectError(error?.message || 'Koreksi gagal disimpan.')
@@ -1981,7 +2008,7 @@ export default function SLALembur({
           {canMutate && <Button variant="primary" onClick={openNewForm}>+ Tambah Lembur</Button>}
         </div>
       </div>
-      {toast && <div className="lembur-toast" role="status"><Icon name="check-circle" size={17} />{toast}</div>}
+      {toast && <div className={`lembur-toast${toast.tone === 'danger' ? ' lembur-toast-danger' : ''}`} role={toast.tone === 'danger' ? 'alert' : 'status'}><Icon name={toast.tone === 'danger' ? 'x-circle' : 'check-circle'} size={17} />{toast.message}</div>}
       {loadError ? (
         <StatePanel state="error" title="Data lembur gagal dimuat" action={<Button variant="secondary" onClick={onRetry}>Coba Lagi</Button>}>{loadError}</StatePanel>
       ) : loading ? (
@@ -2484,7 +2511,7 @@ export default function SLALembur({
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
                      {(isAdminUp3||isSuperAdmin) && detailCanApprove && (
-                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailApprovalKey);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>handleApprove(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
+                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailApprovalKey);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>openApproveConfirm(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
                       )}
                      {(isAdminUp3||isSuperAdmin) && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
                   </>
@@ -2493,6 +2520,25 @@ export default function SLALembur({
             </div>
           )}
           {profilePreview && <div className="lembur-preview-overlay" onClick={()=>setProfilePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>Foto Profil Pegawai</strong><span>{profilePreview.name}</span></div><IconButton label="Tutup preview" className="lembur-icon-button" onClick={()=>setProfilePreview(null)}><Icon name="close" size={17} /></IconButton></div><div className="lembur-preview-body"><img src={profilePreview.url} alt={`Foto profil ${profilePreview.name}`} className="lembur-profile-full" /></div><p className="sla-table-hint lembur-profile-hint">Bandingkan wajah pada foto profil dengan foto evidence (briefing/proses/selesai).</p></div></div>}
+          <ConfirmationDialog
+            open={Boolean(approveTarget)}
+            title="Konfirmasi Persetujuan"
+            description={`Setujui pengajuan lembur${approveTarget?.participantName ? ` peserta ${approveTarget.participantName}` : ''} ini? Pengajuan yang disetujui tercatat final dan diteruskan ke perhitungan.`}
+            summary={approveTarget ? [
+              { label: 'Jenis', value: jenisLabel(approveTarget.record) },
+              { label: 'Peserta', value: approveTarget.participantName || '—' },
+              { label: 'Unit & Tanggal', value: `${getUlpName(approveTarget.record.unitId)} · ${approveTarget.record.date}` },
+            ] : []}
+            confirmLabel="Konfirmasi"
+            cancelLabel="Batal"
+            confirmTone="primary"
+            icon="shield"
+            loading={approvalBusy}
+            error={approveError}
+            backdropClassName="lembur-confirm-backdrop"
+            onConfirm={confirmApprove}
+            onCancel={closeApproveConfirm}
+          />
           {evidencePreview && <div className="lembur-preview-overlay" onClick={()=>setEvidencePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>{evidenceLabel(evidencePreview.entry.evidenceType)}</strong><span>{evidencePreview.entry.originalFilename}</span></div><IconButton label="Tutup preview" className="lembur-icon-button" onClick={()=>setEvidencePreview(null)}><Icon name="close" size={17} /></IconButton></div><div className="lembur-preview-body">{evidencePreview.loading?<div className="lembur-detail-empty">Menyiapkan preview aman...</div>:isImageEvidence(evidencePreview.entry)?<img src={evidencePreview.url} alt={evidencePreview.entry.originalFilename} />:isPdfEvidence(evidencePreview.entry)?<iframe src={evidencePreview.url} title={evidencePreview.entry.originalFilename} />:<div className="lembur-document-fallback"><span className="lembur-doc-icon">DOC</span><strong>Pratinjau dokumen tidak didukung browser.</strong><p>Dokumen tetap tersimpan aman. Tutup viewer untuk kembali ke Detail Lembur.</p></div>}</div>{isImageEvidence(evidencePreview.entry)&&evidencePreview.entries.length>1&&<div className="lembur-preview-nav"><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(-1)}>← Sebelumnya</Button><span>{evidencePreview.index+1} / {evidencePreview.entries.length}</span><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(1)}>Berikutnya →</Button></div>}</div></div>}
         </>
       )}
