@@ -34,7 +34,10 @@ assert(lembur.includes("await onRefresh?.()"), 'Refresh harus berjalan sebelum v
 assert(lembur.includes('Approval peserta belum tersimpan. Muat ulang lalu coba lagi.'), 'Kegagalan verifikasi approval harus berpesan jelas')
 assert(lembur.includes('Penolakan peserta belum tersimpan. Muat ulang lalu coba lagi.'), 'Kegagalan verifikasi penolakan harus berpesan jelas')
 
-// Toast sukses menyebut nama peserta agar tidak tertukar; gagal memakai tone danger.
+// Nama peserta diambil untuk semua tipe lembur (termasuk Pengganti Cuti).
+assert(lembur.includes('const participantName = record.participantName'), 'Nama peserta harus diambil untuk semua tipe lembur')
+assert(!lembur.includes("record.type === 'WORK' ? record.participantName"), 'Nama peserta tidak boleh dibatasi tipe WORK')
+assert(lembur.includes('Pegawai Pengganti'), 'Dialog harus memakai label Pegawai Pengganti untuk tipe pengganti')
 assert(lembur.includes('berhasil disetujui.`'), 'Toast sukses harus menyebut nama peserta')
 assert(lembur.includes("showToast(message, 'danger')"), 'Kegagalan approval harus menampilkan toast danger')
 

@@ -1479,7 +1479,7 @@ export default function SLALembur({
   const openApproveConfirm = (record, entryIdOverride)=>{
     if(!record || approvalBusy) return
     const entryId = entryIdOverride ?? (record.type === 'WORK' ? record.entryId : null)
-    const participantName = record.type === 'WORK' ? record.participantName : ''
+    const participantName = record.participantName ?? ''
     setApproveError('')
     setApproveTarget({ record, entryId, participantName })
   }
@@ -2523,10 +2523,10 @@ export default function SLALembur({
           <ConfirmationDialog
             open={Boolean(approveTarget)}
             title="Konfirmasi Persetujuan"
-            description={`Setujui pengajuan lembur${approveTarget?.participantName ? ` peserta ${approveTarget.participantName}` : ''} ini? Pengajuan yang disetujui tercatat final dan diteruskan ke perhitungan.`}
+            description={`Setujui pengajuan lembur${approveTarget?.participantName ? ` ${approveTarget.record.type === 'WORK' ? 'peserta' : 'pegawai pengganti'} ${approveTarget.participantName}` : ''} ini? Pengajuan yang disetujui tercatat final dan diteruskan ke perhitungan.`}
             summary={approveTarget ? [
               { label: 'Jenis', value: jenisLabel(approveTarget.record) },
-              { label: 'Peserta', value: approveTarget.participantName || '—' },
+              { label: approveTarget.record.type === 'WORK' ? 'Peserta' : 'Pegawai Pengganti', value: approveTarget.participantName || '—' },
               { label: 'Unit & Tanggal', value: `${getUlpName(approveTarget.record.unitId)} · ${approveTarget.record.date}` },
             ] : []}
             confirmLabel="Konfirmasi"
