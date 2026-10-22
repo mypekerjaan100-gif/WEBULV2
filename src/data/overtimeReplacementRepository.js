@@ -196,6 +196,9 @@ function mapWorkRecord(row) {
     // tidak punya batas revisi (jangan warisi batas batch peserta lain).
     revisionDeadlineAt: ('entry_revision_deadline_at' in row) ? row.entry_revision_deadline_at : row.revision_deadline_at,
     activityRevisionDeadlineAt: row.revision_deadline_at,
+    // Alasan penutupan per peserta; fallback alasan aktivitas dipakai
+    // hanya bila kolom peserta tidak tersedia di RPC.
+    entryClosureReason: ('entry_closure_reason' in row) ? row.entry_closure_reason : null,
     closureReason: row.closure_reason,
     evidenceMode: row.evidence_mode ?? 'LEGACY_SHARED',
   }
@@ -270,6 +273,12 @@ export async function rejectOvertime(activityId, reason) {
 }
 export async function rejectOvertimeEntry(entryId, reason) {
   return rpc('reject_overtime_entry_l5', { p_entry_id: entryId, p_reason: reason })
+}
+export async function finalRejectOvertime(activityId, reason) {
+  return rpc('final_reject_overtime_l5', { p_activity_id: activityId, p_reason: reason })
+}
+export async function finalRejectOvertimeEntry(entryId, reason) {
+  return rpc('final_reject_overtime_entry_l5', { p_entry_id: entryId, p_reason: reason })
 }
 export async function resubmitOvertime(activityId) {
   return rpc('resubmit_overtime_l5', { p_activity_id: activityId })

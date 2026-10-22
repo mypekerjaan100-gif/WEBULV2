@@ -15,7 +15,7 @@ assert(lembur.includes('const openApproveConfirm = (record, entryIdOverride)'), 
 assert(lembur.includes('const confirmApprove = async'), 'confirmApprove harus mengeksekusi approval')
 assert(lembur.includes('onClick={()=>openApproveConfirm(detailActivity, detailEntryId)}'), 'Tombol Setujui harus membuka dialog konfirmasi dengan detailEntryId')
 assert(lembur.includes('const handleReject = async (record, entryIdOverride)'), 'handleReject harus menerima entryId eksplisit')
-assert(lembur.includes('onClick={()=>handleReject(detailActivity, detailEntryId)}'), 'Tombol penolakan harus mengirim detailEntryId')
+assert(lembur.includes("openFinalRejectConfirm(detailActivity, detailEntryId):handleReject(detailActivity, detailEntryId)"), 'Tombol penolakan harus mengirim detailEntryId (revisi dan Tolak Final)')
 
 // Approve tidak boleh memakai native confirm; diganti dialog custom.
 assert(!lembur.includes('window.confirm(`Setujui pengajuan lembur'), 'Approve tidak boleh memakai window.confirm')

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import {
   approveOvertime,
   approveOvertimeEntry,
+  finalRejectOvertime,
+  finalRejectOvertimeEntry,
   getOvertimeInitialDeadlineConfig,
   listOvertimeHistory,
   listOvertimeReplacements,
@@ -69,9 +71,23 @@ function friendlyDeadlineError(message) {
   return text || 'Gagal memverifikasi deadline pengajuan.'
 }
 
+// Alasan penutupan milik peserta ini; tidak mewarisi alasan aktivitas
+// milik peserta lain (batch campuran Disetujui + Ditutup).
+function recordClosureReason(record) {
+  return record?.entryClosureReason ?? record?.closureReason ?? null
+}
+
+// Cakupan Tolak Final (diputuskan bersama pengguna, sementara):
+// Lembur Administrasi, Pengganti Izin, Pengganti Sakit.
+function recordSupportsFinalReject(record) {
+  if (!record) return false
+  if (record.type === 'WORK') return record.workCategory === 'ADMINISTRASI'
+  return ['REPLACEMENT_PERMISSION', 'REPLACEMENT_SICK'].includes(record.type)
+}
+
 function recordIsExpired(record) {
   const status = recordReviewStatus(record)
-  if (status === 'CLOSED' && record.closureReason === 'EXPIRED') return true
+  if (status === 'CLOSED' && recordClosureReason(record) === 'EXPIRED') return true
   return status === 'CORRECTION_REQUIRED'
     && record.revisionDeadlineAt
     && new Date(record.revisionDeadlineAt) < new Date()
@@ -114,8 +130,8 @@ function displayStatus(record){
     return 'Perlu Revisi'
   }
   if (status==='APPROVED') return 'Disetujui'
-  if (status==='CLOSED' && record.closureReason==='FINAL_REJECTED') return 'Ditolak Final'
-  if (status==='CLOSED' && record.closureReason==='EXPIRED') return 'Kedaluwarsa'
+  if (status==='CLOSED' && recordClosureReason(record)==='FINAL_REJECTED') return 'Ditolak Final'
+  if (status==='CLOSED' && recordClosureReason(record)==='EXPIRED') return 'Kedaluwarsa'
   if (status==='CLOSED') return 'Ditutup'
   return status
 }
@@ -126,14 +142,14 @@ function statusTone(record) {
   if (status === 'APPROVED') return 'success'
   if (status === 'SUBMITTED') return 'info'
   if (status === 'CORRECTION_REQUIRED') return 'warning'
-  if (status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'danger'
+  if (status === 'CLOSED' && recordClosureReason(record) === 'FINAL_REJECTED') return 'danger'
   return 'neutral'
 }
 
 function statusBadgeKey(record) {
   const status = recordReviewStatus(record)
   if (recordIsExpired(record)) return 'EXPIRED'
-  if (status === 'CLOSED' && record.closureReason === 'FINAL_REJECTED') return 'REJECTED'
+  if (status === 'CLOSED' && recordClosureReason(record) === 'FINAL_REJECTED') return 'REJECTED'
   return status
 }
 
@@ -185,6 +201,7 @@ function historyEventText(h) {
     case 'APPROVED':
       return { title: 'Disetujui', desc: null }
     case 'CLOSED':
+      if ((h.notes ?? '').includes('Penolakan final')) return { title: 'Ditolak Final', desc: h.reason ?? null }
       return { title: 'Ditutup', desc: h.reason ?? null }
     case 'DELETED':
       return { title: 'Dihapus', desc: h.reason ?? null }
@@ -323,8 +340,11 @@ export default function SLALembur({
     setDetailEntryId(null)
     setShowReject(null)
     setRejectReason('')
+    setRejectMode('REVISION')
     setApproveTarget(null)
     setApproveError('')
+    setFinalRejectTarget(null)
+    setFinalRejectError('')
   }
   const [detailEvidence, setDetailEvidence] = useState([])
   const [detailEntries, setDetailEntries] = useState([])
@@ -332,6 +352,9 @@ export default function SLALembur({
   const [detailLoading, setDetailLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showReject, setShowReject] = useState(null)
+  const [rejectMode, setRejectMode] = useState('REVISION')
+  const [finalRejectTarget, setFinalRejectTarget] = useState(null)
+  const [finalRejectError, setFinalRejectError] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [formStep, setFormStep] = useState('main')
   const [evidenceUrls, setEvidenceUrls] = useState({})
@@ -1600,6 +1623,76 @@ export default function SLALembur({
     }catch(e){ setApprovalError(friendlyApprovalError(e.message, 'Lembur gagal ditolak.')) } finally{ setApprovalBusy(false) }
   }
 
+  // Tolak Final: penolakan langsung untuk Administrasi, Pengganti Izin,
+  // Pengganti Sakit. Menutup pengajuan permanen; dikecualikan dari rekap
+  // pembayaran. Alasan wajib + dialog konfirmasi per peserta/pengajuan.
+  const openRejectBox = (mode)=>{
+    setShowReject(detailApprovalKey)
+    setRejectMode(mode)
+    setApprovalError('')
+  }
+  const openFinalRejectConfirm = (record, entryId)=>{
+    if(!record || approvalBusy) return
+    if(!rejectReason.trim()){ setApprovalError('Alasan penolakan final wajib diisi.'); return }
+    setFinalRejectError('')
+    setFinalRejectTarget({ record, entryId, participantName: record.participantName ?? '' })
+  }
+  const closeFinalRejectConfirm = ()=>{
+    if (approvalBusy) return
+    setFinalRejectTarget(null)
+    setFinalRejectError('')
+  }
+  const confirmFinalReject = async ()=>{
+    const target = finalRejectTarget
+    if(!target || approvalBusy) return
+    const { record, entryId, participantName } = target
+    const reason = rejectReason.trim()
+    if(!reason){ setFinalRejectError('Alasan penolakan final wajib diisi.'); return }
+    setApprovalBusy(true)
+    setFinalRejectError('')
+    try{
+      if (record.type === 'WORK') {
+        if (!entryId) throw new Error('Data peserta tidak valid. Tutup detail lalu buka kembali dari baris peserta.')
+        const resultId = await finalRejectOvertimeEntry(entryId, reason)
+        if (resultId && String(resultId) !== String(entryId)) throw new Error('Penolakan final belum tersimpan. Muat ulang lalu coba lagi.')
+      } else {
+        await finalRejectOvertime(record.id, reason)
+      }
+      await onRefresh?.()
+      const verified = await verifyParticipantStatus(record, entryId, ['CLOSED'])
+      if (verified === false) throw new Error('Penolakan final belum tersimpan. Muat ulang lalu coba lagi.')
+      setFinalRejectTarget(null)
+      closeDetail()
+      showToast(participantName ? `${participantName} ditolak final. Tidak masuk rekap pembayaran.` : 'Lembur ditolak final. Tidak masuk rekap pembayaran.', 'success')
+    }catch(e){
+      const message = friendlyFinalRejectError(e.message)
+      setFinalRejectError(message)
+      showToast(message, 'danger')
+    } finally{ setApprovalBusy(false) }
+  }
+  function friendlyFinalRejectError(message) {
+    const text = String(message ?? '')
+    if (/hanya-sama|only for|administrasi|hanya tersedia/i.test(text)) {
+      return 'Tolak Final hanya tersedia untuk Lembur Administrasi, Pengganti Izin, atau Pengganti Sakit.'
+    }
+    if (/hanya dapat diputuskan oleh|only super admin/i.test(text)) {
+      return 'Kantor UP3 hanya dapat diputuskan oleh Super Admin.'
+    }
+    if (/not authorized|42501|permission|scope/i.test(text)) {
+      return 'Akun Anda tidak memiliki akses approval untuk scope lembur ini.'
+    }
+    if (/only submitted|status/i.test(text)) {
+      return 'Data sudah berubah status. Tutup detail lalu buka kembali untuk memuat status terbaru.'
+    }
+    if (/reason/i.test(text)) {
+      return 'Alasan penolakan final wajib diisi.'
+    }
+    if (/failed to fetch|networkerror|timeout|aborterror|http \d{3}/i.test(text)) {
+      return 'Terjadi gangguan jaringan. Periksa koneksi lalu coba lagi.'
+    }
+    return text || 'Lembur gagal ditolak final.'
+  }
+
   // Hapus per peserta: baris tabel = satu entry. Peserta lain dalam batch
   // tidak ikut terhapus (server menjaga scope + status target).
   const canDeleteRecord = (record) => {
@@ -1954,6 +2047,8 @@ export default function SLALembur({
   const detailCanApprove = detailActivity && recordReviewStatus(detailActivity) === 'SUBMITTED' && detailRecords.length === 1
   // Kantor UP3: keputusan hanya Super Admin; sembunyikan tombol untuk lainnya.
   const detailOfficeBlocked = Boolean(detailActivity && up3Id && detailActivity.unitId === up3Id && !isSuperAdmin)
+  // Tolak Final sementara hanya Administrasi, Pengganti Izin, Pengganti Sakit.
+  const detailSupportsFinalReject = detailActivity ? recordSupportsFinalReject(detailActivity) : false
 
   const changeType = (type) => {
     if (activeActivityId && evidence.length && type!==draft.lemburType) {
@@ -2626,7 +2721,7 @@ export default function SLALembur({
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
                       {(isAdminUp3||isSuperAdmin) && detailCanApprove && !detailOfficeBlocked && (
-                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailApprovalKey);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>openApproveConfirm(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
+                       <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box">{rejectMode==='FINAL'&&<Alert tone="warning" className="lembur-approval-alert">Tolak Final menutup pengajuan ini secara permanen: tidak dapat direvisi dan tidak masuk rekap pembayaran.</Alert>}<label className="sla-context-field"><span className="sla-context-label">{rejectMode==='FINAL'?'Alasan Penolakan Final *':'Alasan Penolakan *'}</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder={rejectMode==='FINAL'?'Jelaskan dasar penolakan final':'Jelaskan bagian yang perlu diperbaiki'} /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectMode('REVISION');setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>rejectMode==='FINAL'?openFinalRejectConfirm(detailActivity, detailEntryId):handleReject(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':(rejectMode==='FINAL'?'Tolak Final':'Kirim Penolakan')}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>openRejectBox('REVISION')}>Tolak</Button>{detailSupportsFinalReject&&<Button variant="danger" disabled={approvalBusy} onClick={()=>openRejectBox('FINAL')}>Tolak Final</Button>}<Button variant="primary" disabled={approvalBusy} onClick={()=>openApproveConfirm(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
                       )}
                       {(isAdminUp3||isSuperAdmin) && !detailOfficeBlocked && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
                       {detailOfficeBlocked && recordReviewStatus(detailActivity)==='SUBMITTED' && <Alert tone="info" className="lembur-approval-alert">Lembur kantor UP3 hanya dapat disetujui atau ditolak oleh Super Admin.</Alert>}
@@ -2654,6 +2749,26 @@ export default function SLALembur({
             backdropClassName="lembur-confirm-backdrop"
             onConfirm={confirmApprove}
             onCancel={closeApproveConfirm}
+          />
+          <ConfirmationDialog
+            open={Boolean(finalRejectTarget)}
+            title="Konfirmasi Tolak Final"
+            description="Penolakan final bersifat permanen: tidak dapat direvisi dan tidak masuk rekap pembayaran. Data serta evidence tetap tersimpan untuk audit."
+            summary={finalRejectTarget ? [
+              { label: 'Jenis', value: jenisLabel(finalRejectTarget.record) },
+              { label: finalRejectTarget.record.type === 'WORK' ? 'Peserta' : 'Pegawai Pengganti', value: finalRejectTarget.participantName || '—' },
+              { label: 'Unit & Tanggal', value: `${getUlpName(finalRejectTarget.record.unitId)} · ${finalRejectTarget.record.date}` },
+              { label: 'Alasan', value: rejectReason.trim() || '—' },
+            ] : []}
+            confirmLabel="Tolak Final"
+            cancelLabel="Batal"
+            confirmTone="danger"
+            icon="close"
+            loading={approvalBusy}
+            error={finalRejectError}
+            backdropClassName="lembur-confirm-backdrop"
+            onConfirm={confirmFinalReject}
+            onCancel={closeFinalRejectConfirm}
           />
           {evidencePreview && <div className="lembur-preview-overlay" onClick={()=>setEvidencePreview(null)}><div className="lembur-preview-modal" onClick={event=>event.stopPropagation()}><div className="lembur-preview-header"><div><strong>{evidenceLabel(evidencePreview.entry.evidenceType)}</strong><span>{evidencePreview.entry.originalFilename}</span></div><IconButton label="Tutup preview" className="lembur-icon-button" onClick={()=>setEvidencePreview(null)}><Icon name="close" size={17} /></IconButton></div><div className="lembur-preview-body">{evidencePreview.loading?<div className="lembur-detail-empty">Menyiapkan preview aman...</div>:isImageEvidence(evidencePreview.entry)?<img src={evidencePreview.url} alt={evidencePreview.entry.originalFilename} />:isPdfEvidence(evidencePreview.entry)?<iframe src={evidencePreview.url} title={evidencePreview.entry.originalFilename} />:<div className="lembur-document-fallback"><span className="lembur-doc-icon">DOC</span><strong>Pratinjau dokumen tidak didukung browser.</strong><p>Dokumen tetap tersimpan aman. Tutup viewer untuk kembali ke Detail Lembur.</p></div>}</div>{isImageEvidence(evidencePreview.entry)&&evidencePreview.entries.length>1&&<div className="lembur-preview-nav"><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(-1)}>← Sebelumnya</Button><span>{evidencePreview.index+1} / {evidencePreview.entries.length}</span><Button variant="secondary" size="small" onClick={()=>moveEvidencePreview(1)}>Berikutnya →</Button></div>}</div></div>}
         </>
