@@ -369,8 +369,9 @@ try {
       unitId: null,
       periodMonth: '2026-08-01',
       records: [...revisionRows, ...up3WorkRows],
-      canMutate: false,
+      canMutate: true,
       isAdminUp3: true,
+      isExactAdminUp3: true,
       isSuperAdmin: false,
       loading: false,
       loadError: '',
@@ -383,7 +384,7 @@ try {
   }, { password: TEST_PASSWORD, contractId: CONTRACT_ID, up3Id: UP3_ID, unitId: UNIT_ID })
 
   await page.waitForTimeout(300)
-  if (await page.getByRole('button', { name: '+ Tambah Lembur', exact: true }).count()) throw new Error('ADMIN_UP3 melihat tombol Tambah Lembur')
+  if (!(await page.getByRole('button', { name: '+ Tambah Lembur', exact: true }).count())) throw new Error('ADMIN_UP3 tidak melihat tombol Tambah Lembur')
   const reviewRow = page.locator('tbody tr').filter({ hasText: 'Regresi L3 alur form D+7' }).first()
   await reviewRow.getByRole('button', { name: 'Lihat Detail', exact: true }).click()
   await page.locator('.lembur-detail-modal').waitFor()

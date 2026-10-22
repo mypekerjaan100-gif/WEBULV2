@@ -1385,7 +1385,8 @@ export default function SLAPelayananTeknikPage({
             unitId={lemburUnitUuid}
             periodMonth={lemburPeriodMonth}
             records={lemburRecords}
-            canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp')}
+            canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3}
+            isExactAdminUp3={isAdminUp3}
             isAdminUp3={canManageUp3Operations}
             isSuperAdmin={isSuperAdmin}
             isManagement={false}

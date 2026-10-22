@@ -6362,6 +6362,14 @@ img.sp-pegawai-photo {
 .lembur-deadline-expired { border: 1px solid #e4b9bd; background: #fff5f5; color: #7f2730; }
 .lembur-description-preview { display: grid; gap: 2px; margin: 0; padding: 8px 11px; border: 1px solid #d8e4e9; border-radius: 8px; background: #f7fafb; color: #274656; font-size: 12px; line-height: 1.4; }
 .lembur-description-preview > span { color: var(--color-text-muted); font-size: 11px; font-style: normal; font-weight: 700; text-transform: uppercase; }
+.lembur-row-volume { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid #d8e4e9; border-radius: 8px; background: #f7fafb; }
+.lembur-row-volume-heading { display: grid; gap: 2px; }
+.lembur-row-volume-heading strong { color: #174b63; font-size: 12px; }
+.lembur-row-volume-heading span { color: var(--color-text-muted); font-size: 11px; line-height: 15px; }
+.lembur-row-volume-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; }
+.lembur-row-count { display: flex; align-items: center; gap: 6px; }
+.lembur-row-count > .sla-context-select { min-width: 0; flex: 1 1 auto; }
+.lembur-row-count > span { flex: 0 0 auto; color: var(--color-text-muted); font-size: 11px; font-weight: 700; }
 .lembur-time-grid { display: grid; gap: 8px; align-items: end; }
 .lembur-time-grid.is-replacement { grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) 88px 88px 70px; }
 .lembur-time-grid.is-single { grid-template-columns: minmax(220px, 1fr) 92px 92px 70px; }
@@ -6480,6 +6488,10 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .lembur-detail-description { display: grid; gap: 4px; color: #294b59; }
 .lembur-detail-description span { color: var(--color-text-muted); font-size: 12px; }
 .lembur-detail-description p { margin: 4px 0 0; line-height: 1.55; }
+.lembur-row-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0; }
+.lembur-row-detail-grid > div { padding: 9px 11px; border: 1px solid #dce5e9; border-radius: 8px; background: #f8fbfc; }
+.lembur-row-detail-grid dt { color: var(--color-text-muted); font-size: 11px; }
+.lembur-row-detail-grid dd { margin: 4px 0 0; color: #173d4f; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .lembur-detail-evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .lembur-detail-photo, .lembur-detail-document { display: flex; min-width: 0; align-items: center; gap: 10px; padding: 9px; border: 1px solid #dce5e9; border-radius: 8px; background: #fff; color: #294b59; text-align: left; cursor: pointer; }
 .lembur-detail-photo:hover, .lembur-detail-document:hover { border-color: #7f9fac; background: #f8fbfc; }
@@ -8612,6 +8624,17 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 :root[data-theme='dark'] .lembur-detail-section > h3 {
   color: var(--text-secondary);
+}
+
+:root[data-theme='dark'] .lembur-row-volume,
+:root[data-theme='dark'] .lembur-row-detail-grid > div {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+}
+
+:root[data-theme='dark'] .lembur-row-volume-heading strong,
+:root[data-theme='dark'] .lembur-row-detail-grid dd {
+  color: var(--text-primary);
 }
 
 :root[data-theme='dark'] .lembur-detail-document b {

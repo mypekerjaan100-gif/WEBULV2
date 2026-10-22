@@ -93,6 +93,10 @@ const initialDraft = (periodMonth) => ({
   description: '',
   workTitle: '',
   workLocation: '',
+  rowVarSpanCount: '',
+  rowPruningSpanCount: '',
+  rowFelling2040Count: '',
+  rowFelling4160Count: '',
   participants: [{ tempId: 'p1', employeeId: '', startTime: '18:00', endTime: '22:00' }],
 })
 
@@ -197,6 +201,27 @@ function workCategoryOf(lemburType) {
   return lemburType.split(':')[1]
 }
 
+const ROW_OPTIONAL_COUNT_LABELS = {
+  rowPruningSpanCount: 'Jumlah gawang pangkas',
+  rowFelling2040Count: 'Jumlah tebang 20–40 cm',
+  rowFelling4160Count: 'Jumlah tebang 41–60 cm',
+}
+
+// Angka volume ROW disimpan sebagai integer; input kosong berarti tidak
+// diisi (null) dan angka non-bulat ditolak saat validasi.
+function parseRowCount(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const text = String(value).trim()
+  if (!text) return null
+  const number = Number(text)
+  return Number.isInteger(number) ? number : NaN
+}
+
+function formatRowUnit(value, unit) {
+  if (value === null || value === undefined || value === '') return '—'
+  return `${Number(value).toLocaleString('id-ID')} ${unit}`
+}
+
 function isImageEvidence(entry) {
   return entry?.storedMimeType?.startsWith('image/')
     || ['FORM_CUTI', 'FORM_SAKIT', 'SURAT_SAKIT', 'FORM_IZIN', 'SURAT_IZIN', 'SPK'].includes(entry?.evidenceType)
@@ -230,6 +255,7 @@ export default function SLALembur({
   records,
   canMutate,
   isAdminUp3,
+  isExactAdminUp3 = false,
   isSuperAdmin,
   loading,
   loadError,
@@ -279,6 +305,10 @@ export default function SLALembur({
   const [filters, setFilters] = useState({ ulp: '', unitLayanan: '', jenis: 'Semua', pegawai: '', status: 'Semua', periode: '' })
   const canViewFinancial = isAdminUp3 || isSuperAdmin || isManagement
   const isReadOnlyManagement = isManagement
+  // Lembur kantor UP3: pegawai bertugas langsung di unit UP3 diajukan Admin
+  // UP3 (exact membership); keputusan & koreksinya hanya Super Admin.
+  const canInputOffice = canMutate && isExactAdminUp3 && !!up3Id
+  const officeRecordGuard = (record) => !isExactAdminUp3 || record?.unitId === up3Id
   const [rowsPerPage, setRowsPerPage] = useState(30)
   const [currentPage, setCurrentPage] = useState(1)
   const [detailActivityId, setDetailActivityId] = useState(null)
@@ -441,6 +471,7 @@ export default function SLALembur({
   const isWork = !!workCategory
   const isAdministrasi = workCategory === 'ADMINISTRASI'
   const isMultiWork = workCategory && workCategory !== 'ADMINISTRASI'
+  const isRowWork = workCategory === 'ROW'
   const formLayoutClass = isReplacement ? 'is-replacement' : isAdministrasi ? 'is-administrasi' : 'is-technical'
 
   const replacementDescription = automaticReplacementDescription({
@@ -619,11 +650,11 @@ export default function SLALembur({
     setEmployeeLoading(true)
     setEmployeeOptions([])
     listReplacementEmployees({ contractId: contractScope.contractId, up3Id, startedAt: employeeQueryDate })
-      .then(rows => { if(!cancelled) setEmployeeOptions(rows) })
+      .then(rows => { if(!cancelled) setEmployeeOptions(canInputOffice ? rows.filter((row) => row.unitId === up3Id) : rows) })
       .catch(err => { if(!cancelled) setMessage(err.message || 'Gagal memuat pegawai Lembur.') })
       .finally(() => { if(!cancelled) setEmployeeLoading(false) })
     return () => { cancelled = true }
-  }, [canMutate, contractScope.contractId, up3Id, employeeQueryDate])
+  }, [canMutate, canInputOffice, contractScope.contractId, up3Id, employeeQueryDate])
 
   const tagScopedRows = (rows, scopeEntryId) => rows.map((row) => ({
     ...row,
@@ -779,6 +810,10 @@ export default function SLALembur({
     participantEmployeeId: 'participantEmployee',
     startTime: 'time',
     endTime: 'time',
+    rowVarSpanCount: 'rowVarSpanCount',
+    rowPruningSpanCount: 'rowPruningSpanCount',
+    rowFelling2040Count: 'rowFelling2040Count',
+    rowFelling4160Count: 'rowFelling4160Count',
   }
   const updateDraft = (patch) => {
     setDraft(c=>({ ...c, ...patch }))
@@ -823,6 +858,10 @@ export default function SLALembur({
 
   const editDraft = (record) => {
     if (!record) return
+    if (!officeRecordGuard(record)) {
+      setMessage('Lembur ini bukan untuk pegawai kantor UP3 Anda.')
+      return
+    }
     const activityRecords = records.filter(r=>r.id===record.id)
     const first = activityRecords[0]
     if (!first) return
@@ -855,6 +894,10 @@ export default function SLALembur({
         description: first.description || '',
         workTitle: first.workTitle || '',
         workLocation: first.workLocation || '',
+        rowVarSpanCount: first.rowVarSpanCount == null ? '' : String(first.rowVarSpanCount),
+        rowPruningSpanCount: first.rowPruningSpanCount == null ? '' : String(first.rowPruningSpanCount),
+        rowFelling2040Count: first.rowFelling2040Count == null ? '' : String(first.rowFelling2040Count),
+        rowFelling4160Count: first.rowFelling4160Count == null ? '' : String(first.rowFelling4160Count),
         participants: cat==='ADMINISTRASI' ? [{ tempId:'p1', employeeId:first.participantEmployeeId, startTime: time.startTime, endTime: time.endTime }] : participants,
       })
       setActiveWorkCategory(cat)
@@ -870,6 +913,10 @@ export default function SLALembur({
         description: '',
         workTitle: '',
         workLocation: '',
+        rowVarSpanCount: '',
+        rowPruningSpanCount: '',
+        rowFelling2040Count: '',
+        rowFelling4160Count: '',
         participants: [{ tempId:'p1', employeeId:'', startTime:'18:00', endTime:'22:00'}],
       })
     }
@@ -918,6 +965,17 @@ export default function SLALembur({
     // server memvalidasi deadline, eligibility, dan tarif tanggal baru.
     if (!isEntryRevision && !draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
     if (!draft.description || !draft.description.trim()) return invalid('Keterangan pekerjaan wajib diisi.', 'description')
+    if (isRowWork) {
+      const varSpan = parseRowCount(draft.rowVarSpanCount)
+      if (varSpan == null) return invalid('Jumlah gawang Var ROW wajib diisi.', 'rowVarSpanCount')
+      if (!Number.isInteger(varSpan) || varSpan < 1) return invalid('Jumlah gawang Var ROW harus bilangan bulat minimal 1.', 'rowVarSpanCount')
+      for (const [key, label] of Object.entries(ROW_OPTIONAL_COUNT_LABELS)) {
+        const count = parseRowCount(draft[key])
+        if (count != null && (!Number.isInteger(count) || count < 0)) {
+          return invalid(`${label} harus bilangan bulat minimal 0.`, key)
+        }
+      }
+    }
     if (isMultiWork) {
       if (!draft.workTitle?.trim()) return invalid('Uraian pekerjaan wajib diisi.', 'workTitle')
       if (!draft.workLocation?.trim()) return invalid('Lokasi pekerjaan wajib diisi.', 'workLocation')
@@ -997,6 +1055,10 @@ export default function SLALembur({
         description: draft.description,
         workTitle: draft.workTitle,
         workLocation: draft.workLocation,
+        rowVarSpanCount: isRowWork ? parseRowCount(draft.rowVarSpanCount) : null,
+        rowPruningSpanCount: isRowWork ? parseRowCount(draft.rowPruningSpanCount) : null,
+        rowFelling2040Count: isRowWork ? parseRowCount(draft.rowFelling2040Count) : null,
+        rowFelling4160Count: isRowWork ? parseRowCount(draft.rowFelling4160Count) : null,
         participants,
         // Target revisi eksplisit: server hanya menulis ulang entry ini.
         revisionEntryId: isEntryRevision
@@ -1544,6 +1606,7 @@ export default function SLALembur({
     if (!record) return false
     if (isSuperAdmin) return true
     if (!canMutate) return false
+    if (!officeRecordGuard(record)) return false
     return ['DRAFT', 'SUBMITTED', 'CORRECTION_REQUIRED'].includes(recordReviewStatus(record))
   }
 
@@ -1603,6 +1666,7 @@ export default function SLALembur({
   const correctActivityRows = (activityId) => records.filter((record) => record.id === activityId)
   const canCorrectRecord = (record) => {
     if (!record || record.type !== 'WORK' || !canCorrectApprovedWork) return false
+    if (!isSuperAdmin && record.unitId === up3Id) return false
     if (record.status !== 'APPROVED') return false
     const rows = correctActivityRows(record.id)
     if (!rows.length) return false
@@ -1888,6 +1952,8 @@ export default function SLALembur({
   const detailIsSingleParticipant = detailEntryId != null && detailActivityRecords.length > 1
   const detailApprovalKey = detailActivity ? `${detailActivity.id}:${detailActivity.entryId ?? 'activity'}` : ''
   const detailCanApprove = detailActivity && recordReviewStatus(detailActivity) === 'SUBMITTED' && detailRecords.length === 1
+  // Kantor UP3: keputusan hanya Super Admin; sembunyikan tombol untuk lainnya.
+  const detailOfficeBlocked = Boolean(detailActivity && up3Id && detailActivity.unitId === up3Id && !isSuperAdmin)
 
   const changeType = (type) => {
     if (activeActivityId && evidence.length && type!==draft.lemburType) {
@@ -1990,7 +2056,7 @@ export default function SLALembur({
   ]
   const ulpCount = (orgUnits ?? []).filter((unit) => unit.type === 'ULP').length
   const up3ScopeName = (orgUnits ?? []).find((unit) => unit.uuid === up3Id || unit.legacyKey === up3Id)?.displayName
-  const showUlpColumn = isSuperAdmin || isManagement || !canMutate
+  const showUlpColumn = isSuperAdmin || isManagement || !canMutate || isExactAdminUp3
   // Dialog hapus selalu satu peserta (baris yang diklik).
   const deleteParticipantName = deleteTarget?.participantName || '-'
   const deleteTotal = Number(deleteTarget?.total ?? 0)
@@ -2071,7 +2137,45 @@ export default function SLALembur({
                       {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input ref={fieldRef('workTitle')} className={`sla-context-select${fieldInvalidClass('workTitle')}`} value={draft.workTitle} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input ref={fieldRef('workLocation')} className={`sla-context-select${fieldInvalidClass('workLocation')}`} value={draft.workLocation} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
                        {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea ref={fieldRef('description')} className={`sla-context-select${fieldInvalidClass('description')}`} value={draft.description} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
                       {isEvidenceOnlyRevision && <Alert tone="info" className="lembur-deadline-helper">Revisi khusus evidence untuk {activeRevisionParticipantName}. Data pekerjaan dan peserta dikunci agar evidence peserta yang sudah disetujui tidak berubah.</Alert>}
-                     {replacementDescription && <div className="lembur-description-preview lembur-grid-full"><span>Keterangan otomatis</span>{replacementDescription}</div>}
+                      {replacementDescription && <div className="lembur-description-preview lembur-grid-full"><span>Keterangan otomatis</span>{replacementDescription}</div>}
+                      {isRowWork && (
+                        <div className="lembur-row-volume lembur-grid-full">
+                          <div className="lembur-row-volume-heading">
+                            <strong>Volume Pekerjaan ROW</strong>
+                            <span>Isi hasil pekerjaan dalam satuan gawang dan batang.{isRevision ? ' Volume pekerjaan dikunci saat revisi.' : ''}</span>
+                          </div>
+                          <div className="lembur-row-volume-grid">
+                            <label className="sla-context-field">
+                              <span className="sla-context-label">Jumlah Gawang Var ROW *</span>
+                              <div className="lembur-row-count">
+                                <input type="number" min="1" step="1" inputMode="numeric" ref={fieldRef('rowVarSpanCount')} className={`sla-context-select${fieldInvalidClass('rowVarSpanCount')}`} value={draft.rowVarSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowVarSpanCount:e.target.value })} placeholder="0" />
+                                <span>gawang</span>
+                              </div>
+                            </label>
+                            <label className="sla-context-field">
+                              <span className="sla-context-label">Jumlah Gawang Pangkas</span>
+                              <div className="lembur-row-count">
+                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowPruningSpanCount')} className={`sla-context-select${fieldInvalidClass('rowPruningSpanCount')}`} value={draft.rowPruningSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowPruningSpanCount:e.target.value })} placeholder="0" />
+                                <span>gawang</span>
+                              </div>
+                            </label>
+                            <label className="sla-context-field">
+                              <span className="sla-context-label">Jumlah Tebang Diameter 20–40 cm</span>
+                              <div className="lembur-row-count">
+                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowFelling2040Count')} className={`sla-context-select${fieldInvalidClass('rowFelling2040Count')}`} value={draft.rowFelling2040Count} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowFelling2040Count:e.target.value })} placeholder="0" />
+                                <span>batang</span>
+                              </div>
+                            </label>
+                            <label className="sla-context-field">
+                              <span className="sla-context-label">Jumlah Tebang Diameter 41–60 cm</span>
+                              <div className="lembur-row-count">
+                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowFelling4160Count')} className={`sla-context-select${fieldInvalidClass('rowFelling4160Count')}`} value={draft.rowFelling4160Count} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowFelling4160Count:e.target.value })} placeholder="0" />
+                                <span>batang</span>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      )}
                         {draft.date && !isRevision && !deadlineReady && deadlineLoadStatus !== 'error' && (
                           <Alert tone="info" className="lembur-deadline-helper">Memverifikasi batas pengajuan dari server...</Alert>
                         )}
@@ -2307,9 +2411,8 @@ export default function SLALembur({
             </div>
           )}
 
-          {!canMutate && !isManagement && (isAdminUp3
-            ? <Alert tone="info" className="lembur-readonly-notice">Persetujuan lembur dalam scope UP3. Pengajuan dibuat Admin ULP; buka detail peserta berstatus Diajukan untuk menyetujui atau menolak.</Alert>
-            : <Alert tone="info" className="lembur-readonly-notice">Monitoring read-only · Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia.</Alert>)}
+          {isExactAdminUp3 && canMutate && <Alert tone="info" className="lembur-readonly-notice">Anda dapat mengajukan lembur untuk pegawai yang bertugas di kantor UP3. Pegawai ULP tetap diajukan Admin ULP masing-masing; lembur kantor UP3 disetujui atau ditolak Super Admin, sedangkan lembur ULP tetap dapat Anda proses di Detail berstatus Diajukan.</Alert>}
+          {!canMutate && !isManagement && <Alert tone="info" className="lembur-readonly-notice">Monitoring read-only · Rekap Lembur dalam scope UP3. Input dan approval tidak tersedia.</Alert>}
           {isUlManagement && <Alert tone="info" className="lembur-readonly-notice">Unit Layanan Singkawang · 6 ULP · monitoring read-only. Total Rp, Tarif/Jam, dan rincian 1.5x/2x tersedia di Detail.</Alert>}
           {isUpManagement && <Alert tone="info" className="lembur-readonly-notice">Unit Pelaksana Kalimantan 1 · 1 Unit Layanan terhubung (Singkawang) · monitoring read-only.</Alert>}
           {isManagement && !records.length && !loading && !loadError && (
@@ -2335,7 +2438,7 @@ export default function SLALembur({
               <FilterField label="ULP" className="lembur-filter-field">
                 <Select value={filters.ulp} onChange={e=> setFilters(f=>({ ...f, ulp: e.target.value }))}>
                   <option value="">Semua</option>
-                  {(orgUnits||[]).filter(u=>u.type==='ULP' || u.type==='ULP').map(u=> <option key={u.uuid} value={u.uuid}>{u.displayName}</option>)}
+                  {(orgUnits||[]).filter((u)=> u.type==='ULP' || (u.type==='UP3' && u.uuid===up3Id)).map(u=> <option key={u.uuid} value={u.uuid}>{u.displayName}</option>)}
                 </Select>
               </FilterField>
             )}
@@ -2407,7 +2510,7 @@ export default function SLALembur({
           {(isSuperAdmin || canMutate) && deleteTarget && (
             <div className="rekap-detail-overlay" onClick={()=>{if(!deleteBusy){setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}}>
               <div className="rekap-detail-modal lembur-delete-modal" role="dialog" aria-modal="true" aria-labelledby="lembur-delete-title" onClick={event=>event.stopPropagation()}>
-                <div className="lembur-delete-header"><div><span className="lembur-kicker">{isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN ULP'}</span><h2 id="lembur-delete-title">Hapus Peserta Lembur</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}><Icon name="close" size={17} /></IconButton></div>
+                <div className="lembur-delete-header"><div><span className="lembur-kicker">{isSuperAdmin ? 'SUPER ADMIN' : (deleteTarget?.unitId === up3Id ? 'ADMIN UP3' : 'ADMIN ULP')}</span><h2 id="lembur-delete-title">Hapus Peserta Lembur</h2></div><IconButton label="Tutup" className="lembur-icon-button" disabled={deleteBusy} onClick={()=>{setDeleteTarget(null);setDeleteReason('');setDeleteError('')}}><Icon name="close" size={17} /></IconButton></div>
                 <Alert tone="danger" title="Konfirmasi hapus peserta">Hanya peserta ini yang dihapus dari Rekap Lembur normal. Peserta lain dalam batch tidak berubah; audit tetap tersimpan.</Alert>
                 <dl className="lembur-delete-summary"><div><dt>Jenis</dt><dd>{jenisLabel(deleteTarget)}</dd></div><div><dt>Tanggal</dt><dd>{deleteTarget.date}</dd></div><div><dt>Peserta</dt><dd>{deleteParticipantName}</dd></div><div><dt>Total</dt><dd>Rp {formatRp(deleteTotal)}</dd></div><div><dt>Keterangan</dt><dd>{deleteTarget.description}</dd></div></dl>
                 <label className="sla-context-field"><span className="sla-context-label">Alasan Hapus *</span><textarea className="sla-context-select" rows={3} value={deleteReason} disabled={deleteBusy} onChange={event=>{setDeleteReason(event.target.value);setDeleteError('')}} placeholder="Jelaskan alasan penghapusan data Lembur" /></label>
@@ -2485,6 +2588,18 @@ export default function SLALembur({
                       </table></div>
                     </section>
                     <section className="lembur-detail-section"><h3>Keterangan</h3><div className="lembur-detail-description">{detailActivity.workTitle&&<strong>{detailActivity.workTitle}</strong>}{detailActivity.workLocation&&<span>{detailActivity.workLocation}</span>}<p>{detailActivity.description}</p></div></section>
+                    {detailActivity.type === 'WORK' && detailActivity.workCategory === 'ROW' && (
+                      <section className="lembur-detail-section"><h3>Hasil Pekerjaan ROW</h3>
+                        {detailActivity.rowVarSpanCount == null && detailActivity.rowPruningSpanCount == null && detailActivity.rowFelling2040Count == null && detailActivity.rowFelling4160Count == null
+                          ? <div className="lembur-detail-empty">Rincian volume belum tersedia pada data lama.</div>
+                          : <dl className="lembur-row-detail-grid">
+                              <div><dt>Gawang Var ROW</dt><dd>{formatRowUnit(detailActivity.rowVarSpanCount, 'gawang')}</dd></div>
+                              <div><dt>Gawang Pangkas</dt><dd>{formatRowUnit(detailActivity.rowPruningSpanCount, 'gawang')}</dd></div>
+                              <div><dt>Tebang 20–40 cm</dt><dd>{formatRowUnit(detailActivity.rowFelling2040Count, 'batang')}</dd></div>
+                              <div><dt>Tebang 41–60 cm</dt><dd>{formatRowUnit(detailActivity.rowFelling4160Count, 'batang')}</dd></div>
+                            </dl>}
+                      </section>
+                    )}
                     <section className="lembur-detail-section"><h3>Evidence{detailEvidenceGroups.length ? ' · per peserta' : ''}</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:detailEvidenceGroups.length ? <div className="lembur-participant-evidence-list">{detailEvidenceDisplayGroups.map((group)=><div key={`${group.shared ? 'bersama' : 'peserta'}-${group.name}`} className="lembur-participant-evidence"><div className="lembur-participant-evidence-heading"><strong>{group.name}</strong><span className="lembur-evidence-status is-complete">{group.items.length} file</span></div>{group.items.length?<div className="lembur-detail-evidence-grid">{group.items.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">{group.shared ? 'Belum ada evidence bersama.' : detailSharedEvidence.length ? 'Memakai evidence bersama di atas.' : 'Belum ada evidence peserta ini.'}</div>}</div>)}</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
                     <section className="lembur-detail-section"><h3>Riwayat{detailEntryId != null && detailActivityRecords.length > 1 ? ` · ${detailActivity?.participantName ?? ''}` : ''}</h3>
                       {visibleDetailHistory.length ? (
@@ -2510,10 +2625,11 @@ export default function SLALembur({
                         </div>
                       ) : <div className="lembur-detail-empty">Belum ada riwayat.</div>}
                     </section>
-                     {(isAdminUp3||isSuperAdmin) && detailCanApprove && (
+                      {(isAdminUp3||isSuperAdmin) && detailCanApprove && !detailOfficeBlocked && (
                        <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box"><label className="sla-context-field"><span className="sla-context-label">Alasan Penolakan *</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Jelaskan bagian yang perlu diperbaiki" /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>handleReject(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Kirim Penolakan'}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>{setShowReject(detailApprovalKey);setApprovalError('')}}>Tolak</Button><Button variant="primary" disabled={approvalBusy} onClick={()=>openApproveConfirm(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
                       )}
-                     {(isAdminUp3||isSuperAdmin) && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
+                      {(isAdminUp3||isSuperAdmin) && !detailOfficeBlocked && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
+                      {detailOfficeBlocked && recordReviewStatus(detailActivity)==='SUBMITTED' && <Alert tone="info" className="lembur-approval-alert">Lembur kantor UP3 hanya dapat disetujui atau ditolak oleh Super Admin.</Alert>}
                   </>
                 )}
               </div>

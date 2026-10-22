@@ -157,6 +157,10 @@ export async function submitOvertimeReplacement(activityId) {
   return rpc('submit_overtime_replacement_l2', { p_activity_id: activityId })
 }
 
+function nullableNumber(value) {
+  return value === null || value === undefined ? null : Number(value)
+}
+
 function mapWorkRecord(row) {
   return {
     id: row.activity_id,
@@ -171,6 +175,10 @@ function mapWorkRecord(row) {
     workTitle: row.work_title,
     workLocation: row.work_location,
     description: row.description,
+    rowVarSpanCount: nullableNumber(row.row_var_span_count),
+    rowPruningSpanCount: nullableNumber(row.row_pruning_span_count),
+    rowFelling2040Count: nullableNumber(row.row_felling_20_40_count),
+    rowFelling4160Count: nullableNumber(row.row_felling_41_60_count),
     status: row.status,
     entryStatus: row.entry_approval_status ?? row.status,
     participantEmployeeId: row.participant_employee_id,
@@ -214,6 +222,10 @@ export async function saveOvertimeWorkDraft({
   workLocation,
   participants,
   revisionEntryId,
+  rowVarSpanCount,
+  rowPruningSpanCount,
+  rowFelling2040Count,
+  rowFelling4160Count,
 }) {
   return rpc('save_overtime_work_draft_l3', {
     p_activity_id: activityId ?? null,
@@ -226,6 +238,10 @@ export async function saveOvertimeWorkDraft({
     p_work_location: workLocation ?? null,
     p_participants: participants,
     p_revision_entry_id: revisionEntryId ?? null,
+    p_row_var_span_count: rowVarSpanCount ?? null,
+    p_row_pruning_span_count: rowPruningSpanCount ?? null,
+    p_row_felling_20_40_count: rowFelling2040Count ?? null,
+    p_row_felling_41_60_count: rowFelling4160Count ?? null,
   })
 }
 
