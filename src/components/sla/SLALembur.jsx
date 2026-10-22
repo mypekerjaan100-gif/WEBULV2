@@ -5,6 +5,7 @@ import {
   finalRejectOvertime,
   finalRejectOvertimeEntry,
   getOvertimeInitialDeadlineConfig,
+  listOvertimeEmployeeHistory,
   listOvertimeHistory,
   listOvertimeReplacements,
   listOvertimeWork,
@@ -83,6 +84,23 @@ function recordSupportsFinalReject(record) {
   if (!record) return false
   if (record.type === 'WORK') return record.workCategory === 'ADMINISTRASI'
   return ['REPLACEMENT_PERMISSION', 'REPLACEMENT_SICK'].includes(record.type)
+}
+
+// Baris riwayat lembur pegawai dipetakan ke bentuk record agar display
+// StatusBadge/tone sama persis dengan daftar rekap (per peserta, bukan
+// mewarisi status aktivitas milik peserta lain pada batch campuran).
+function employeeHistoryPseudoRecord(historyRow) {
+  if (!historyRow) return null
+  return {
+    type: historyRow.type,
+    workCategory: historyRow.workCategory,
+    status: historyRow.type === 'WORK' ? historyRow.status : (historyRow.approvalStatus ?? historyRow.status),
+    entryStatus: historyRow.type === 'WORK' ? historyRow.approvalStatus : undefined,
+    entryClosureReason: historyRow.type === 'WORK' ? historyRow.closureReason : undefined,
+    closureReason: historyRow.closureReason ?? historyRow.activityClosureReason ?? null,
+    rejectionCount: historyRow.rejectionCount ?? 0,
+    revisionDeadlineAt: historyRow.revisionDeadlineAt ?? null,
+  }
 }
 
 function recordIsExpired(record) {
@@ -334,6 +352,11 @@ export default function SLALembur({
   const openDetail = (record) => {
     setDetailActivityId(record?.id ?? null)
     setDetailEntryId(record?.entryId ?? null)
+    setDetailTab('submission')
+    setEmpHistory([])
+    setEmpHistoryError('')
+    setEmpHistoryPage(1)
+    setEmpHistoryTotal(0)
   }
   const closeDetail = () => {
     setDetailActivityId(null)
@@ -345,6 +368,12 @@ export default function SLALembur({
     setApproveError('')
     setFinalRejectTarget(null)
     setFinalRejectError('')
+    setDetailTab('submission')
+    setEmpHistory([])
+    setEmpHistoryLoading(false)
+    setEmpHistoryError('')
+    setEmpHistoryPage(1)
+    setEmpHistoryTotal(0)
   }
   const [detailEvidence, setDetailEvidence] = useState([])
   const [detailEntries, setDetailEntries] = useState([])
@@ -355,6 +384,15 @@ export default function SLALembur({
   const [rejectMode, setRejectMode] = useState('REVISION')
   const [finalRejectTarget, setFinalRejectTarget] = useState(null)
   const [finalRejectError, setFinalRejectError] = useState('')
+  // Tab Detail Lembur + riwayat lembur pegawai (semua jenis/periode).
+  const [detailTab, setDetailTab] = useState('submission')
+  const [empHistory, setEmpHistory] = useState([])
+  const [empHistoryLoading, setEmpHistoryLoading] = useState(false)
+  const [empHistoryError, setEmpHistoryError] = useState('')
+  const [empHistoryPage, setEmpHistoryPage] = useState(1)
+  const [empHistoryTotal, setEmpHistoryTotal] = useState(0)
+  const [empHistoryTick, setEmpHistoryTick] = useState(0)
+  const empHistoryPageSize = 10
   const [formOpen, setFormOpen] = useState(false)
   const [formStep, setFormStep] = useState('main')
   const [evidenceUrls, setEvidenceUrls] = useState({})
@@ -2013,6 +2051,47 @@ export default function SLALembur({
       .catch(() => { if (!cancelled) setDetailProfileByEmployee({}) })
     return () => { cancelled = true }
   }, [detailActivityId, detailEntryId, records])
+  // Riwayat lembur pegawai: dimuat hanya saat tab dibuka / pindah halaman
+  // (RPC read-only per-baris scope; tidak menjalankan mutasi apa pun).
+  useEffect(() => {
+    if (!detailActivityId || detailTab !== 'employee-history') return undefined
+    const entryId = detailEntryId ?? detailRecords?.[0]?.entryId ?? null
+    let cancelled = false
+    if (!entryId) {
+      setEmpHistory([])
+      setEmpHistoryTotal(0)
+      setEmpHistoryLoading(false)
+      setEmpHistoryError('Peserta tidak valid. Tutup detail lalu buka kembali dari baris peserta.')
+      return undefined
+    }
+    setEmpHistoryLoading(true)
+    setEmpHistoryError('')
+    listOvertimeEmployeeHistory({ entryId, limit: empHistoryPageSize, offset: (empHistoryPage - 1) * empHistoryPageSize })
+      .then((rows) => {
+        if (cancelled) return
+        setEmpHistory(rows)
+        setEmpHistoryTotal(rows[0]?.totalCount ?? 0)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setEmpHistory([])
+        setEmpHistoryTotal(0)
+        setEmpHistoryError(friendlyEmployeeHistoryError(e?.message))
+      })
+      .finally(() => {
+        if (!cancelled) setEmpHistoryLoading(false)
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailActivityId, detailEntryId, detailTab, empHistoryPage, empHistoryTick])
+  function friendlyEmployeeHistoryError(message) {
+    const text = String(message ?? '')
+    if (/participant not found/i.test(text)) return 'Peserta tidak ditemukan. Muat ulang daftar lembur.'
+    if (/activity not found|not available/i.test(text)) return 'Data sudah tidak tersedia. Muat ulang daftar lembur.'
+    if (/not authorized|42501|permission|scope/i.test(text)) return 'Akun Anda tidak memiliki akses membaca riwayat unit lembur ini.'
+    if (/failed to fetch|networkerror|timeout|aborterror|http \d{3}/i.test(text)) return 'Terjadi gangguan jaringan. Periksa koneksi lalu coba lagi.'
+    return text || 'Gagal memuat riwayat lembur pegawai.'
+  }
   const detailActivityRecords = detailActivityId ? sorted.filter(r=> r.id===detailActivityId) : []
   const detailEntryRecords = detailEntryId != null
     ? detailActivityRecords.filter(r=> r.entryId===detailEntryId)
@@ -2049,6 +2128,7 @@ export default function SLALembur({
   const detailOfficeBlocked = Boolean(detailActivity && up3Id && detailActivity.unitId === up3Id && !isSuperAdmin)
   // Tolak Final sementara hanya Administrasi, Pengganti Izin, Pengganti Sakit.
   const detailSupportsFinalReject = detailActivity ? recordSupportsFinalReject(detailActivity) : false
+  const empHistoryTotalPages = Math.max(1, Math.ceil(empHistoryTotal / empHistoryPageSize))
 
   const changeType = (type) => {
     if (activeActivityId && evidence.length && type!==draft.lemburType) {
@@ -2695,8 +2775,13 @@ export default function SLALembur({
                             </dl>}
                       </section>
                     )}
-                    <section className="lembur-detail-section"><h3>Evidence{detailEvidenceGroups.length ? ' · per peserta' : ''}</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:detailEvidenceGroups.length ? <div className="lembur-participant-evidence-list">{detailEvidenceDisplayGroups.map((group)=><div key={`${group.shared ? 'bersama' : 'peserta'}-${group.name}`} className="lembur-participant-evidence"><div className="lembur-participant-evidence-heading"><strong>{group.name}</strong><span className="lembur-evidence-status is-complete">{group.items.length} file</span></div>{group.items.length?<div className="lembur-detail-evidence-grid">{group.items.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">{group.shared ? 'Belum ada evidence bersama.' : detailSharedEvidence.length ? 'Memakai evidence bersama di atas.' : 'Belum ada evidence peserta ini.'}</div>}</div>)}</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
-                    <section className="lembur-detail-section"><h3>Riwayat{detailEntryId != null && detailActivityRecords.length > 1 ? ` · ${detailActivity?.participantName ?? ''}` : ''}</h3>
+                                         <div className="lembur-detail-tabs" role="tablist" aria-label="Tab Detail Lembur">
+                       <button type="button" className={detailTab==='submission'?'lembur-detail-tab is-active':'lembur-detail-tab'} onClick={()=>setDetailTab('submission')}>Pengajuan Ini</button>
+                       <button type="button" className={detailTab==='employee-history'?'lembur-detail-tab is-active':'lembur-detail-tab'} onClick={()=>setDetailTab('employee-history')}>Riwayat Lembur Pegawai</button>
+                     </div>
+                     {detailTab==='submission' && (<>
+                      <section className="lembur-detail-section"><h3>Evidence{detailEvidenceGroups.length ? ' · per peserta' : ''}</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:detailEvidenceGroups.length ? <div className="lembur-participant-evidence-list">{detailEvidenceDisplayGroups.map((group)=><div key={`${group.shared ? 'bersama' : 'peserta'}-${group.name}`} className="lembur-participant-evidence"><div className="lembur-participant-evidence-heading"><strong>{group.name}</strong><span className="lembur-evidence-status is-complete">{group.items.length} file</span></div>{group.items.length?<div className="lembur-detail-evidence-grid">{group.items.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">{group.shared ? 'Belum ada evidence bersama.' : detailSharedEvidence.length ? 'Memakai evidence bersama di atas.' : 'Belum ada evidence peserta ini.'}</div>}</div>)}</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
+                    <section className="lembur-detail-section"><h3>Riwayat Pengajuan Ini{detailEntryId != null && detailActivityRecords.length > 1 ? ` · ${detailActivity?.participantName ?? ''}` : ''}</h3>
                       {visibleDetailHistory.length ? (
                         <div className="lembur-history-timeline">
                           {visibleDetailHistory.map(h=>{
@@ -2724,8 +2809,45 @@ export default function SLALembur({
                        <section className="lembur-detail-section lembur-approval-section"><h3>Approval</h3>{detailActivity.type==='WORK'&&<p className="lembur-approval-scope-note">Persetujuan berlaku hanya untuk peserta ini: {detailActivity.participantName}.</p>}{approvalError&&<Alert tone="danger" className="lembur-approval-alert">{approvalError}</Alert>}{showReject===detailApprovalKey&&<div className="lembur-reject-box">{rejectMode==='FINAL'&&<Alert tone="warning" className="lembur-approval-alert">Tolak Final menutup pengajuan ini secara permanen: tidak dapat direvisi dan tidak masuk rekap pembayaran.</Alert>}<label className="sla-context-field"><span className="sla-context-label">{rejectMode==='FINAL'?'Alasan Penolakan Final *':'Alasan Penolakan *'}</span><textarea className="sla-context-select" rows={3} value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder={rejectMode==='FINAL'?'Jelaskan dasar penolakan final':'Jelaskan bagian yang perlu diperbaiki'} /></label><div><Button variant="ghost" disabled={approvalBusy} onClick={()=>{setShowReject(null);setRejectMode('REVISION');setRejectReason('');setApprovalError('')}}>Batal</Button><Button variant="danger" disabled={approvalBusy||!rejectReason.trim()} onClick={()=>rejectMode==='FINAL'?openFinalRejectConfirm(detailActivity, detailEntryId):handleReject(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':(rejectMode==='FINAL'?'Tolak Final':'Kirim Penolakan')}</Button></div></div>}<div className="lembur-approval-actions"><Button variant="danger" disabled={approvalBusy} onClick={()=>openRejectBox('REVISION')}>Tolak</Button>{detailSupportsFinalReject&&<Button variant="danger" disabled={approvalBusy} onClick={()=>openRejectBox('FINAL')}>Tolak Final</Button>}<Button variant="primary" disabled={approvalBusy} onClick={()=>openApproveConfirm(detailActivity, detailEntryId)}>{approvalBusy?'Memproses...':'Setujui'}</Button></div></section>
                       )}
                       {(isAdminUp3||isSuperAdmin) && !detailOfficeBlocked && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
-                      {detailOfficeBlocked && recordReviewStatus(detailActivity)==='SUBMITTED' && <Alert tone="info" className="lembur-approval-alert">Lembur kantor UP3 hanya dapat disetujui atau ditolak oleh Super Admin.</Alert>}
-                  </>
+                       {detailOfficeBlocked && recordReviewStatus(detailActivity)==='SUBMITTED' && <Alert tone="info" className="lembur-approval-alert">Lembur kantor UP3 hanya dapat disetujui atau ditolak oleh Super Admin.</Alert>}
+                     </>)}
+                     {detailTab==='employee-history' && (
+                       <section className="lembur-detail-section lembur-employee-history-section"><h3>Riwayat Lembur Pegawai{detailRecords[0]?.participantName ? ` · ${detailRecords[0].participantName}` : ''}</h3>
+                       <p className="sla-table-hint lembur-employee-history-hint">Semua jenis lembur, semua periode. Hanya pengajuan yang pernah dikirim; pengajuan yang sedang dibuka tidak ditampilkan.</p>
+                       {empHistoryLoading ? <div className="lembur-detail-empty">Memuat riwayat pegawai...</div>
+                       : empHistoryError ? <div className="lembur-detail-empty"><span>{empHistoryError}</span><div style={{ marginTop: 10 }}><Button variant="secondary" size="small" onClick={()=>setEmpHistoryTick(t=>t+1)}>Coba Lagi</Button></div></div>
+                       : empHistory.length ? (<>
+                        <div className="lembur-employee-history-wrap"><table className="sla-table lembur-employee-history-table">
+                          <thead><tr><th>Tanggal</th><th>Jenis</th><th>Waktu / Durasi</th><th>Unit</th><th>Keterangan</th><th>Status</th></tr></thead>
+                          <tbody>
+                            {empHistory.map((row) => {
+                              const pseudo = employeeHistoryPseudoRecord(row)
+                              const time = pontianakFormValues(row.startedAt, row.endedAt)
+                              return (
+                                <tr key={`${row.activityId}-${row.entryId}`}>
+                                  <td>{row.date ?? '—'}</td>
+                                  <td>{jenisLabel(pseudo)}</td>
+                                  <td className="lembur-table-time">{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''} · {formatDurationMinutes((row.durationHours ?? 0) * 60)}</td>
+                                  <td>{getUlpName(row.unitId) ?? '—'}</td>
+                                  <td className="lembur-employee-history-keterangan">{row.workTitle && <strong>{row.workTitle}</strong>}<span>{row.description || '—'}</span></td>
+                                  <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(pseudo)} tone={statusTone(pseudo)}>{displayStatus(pseudo)}</StatusBadge></td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table></div>
+                        {empHistoryTotalPages > 1 && (
+                          <div className="lembur-employee-history-pagination">
+                            <span>Halaman {empHistoryPage} dari {empHistoryTotalPages}</span>
+                            <Button variant="secondary" size="small" disabled={empHistoryPage<=1 || empHistoryLoading} onClick={()=>setEmpHistoryPage(p=>Math.max(1,p-1))}>Sebelumnya</Button>
+                            <Button variant="secondary" size="small" disabled={empHistoryPage>=empHistoryTotalPages || empHistoryLoading} onClick={()=>setEmpHistoryPage(p=>p+1)}>Berikutnya</Button>
+                          </div>
+                        )}
+                       </>)
+                       : <div className="lembur-detail-empty">Belum ada pengajuan lembur lain untuk pegawai ini dalam akses Anda.</div>}
+                       </section>
+                     )}
+                   </>
                 )}
               </div>
             </div>

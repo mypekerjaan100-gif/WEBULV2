@@ -304,6 +304,36 @@ export async function correctApprovedOvertimeWork({ activityId, overtimeDate, pa
 export async function listOvertimeHistory(activityId) {
   return rpc('list_overtime_history_l5', { p_activity_id: activityId })
 }
+// Riwayat lembur pegawai (semua jenis/periode, hanya pengajuan yang pernah
+// dikirim) berdasarkan ENTRY konteks; server menjaga per-baris scope baca.
+export async function listOvertimeEmployeeHistory({ entryId, limit = 10, offset = 0 }) {
+  const rows = await rpc('list_overtime_employee_history_l5', {
+    p_entry_id: entryId,
+    p_limit: limit,
+    p_offset: offset,
+  })
+  return (rows ?? []).map((row) => ({
+    entryId: row.entry_id,
+    activityId: row.activity_id,
+    date: row.overtime_date,
+    type: row.type,
+    workCategory: row.work_category,
+    workTitle: row.work_title,
+    workLocation: row.work_location,
+    description: row.description,
+    unitId: row.unit_id,
+    startedAt: row.participant_started_at,
+    endedAt: row.participant_ended_at,
+    durationHours: Number(row.duration_hours),
+    status: row.status,
+    approvalStatus: row.approval_status,
+    rejectionCount: Number(row.rejection_count ?? 0),
+    revisionDeadlineAt: row.revision_deadline_at,
+    closureReason: row.closure_reason,
+    activityClosureReason: row.activity_closure_reason,
+    totalCount: Number(row.total_count ?? 0),
+  }))
+}
 export async function getOvertimeDetail(activityId) {
   return rpc('get_overtime_detail_l5', { p_activity_id: activityId })
 }

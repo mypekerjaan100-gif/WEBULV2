@@ -6515,6 +6515,20 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .lembur-reject-box { display: grid; gap: 10px; margin-bottom: 12px; padding: 12px; border: 1px solid #e5c4c7; border-radius: 8px; background: #fff; }
 .lembur-reject-box > div { display: flex; justify-content: flex-end; gap: 8px; }
 
+.lembur-detail-tabs { display: flex; align-items: flex-end; gap: 6px; margin: 14px 22px 0; border-bottom: 1px solid var(--border); }
+.lembur-detail-tab { appearance: none; border: 1px solid var(--border); border-bottom: 0; background: var(--surface-subtle); color: var(--text-secondary); font-size: 12px; font-weight: 800; padding: 9px 14px; border-radius: 9px 9px 0 0; cursor: pointer; }
+.lembur-detail-tab:hover { background: var(--surface-tab-hover); }
+.lembur-detail-tab.is-active { background: var(--surface); color: var(--text-primary); }
+.lembur-employee-history-hint { margin: -4px 0 10px; font-size: 11px; }
+.lembur-employee-history-wrap { overflow-x: auto; border: 1px solid var(--color-border); border-radius: 9px; }
+.lembur-employee-history-wrap .sla-table { min-width: 720px; }
+.lembur-employee-history-wrap .sla-table th { background: #f3f6f9; color: #42536a; font-size: 12px; }
+.lembur-employee-history-wrap .sla-table td { vertical-align: middle; }
+.lembur-employee-history-keterangan { min-width: 200px; max-width: 320px; }
+.lembur-employee-history-keterangan strong { display: block; color: #294b59; font-size: 12px; }
+.lembur-employee-history-keterangan span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: 11px; }
+.lembur-employee-history-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; color: var(--color-text-muted); font-size: 11px; }
+
 .lembur-preview-overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 24px; background: rgba(7, 20, 28, .78); }
 .lembur-preview-modal { display: grid; width: min(100%, 1000px); max-height: calc(100vh - 48px); overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 24px 80px rgba(0, 0, 0, .35); }
 .lembur-preview-header { padding: 12px 14px; border-bottom: 1px solid #dfe6ea; }
@@ -8644,6 +8658,19 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 :root[data-theme='dark'] .lembur-detail-table-wrap .sla-table th {
   background: var(--surface-subtle);
   color: var(--text-secondary);
+}
+
+:root[data-theme='dark'] .lembur-reject-box {
+  border-color: #5c2a30;
+}
+
+:root[data-theme='dark'] .lembur-employee-history-wrap .sla-table th {
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+:root[data-theme='dark'] .lembur-employee-history-keterangan strong {
+  color: var(--text-primary);
 }
 
 :root[data-theme='dark'] .lembur-history-item p,
