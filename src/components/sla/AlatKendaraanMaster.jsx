@@ -11,7 +11,6 @@ import {
   saveOpsMaster,
   saveOpsTemplateDraft,
 } from '../../data/opsEquipmentRepository.js'
-import KendaraanUlp from './KendaraanUlp.jsx'
 
 const TABS = [
   { id: 'jenis', label: 'Jenis Kendaraan' },
@@ -19,7 +18,6 @@ const TABS = [
   { id: 'kategori', label: 'Kategori Peralatan' },
   { id: 'peralatan', label: 'Daftar Peralatan' },
   { id: 'template', label: 'Kebutuhan Peralatan' },
-  { id: 'kendaraan', label: 'Kendaraan ULP' },
 ]
 
 const KIND_OF_TAB = { jenis: 'vehicle_type', penugasan: 'assignment', kategori: 'category' }
@@ -564,16 +562,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   )
 }
 
-export default function AlatKendaraanMaster({
-  contractUuid,
-  up3Uuid,
-  canManage,
-  units = [],
-  vehicleUlpUuid = null,
-  canManageVehicles = false,
-  canPickVehicleUlp = false,
-  canViewVehicles = false,
-}) {
+export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }) {
   const [tab, setTab] = useState('jenis')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -702,7 +691,7 @@ export default function AlatKendaraanMaster({
       ) : (
         <>
           <div className="sla-detail-tabs">
-            {TABS.filter((item) => item.id !== 'kendaraan' || canViewVehicles).map((item) => (
+            {TABS.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -756,16 +745,6 @@ export default function AlatKendaraanMaster({
               onArchive={handleArchive}
               onDuplicate={handleDuplicate}
               onExpand={handleExpandTemplate}
-            />
-          )}
-          {tab === 'kendaraan' && (
-            <KendaraanUlp
-              contractUuid={contractUuid}
-              up3Uuid={up3Uuid}
-              ownUlpUuid={vehicleUlpUuid}
-              canManage={canManageVehicles}
-              canPickUlp={canPickVehicleUlp}
-              units={units}
             />
           )}
         </>

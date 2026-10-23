@@ -27,6 +27,7 @@ import SLAMasterOrganisasi from '../../components/sla/SLAMasterOrganisasi.jsx'
 import SLAMasterLokasi from '../../components/sla/SLAMasterLokasi.jsx'
 import SLAMasterJabatan from '../../components/sla/SLAMasterJabatan.jsx'
 import AlatKendaraanMaster from '../../components/sla/AlatKendaraanMaster.jsx'
+import KendaraanUlp from '../../components/sla/KendaraanUlp.jsx'
 import SLADatabasePegawai from '../../components/sla/SLADatabasePegawai.jsx'
 import SLAMasterPenandatangan from '../../components/sla/SLAMasterPenandatangan.jsx'
 import SLAPengaturanSLA from '../../components/sla/SLAPengaturanSLA.jsx'
@@ -234,6 +235,7 @@ export default function SLAPelayananTeknikPage({
     : null
   const canViewAdminUp3Modules = canManageUp3Operations
   const canViewReadOnlyMasterLocations = isAdminUlp
+  const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
   const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
@@ -637,12 +639,14 @@ export default function SLAPelayananTeknikPage({
       })
     return () => { cancelled = true }
   }, [selectedVersion?.id, orgMap?.contractUuid, orgMap?.up3Uuid, periodMonth, up3Id, isUp3View, effectiveUnitId, slaReloadToken])
-  const authorizedModules = pelayananTeknikModules.filter(
-        (module) =>
-          !module.adminOnly ||
-          canViewAdminUp3Modules ||
-          (module.id === 'master-lokasi' && canViewReadOnlyMasterLocations),
-      )
+  const authorizedModules = pelayananTeknikModules.filter((module) => {
+    if (module.id === 'kendaraan-ulp') return canViewVehicles
+    return (
+      !module.adminOnly ||
+      canViewAdminUp3Modules ||
+      (module.id === 'master-lokasi' && canViewReadOnlyMasterLocations)
+    )
+  })
   const visibleModules =
     canViewReadOnlyMasterLocations && !canViewAdminUp3Modules
       ? [
@@ -650,8 +654,9 @@ export default function SLAPelayananTeknikPage({
           authorizedModules.find((module) => module.id === 'master-lokasi'),
         ].filter(Boolean)
       : authorizedModules
-  const primaryModules = visibleModules.filter((module) => ['sla', 'variable-cost', 'lembur'].includes(module.id))
-  const configurationModules = visibleModules.filter((module) => !['sla', 'variable-cost', 'lembur'].includes(module.id))
+  const primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']
+  const primaryModules = visibleModules.filter((module) => primaryModuleIds.includes(module.id))
+  const configurationModules = visibleModules.filter((module) => !primaryModuleIds.includes(module.id))
   const configMenuRef = useRef(null)
 
   // Terapkan rute dari URL (refresh / Back-Forward); modul tak dikenal/diizinkan diabaikan.
@@ -876,13 +881,15 @@ export default function SLAPelayananTeknikPage({
   useEffect(() => {
     if (orgMapStatus === 'loading') return
     const canViewActiveModule =
-      !activeModule?.adminOnly ||
-      canViewAdminUp3Modules ||
-      (activeModule?.id === 'master-lokasi' && canViewReadOnlyMasterLocations)
+      activeModule?.id === 'kendaraan-ulp'
+        ? canViewVehicles
+        : !activeModule?.adminOnly ||
+          canViewAdminUp3Modules ||
+          (activeModule?.id === 'master-lokasi' && canViewReadOnlyMasterLocations)
     if (!canViewActiveModule) {
       setModuleId('sla')
     }
-  }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations, orgMapStatus])
+  }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations, canViewVehicles, orgMapStatus])
 
   const isActiveReportingVersion = selectedVersion?.databaseStatus === 'ACTIVE'
   const isOwnAdminUlp = isAdminUlp && selectedUnitUuid === adminUlpAccess?.operational_unit_id
@@ -1412,16 +1419,26 @@ export default function SLAPelayananTeknikPage({
             canCorrectApprovedWork={isSuperAdmin || isAdminUp3}
           />
         )
+      ) : moduleId === 'kendaraan-ulp' && orgMapStatus === 'loading' ? (
+        <StatePanel state="loading" title="Memuat data kendaraan" />
+      ) : moduleId === 'kendaraan-ulp' && (orgMapStatus === 'error' || !orgMap) ? (
+        <StatePanel state="error" title="Data kendaraan tidak tersedia">
+          {orgMapError || 'Organisasi tidak tersedia.'}
+        </StatePanel>
+      ) : moduleId === 'kendaraan-ulp' ? (
+        <KendaraanUlp
+          contractUuid={orgMap.contractUuid}
+          up3Uuid={orgMap.up3Uuid}
+          ownUlpUuid={adminUlpAccess?.operational_unit_id ?? null}
+          canManage={isSuperAdmin || isAdminUlp}
+          canPickUlp={isSuperAdmin}
+          units={orgMap.units}
+        />
       ) : moduleId === 'alat-kendaraan' ? (
         <AlatKendaraanMaster
           contractUuid={orgMap?.contractUuid ?? null}
           up3Uuid={orgMap?.up3Uuid ?? null}
           canManage={isSuperAdmin || isAdminUp3}
-          units={orgMap?.units ?? []}
-          vehicleUlpUuid={adminUlpAccess?.operational_unit_id ?? null}
-          canManageVehicles={isSuperAdmin || isAdminUlp}
-          canPickVehicleUlp={isSuperAdmin}
-          canViewVehicles={isSuperAdmin || isAdminUp3 || isAdminUlp}
         />
       ) : (
         <section className="placeholder">

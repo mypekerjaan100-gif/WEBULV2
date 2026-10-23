@@ -30,6 +30,10 @@ const page = readFileSync(
   fileURLToPath(new URL('../pages/sla/SLAPelayananTeknikPage.jsx', import.meta.url)),
   'utf8',
 )
+const modules = readFileSync(
+  fileURLToPath(new URL('./slaPelayananTeknik.js', import.meta.url)),
+  'utf8',
+)
 let passed = 0
 
 function assert(condition, message) {
@@ -117,12 +121,23 @@ assert(component.includes('legacy'), 'Penanda template legacy hilang')
 assert(!component.includes('Jumlah SLA'), 'Istilah Jumlah SLA dilarang di UI')
 assert(!/Sei Duri|Bengkayang|Singkawang/.test(component), 'Daftar ULP tidak boleh hardcode')
 
-// Integrasi tab & halaman
-assert(masterComponent.includes("id: 'kendaraan'"), 'Tab kendaraan belum terpasang')
-assert(masterComponent.includes('KendaraanUlp'), 'Komponen kendaraan belum diimpor')
-assert(page.includes('canManageVehicles={isSuperAdmin || isAdminUlp}'), 'Hak kelola kendaraan harus SA/Admin ULP')
-assert(page.includes('vehicleUlpUuid={adminUlpAccess?.operational_unit_id ?? null}'), 'ULP Admin ULP harus eksak')
-assert(page.includes('canPickVehicleUlp={isSuperAdmin}'), 'Pemilih ULP hanya untuk Super Admin')
-assert(page.includes('canViewVehicles={isSuperAdmin || isAdminUp3 || isAdminUlp}'), 'Visibilitas tab kendaraan harus dibatasi peran')
+// Integrasi tab utama & halaman
+assert(modules.includes("{ id: 'kendaraan-ulp', name: 'Alat & Kendaraan' }"), 'Tab utama Alat & Kendaraan hilang')
+assert(modules.includes("{ id: 'alat-kendaraan', name: 'Master Alat & Kendaraan' }"), 'Master Alat & Kendaraan harus terpisah')
+assert(
+  modules.indexOf("id: 'lembur'") < modules.indexOf("id: 'kendaraan-ulp'"),
+  'Tab Alat & Kendaraan harus tepat setelah Lembur',
+)
+assert(page.includes("import KendaraanUlp from '../../components/sla/KendaraanUlp.jsx'"), 'Halaman harus merender KendaraanUlp langsung')
+assert(page.includes("moduleId === 'kendaraan-ulp' ? ("), 'Cabang modul kendaraan-ulp hilang')
+assert(page.includes('const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp'), 'Visibilitas kendaraan harus dibatasi peran')
+assert(page.includes("if (module.id === 'kendaraan-ulp') return canViewVehicles"), 'Filter modul kendaraan-ulp hilang')
+assert(page.includes("primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']"), 'Kendaraan ULP harus menjadi tab utama')
+assert(page.includes('ownUlpUuid={adminUlpAccess?.operational_unit_id ?? null}'), 'ULP Admin ULP harus eksak')
+assert(page.includes('canManage={isSuperAdmin || isAdminUlp}'), 'Hak kelola kendaraan harus SA/Admin ULP')
+assert(page.includes('canPickUlp={isSuperAdmin}'), 'Pemilih ULP hanya untuk Super Admin')
+assert(page.includes('units={orgMap.units}'), 'Daftar unit harus memakai scope organisasi')
+assert(!masterComponent.includes('KendaraanUlp'), 'Input kendaraan tidak boleh diduplikasi di master')
+assert(!masterComponent.includes("id: 'kendaraan'"), 'Subtab kendaraan lama harus dihapus dari master')
 
 console.log(`Ops vehicle tests passed: ${passed}`)

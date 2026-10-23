@@ -83,8 +83,9 @@ assert(component.includes('nopol') === false && component.includes('Nomor Polisi
 
 const modulesUrl = new URL('./slaPelayananTeknik.js', import.meta.url)
 const modules = readFileSync(fileURLToPath(modulesUrl), 'utf8')
-assert(modules.includes("'alat-kendaraan'"), 'Modul navigasi hilang')
-assert(modules.includes('Alat & Kendaraan'), 'Nama modul navigasi hilang')
+assert(modules.includes("id: 'alat-kendaraan'"), 'Modul navigasi hilang')
+assert(modules.includes("name: 'Master Alat & Kendaraan'"), 'Nama modul master hilang')
+assert(!component.includes('KendaraanUlp'), 'Input kendaraan harus berada di tab utama, bukan master')
 
 const pageUrl = new URL('../pages/sla/SLAPelayananTeknikPage.jsx', import.meta.url)
 const page = readFileSync(fileURLToPath(pageUrl), 'utf8')
