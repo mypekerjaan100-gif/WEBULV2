@@ -1278,6 +1278,12 @@ summary:focus-visible {
   font-weight: 600;
 }
 
+.sla-module-nav-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .sla-module-nav-item:hover {
   border-color: #d6e5f2;
   background: #edf5fb;
@@ -10746,4 +10752,424 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   .overtime-deadline-temporary-grid { grid-template-columns: 1fr; }
   .overtime-deadline-temporary-grid .is-wide { grid-column: auto; }
   .overtime-deadline-form-footer .ui-button { width: 100%; }
+}
+
+.alkes-form-surface {
+  padding: 16px;
+}
+
+.alkes-form-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.alkes-form-heading strong {
+  font-size: 14px;
+}
+
+.alkes-form-heading p {
+  margin: 2px 0 0;
+}
+
+.alkes-form-count,
+.alkes-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.alkes-field-wide {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.alkes-advanced {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.alkes-advanced > summary {
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  list-style-position: inside;
+}
+
+.alkes-advanced[open] > summary {
+  margin-bottom: 10px;
+  color: var(--color-text);
+}
+
+.alkes-field-error {
+  margin: 3px 0 0;
+  color: var(--state-error);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.alkes-savebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.alkes-save-status {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.alkes-save-status.is-dirty {
+  color: var(--warning);
+}
+
+.alkes-save-status.is-saved {
+  color: #177c3d;
+}
+
+.alkes-save-actions,
+.alkes-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.alkes-worksheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 14px;
+}
+
+.alkes-worksheet-head > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.alkes-catalog-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.alkes-catalog-toolbar .alkes-search {
+  flex: 1 1 160px;
+  max-width: 220px;
+  width: auto;
+}
+
+.alkes-catalog-toolbar .sla-context-select {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 320px;
+  width: auto;
+}
+
+.alkes-worksheet-scroll {
+  max-width: 100%;
+  max-height: min(60vh, 620px);
+  margin-top: 10px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.alkes-worksheet-table {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.alkes-worksheet-table th,
+.alkes-worksheet-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.alkes-worksheet-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.alkes-worksheet-table th:nth-child(1),
+.alkes-worksheet-table td:nth-child(1) {
+  width: 58px;
+  text-align: center;
+}
+
+.alkes-worksheet-table th:nth-child(2) {
+  min-width: 240px;
+}
+
+.alkes-worksheet-table th:nth-child(3) {
+  width: 82px;
+}
+
+.alkes-worksheet-table th:nth-child(4) {
+  width: 150px;
+  text-align: right;
+}
+
+.alkes-worksheet-table th:nth-child(5) {
+  width: 170px;
+}
+
+.alkes-group-row td {
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.alkes-group-count {
+  float: right;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.alkes-row-number {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.alkes-row-badge {
+  display: block;
+  margin-top: 2px;
+  color: var(--warning);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.alkes-row-changed td {
+  background: rgba(255, 193, 7, 0.06);
+}
+
+.alkes-row-changed td:first-child {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.alkes-row-highlight td {
+  background: var(--surface-hover);
+}
+
+.alkes-row-highlight td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+.alkes-qty-cell {
+  text-align: right;
+}
+
+.alkes-qty-input {
+  width: 96px;
+  height: 34px;
+  padding: 0 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.alkes-qty-input.is-invalid {
+  border-color: var(--state-error);
+}
+
+.alkes-qty-cell .alkes-field-error {
+  text-align: left;
+}
+
+.alkes-compact-btn {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.alkes-note-row td {
+  padding: 8px 10px 12px 68px;
+  background: var(--surface-subtle);
+}
+
+.alkes-note-input {
+  width: 100%;
+  max-width: none;
+}
+
+.alkes-empty-state {
+  padding: 24px 12px !important;
+  color: var(--color-text-muted);
+  text-align: center !important;
+}
+
+.alkes-inactive-badge {
+  display: inline-flex;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--color-text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.alkes-section .sla-preview-table.alkes-table--wide {
+  min-width: 760px;
+}
+
+.alkes-section .sla-preview-table.alkes-table--compact,
+.ops-vehicle-detail .sla-preview-table.alkes-table {
+  min-width: 560px;
+}
+
+.alkes-items-scroll {
+  max-height: 360px;
+}
+
+.ops-vehicle-form-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.ops-vehicle-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 10px;
+}
+
+.ops-vehicle-section-head strong {
+  font-size: 13px;
+}
+
+.ops-vehicle-selected-template {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 4px 0 2px;
+  padding: 9px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.ops-vehicle-selected-template strong {
+  font-size: 12px;
+}
+
+.ops-vehicle-selected-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.ops-vehicle-preview {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.ops-vehicle-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.ops-vehicle-preview-head strong {
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .alkes-form-surface {
+    padding: 12px;
+  }
+
+  .alkes-catalog-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .alkes-catalog-toolbar .alkes-search,
+  .alkes-catalog-toolbar .sla-context-select,
+  .alkes-catalog-toolbar .sla-btn {
+    width: 100%;
+    max-width: none;
+  }
+
+  .alkes-worksheet-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .alkes-savebar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .alkes-save-actions .sla-btn {
+    flex: 1 1 auto;
+  }
+
+  .alkes-note-row td {
+    padding-left: 10px;
+  }
+
+  .ops-vehicle-section-head,
+  .ops-vehicle-preview-head,
+  .ops-vehicle-selected-template {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .alkes-worksheet-scroll {
+    max-height: 65vh;
+  }
 }

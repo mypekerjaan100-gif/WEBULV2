@@ -150,6 +150,8 @@ function mergeSupabasePositions(prev, posRows) {
     .concat(supabasePositions.filter((p) => !existing.has(p.id)))
 }
 
+const VEHICLE_TAB_DISABLED = true
+
 export default function SLAPelayananTeknikPage({
   onBack,
   contractId,
@@ -175,7 +177,9 @@ export default function SLAPelayananTeknikPage({
   routeRequest = null,
   onRouteChange = null,
 }) {
-  const [moduleId, setModuleId] = useState(initialModule ?? 'sla')
+  const [moduleId, setModuleId] = useState(
+    VEHICLE_TAB_DISABLED && initialModule === 'kendaraan-ulp' ? 'sla' : (initialModule ?? 'sla'),
+  )
   const [period, setPeriod] = useState(() => initialPeriode ?? defaultSlaPeriod())
   const [versionId, setVersionId] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
@@ -672,6 +676,10 @@ export default function SLAPelayananTeknikPage({
   }, [initialModule, visibleModules, orgMapStatus])
   useEffect(() => {
     if (!routeRequest) return
+    if (VEHICLE_TAB_DISABLED && routeRequest.module === 'kendaraan-ulp') {
+      setModuleId('sla')
+      return
+    }
     if (routeRequest.module && orgMapStatus === 'loading') return
     if (routeRequest.module && routeRequest.module !== moduleId
       && visibleModules.some((module) => module.id === routeRequest.module)) {
@@ -882,7 +890,7 @@ export default function SLAPelayananTeknikPage({
     if (orgMapStatus === 'loading') return
     const canViewActiveModule =
       activeModule?.id === 'kendaraan-ulp'
-        ? canViewVehicles
+        ? canViewVehicles && !VEHICLE_TAB_DISABLED
         : !activeModule?.adminOnly ||
           canViewAdminUp3Modules ||
           (activeModule?.id === 'master-lokasi' && canViewReadOnlyMasterLocations)
@@ -1005,7 +1013,10 @@ export default function SLAPelayananTeknikPage({
       key={module.id}
       type="button"
       className={`sla-module-nav-item ${moduleId === module.id ? 'sla-module-nav-item-active' : ''}`}
+      disabled={VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp'}
+      title={VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp' ? 'Alat & Kendaraan sementara dinonaktifkan' : undefined}
       onClick={() => {
+        if (VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp') return
         if (configMenuRef.current) configMenuRef.current.open = false
         setModuleId(module.id)
       }}
@@ -1419,6 +1430,8 @@ export default function SLAPelayananTeknikPage({
             canCorrectApprovedWork={isSuperAdmin || isAdminUp3}
           />
         )
+      ) : moduleId === 'kendaraan-ulp' && VEHICLE_TAB_DISABLED ? (
+        <StatePanel state="empty" title="Alat & Kendaraan sementara dinonaktifkan" />
       ) : moduleId === 'kendaraan-ulp' && orgMapStatus === 'loading' ? (
         <StatePanel state="loading" title="Memuat data kendaraan" />
       ) : moduleId === 'kendaraan-ulp' && (orgMapStatus === 'error' || !orgMap) ? (

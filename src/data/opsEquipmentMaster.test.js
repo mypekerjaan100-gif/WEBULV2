@@ -79,7 +79,19 @@ assert(component.includes('Terbitkan'), 'Aksi publikasi hilang')
 assert(component.includes('Duplikasi'), 'Aksi duplikasi hilang')
 assert(component.includes('Arsipkan'), 'Aksi arsip hilang')
 assert(component.includes('Varian/Model'), 'Field varian hilang')
+assert(component.includes('Informasi tambahan'), 'Bagian informasi tambahan hilang')
+assert(component.includes('alkes-worksheet-table'), 'Tabel worksheet kebutuhan hilang')
+assert(component.includes('alkes-catalog-toolbar'), 'Pemilih katalog alat hilang')
+assert(component.includes('onDirtyChange'), 'Perlindungan perubahan belum tersimpan hilang')
+assert(component.includes('switchTab'), 'Konfirmasi pindah tab hilang')
+assert(component.includes('ListPagination'), 'Pagination daftar master hilang')
+assert(component.includes('Sebelumnya') && component.includes('Berikutnya'), 'Kontrol pagination hilang')
 assert(component.includes('nopol') === false && component.includes('Nomor Polisi') === false, 'Tahap 1 dilarang menyentuh nopol')
+
+const css = readFileSync(fileURLToPath(new URL('../styles/index.css', import.meta.url)), 'utf8')
+for (const className of ['alkes-worksheet-table', 'alkes-catalog-toolbar', 'alkes-savebar', 'alkes-field-wide']) {
+  assert(css.includes(`.${className}`), `Style ${className} hilang`)
+}
 
 const modulesUrl = new URL('./slaPelayananTeknik.js', import.meta.url)
 const modules = readFileSync(fileURLToPath(modulesUrl), 'utf8')

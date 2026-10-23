@@ -118,8 +118,19 @@ assert(component.includes('Koreksi ULP'), 'Aksi koreksi ULP hilang')
 assert(component.includes('Riwayat'), 'Tab riwayat hilang')
 assert(component.includes('Tidak Aktif'), 'Status tidak aktif hilang')
 assert(component.includes('legacy'), 'Penanda template legacy hilang')
+assert(component.includes('Identitas Kendaraan'), 'Bagian identitas kendaraan hilang')
+assert(component.includes('Acuan Kebutuhan'), 'Bagian acuan kebutuhan hilang')
+assert(component.includes('ops-vehicle-preview'), 'Pratinjau kebutuhan hilang')
+assert(component.includes('alkes-savebar'), 'Status simpan kendaraan hilang')
+assert(component.includes('filteredCandidates'), 'Filter bertingkat kandidat template hilang')
+assert(!component.includes('plateNormalized'), 'Kode teknis nopol tidak boleh tampil di UI')
 assert(!component.includes('Jumlah SLA'), 'Istilah Jumlah SLA dilarang di UI')
 assert(!/Sei Duri|Bengkayang|Singkawang/.test(component), 'Daftar ULP tidak boleh hardcode')
+
+const vehicleCss = readFileSync(fileURLToPath(new URL('../styles/index.css', import.meta.url)), 'utf8')
+for (const className of ['ops-vehicle-form-section', 'ops-vehicle-preview', 'ops-vehicle-selected-template']) {
+  assert(vehicleCss.includes(`.${className}`), `Style ${className} hilang`)
+}
 
 // Integrasi tab utama & halaman
 assert(modules.includes("{ id: 'kendaraan-ulp', name: 'Alat & Kendaraan' }"), 'Tab utama Alat & Kendaraan hilang')
@@ -136,6 +147,10 @@ assert(page.includes("primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'ken
 assert(page.includes('ownUlpUuid={adminUlpAccess?.operational_unit_id ?? null}'), 'ULP Admin ULP harus eksak')
 assert(page.includes('canManage={isSuperAdmin || isAdminUlp}'), 'Hak kelola kendaraan harus SA/Admin ULP')
 assert(page.includes('canPickUlp={isSuperAdmin}'), 'Pemilih ULP hanya untuk Super Admin')
+assert(page.includes('const VEHICLE_TAB_DISABLED = true'), 'Tab kendaraan harus sementara dinonaktifkan')
+assert(page.includes("disabled={VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp'}"), 'Tab kendaraan harus tidak dapat diklik')
+assert(page.includes("VEHICLE_TAB_DISABLED && routeRequest.module === 'kendaraan-ulp'"), 'Rute langsung kendaraan harus diblokir')
+assert(page.includes("moduleId === 'kendaraan-ulp' && VEHICLE_TAB_DISABLED"), 'Modul kendaraan tidak boleh dirender saat dinonaktifkan')
 assert(page.includes('units={orgMap.units}'), 'Daftar unit harus memakai scope organisasi')
 assert(!masterComponent.includes('KendaraanUlp'), 'Input kendaraan tidak boleh diduplikasi di master')
 assert(!masterComponent.includes("id: 'kendaraan'"), 'Subtab kendaraan lama harus dihapus dari master')

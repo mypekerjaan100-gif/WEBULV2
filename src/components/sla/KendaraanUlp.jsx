@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   correctOpsVehicleUlp,
   displayPlate,
@@ -46,24 +46,49 @@ function formatDateTime(value) {
 }
 
 function candidateLabel(candidate) {
-  const variant = candidate.vehicleVariant ? ` (${candidate.vehicleVariant})` : ''
-  return `${candidate.vehicleTypeName} — ${candidate.assignmentName}${variant} · v${candidate.versionNumber}`
+  const variant = candidate.vehicleVariant || 'Umum'
+  return `${candidate.vehicleTypeName} — ${candidate.assignmentName} · ${variant} · v${candidate.versionNumber} · ${candidate.itemsCount} alat`
+}
+
+function variantKey(value) {
+  return value ? `v:${value}` : 'v:'
+}
+
+function variantLabel(key) {
+  return key === 'v:' ? 'Umum' : key.slice(2)
 }
 
 function statusBadgeClass(status) {
   return status === 'Aktif' ? 'sla-status-active' : 'sla-status-archive'
 }
 
+function vehicleSnapshot(form) {
+  return JSON.stringify({
+    id: form.id,
+    ulpId: form.ulpId,
+    plate: form.plate,
+    brand: form.brand,
+    notes: form.notes,
+    templateId: form.templateId,
+  })
+}
+
 function ItemsTable({ items }) {
   if (!items.length) {
     return <p className="sla-table-hint">Tidak ada rincian kebutuhan.</p>
   }
+  const groups = new Map()
+  items.forEach((item, index) => {
+    const key = item.categoryName || 'Tanpa Kategori'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push({ ...item, number: index + 1 })
+  })
   return (
-    <div className="sla-preview-scroll">
-      <table className="sla-preview-table alkes-table">
+    <div className="sla-preview-scroll alkes-items-scroll">
+      <table className="sla-preview-table alkes-table alkes-table--compact">
         <thead>
           <tr>
-            <th>Kategori</th>
+            <th>No.</th>
             <th>Peralatan</th>
             <th>Satuan</th>
             <th>Jumlah Kebutuhan</th>
@@ -71,17 +96,27 @@ function ItemsTable({ items }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
-            <tr key={item.equipmentId}>
-              <td>{item.categoryName || '—'}</td>
-              <td>
-                {item.equipmentName || '—'}
-                <div className="sla-table-sub">{item.equipmentCode}</div>
-              </td>
-              <td>{item.equipmentUnit}</td>
-              <td>{item.requiredQty}</td>
-              <td>{item.note || '—'}</td>
-            </tr>
+          {[...groups.entries()].map(([category, rows]) => (
+            <Fragment key={category}>
+              <tr className="alkes-group-row">
+                <td colSpan={5}>
+                  {category}
+                  <span className="alkes-group-count">{rows.length} jenis</span>
+                </td>
+              </tr>
+              {rows.map((item) => (
+                <tr key={item.equipmentId}>
+                  <td>{item.number}</td>
+                  <td>
+                    {item.equipmentName || '—'}
+                    <div className="sla-table-sub">{item.equipmentCode}</div>
+                  </td>
+                  <td>{item.equipmentUnit}</td>
+                  <td>{item.requiredQty}</td>
+                  <td>{item.note || '—'}</td>
+                </tr>
+              ))}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -125,12 +160,20 @@ export default function KendaraanUlp({
   const [busy, setBusy] = useState(false)
 
   const [form, setForm] = useState(null)
+  const [baseline, setBaseline] = useState('')
+  const [saveStatus, setSaveStatus] = useState('idle')
   const [formError, setFormError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [candidates, setCandidates] = useState([])
   const [candidatesLoading, setCandidatesLoading] = useState(false)
   const [candidatesError, setCandidatesError] = useState('')
   const [preview, setPreview] = useState([])
   const [previewError, setPreviewError] = useState('')
+  const [previewNonce, setPreviewNonce] = useState(0)
+  const plateRef = useRef(null)
+  const brandRef = useRef(null)
+  const ulpRef = useRef(null)
+  const templateRef = useRef(null)
 
   const [detail, setDetail] = useState(null)
   const [detailItems, setDetailItems] = useState([])
@@ -211,7 +254,7 @@ export default function KendaraanUlp({
         if (!cancelled) setPreviewError(loadError.message || 'Rincian kebutuhan gagal dimuat.')
       })
     return () => { cancelled = true }
-  }, [form?.templateId])
+  }, [form?.templateId, previewNonce])
 
   useEffect(() => {
     let cancelled = false
@@ -225,11 +268,124 @@ export default function KendaraanUlp({
     return () => { cancelled = true }
   }, [detail, detailTab])
 
-  const openCreate = () => {
-    if (!canManage) return
+  useEffect(() => {
+    if (!form?.id || !form.templateId || form.vehicleTypeId || !candidates.length) return
+    const candidate = candidates.find((item) => item.id === form.templateId)
+    if (!candidate) return
+    setForm((prev) => (prev ? {
+      ...prev,
+      vehicleTypeId: candidate.vehicleTypeId,
+      assignmentId: candidate.assignmentId,
+      variantFilter: variantKey(candidate.vehicleVariant),
+    } : prev))
+  }, [candidates, form?.id, form?.templateId, form?.vehicleTypeId])
+
+  const filteredCandidates = useMemo(() => {
+    if (!form) return []
+    return candidates.filter((candidate) => {
+      if (form.vehicleTypeId && candidate.vehicleTypeId !== form.vehicleTypeId) return false
+      if (form.assignmentId && candidate.assignmentId !== form.assignmentId) return false
+      if (form.variantFilter && variantKey(candidate.vehicleVariant) !== form.variantFilter) return false
+      return true
+    })
+  }, [candidates, form?.vehicleTypeId, form?.assignmentId, form?.variantFilter])
+
+  const typeOptions = useMemo(() => {
+    const map = new Map()
+    candidates.forEach((candidate) => {
+      if (!map.has(candidate.vehicleTypeId)) map.set(candidate.vehicleTypeId, candidate.vehicleTypeName)
+    })
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [candidates])
+
+  const assignmentOptions = useMemo(() => {
+    const map = new Map()
+    candidates.forEach((candidate) => {
+      if (form?.vehicleTypeId && candidate.vehicleTypeId !== form.vehicleTypeId) return
+      if (!map.has(candidate.assignmentId)) map.set(candidate.assignmentId, candidate.assignmentName)
+    })
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [candidates, form?.vehicleTypeId])
+
+  const variantOptions = useMemo(() => {
+    const map = new Map()
+    candidates.forEach((candidate) => {
+      if (form?.vehicleTypeId && candidate.vehicleTypeId !== form.vehicleTypeId) return
+      if (form?.assignmentId && candidate.assignmentId !== form.assignmentId) return
+      map.set(variantKey(candidate.vehicleVariant), candidate.vehicleVariant || 'Umum')
+    })
+    return [...map.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [candidates, form?.vehicleTypeId, form?.assignmentId])
+
+  const selectedCandidate = candidates.find((candidate) => candidate.id === form?.templateId) ?? null
+  const dirty = Boolean(form && baseline && vehicleSnapshot(form) !== baseline)
+  const statusText = busy || saveStatus === 'saving'
+    ? 'Menyimpan...'
+    : dirty
+      ? 'Ada perubahan belum disimpan'
+      : saveStatus === 'saved'
+        ? 'Tersimpan'
+        : 'Belum ada perubahan'
+
+  useEffect(() => {
+    if (!dirty) return undefined
+    const handler = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
+  const focusField = (key) => {
+    const refs = { plate: plateRef, brand: brandRef, ulpId: ulpRef, templateId: templateRef }
+    window.requestAnimationFrame(() => refs[key]?.current?.focus())
+  }
+
+  const clearFieldError = (key) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+
+  const updateVehicleField = (key, value) => {
+    setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
+    clearFieldError(key)
     setFormError('')
+  }
+
+  const resetFormState = () => {
+    setForm(null)
+    setPreview([])
+    setFormError('')
+    setFieldErrors({})
+    setBaseline('')
+    setSaveStatus('idle')
+  }
+
+  const closeForm = () => {
+    if (dirty && !window.confirm('Perubahan kendaraan belum disimpan. Tutup form?')) return
+    resetFormState()
+  }
+
+  const confirmDiscard = () => !dirty || window.confirm('Perubahan kendaraan belum disimpan. Lanjutkan?')
+
+  const openCreate = () => {
+    if (!canManage || !confirmDiscard()) return
+    setFormError('')
+    setFieldErrors({})
     setCandidatesError('')
-    setForm({
+    setSaveStatus('idle')
+    const next = {
       id: null,
       revision: null,
       ulpId: canPickUlp ? (filters.ulpId || '') : (ownUlpUuid ?? ''),
@@ -237,15 +393,22 @@ export default function KendaraanUlp({
       brand: '',
       notes: '',
       templateId: '',
-    })
+      vehicleTypeId: '',
+      assignmentId: '',
+      variantFilter: '',
+    }
+    setForm(next)
+    setBaseline(vehicleSnapshot(next))
     loadCandidates(null)
   }
 
   const openEdit = (row) => {
-    if (!canManage) return
+    if (!canManage || !confirmDiscard()) return
     setFormError('')
+    setFieldErrors({})
     setCandidatesError('')
-    setForm({
+    setSaveStatus('idle')
+    const next = {
       id: row.id,
       revision: row.revision,
       ulpId: row.ulpId,
@@ -253,31 +416,39 @@ export default function KendaraanUlp({
       brand: row.brand ?? '',
       notes: row.notes ?? '',
       templateId: row.templateId ?? '',
-    })
+      vehicleTypeId: '',
+      assignmentId: '',
+      variantFilter: '',
+    }
+    setForm(next)
+    setBaseline(vehicleSnapshot(next))
     loadCandidates(row.id)
   }
 
-  const closeForm = () => {
-    setForm(null)
-    setPreview([])
-    setFormError('')
-  }
-
   const submitForm = async () => {
-    if (!form) return
+    if (!form || busy || saveStatus === 'saving') return
     const plate = displayPlate(form.plate)
     const brand = String(form.brand ?? '').trim()
     const normalized = normalizePlate(plate)
-    if (!plate) { setFormError('Nomor polisi wajib diisi.'); return }
-    if (normalized.length < 2) { setFormError('Nomor polisi tidak valid.'); return }
-    if (!brand) { setFormError('Tipe/Merek kendaraan wajib diisi.'); return }
-    if (!form.templateId) { setFormError('Acuan template wajib dipilih.'); return }
-    if (!form.id && !form.ulpId) { setFormError('ULP kendaraan wajib dipilih.'); return }
-
-    setBusy(true)
+    const nextErrors = {}
+    if (!plate) nextErrors.plate = 'Nomor polisi wajib diisi.'
+    else if (normalized.length < 2 || normalized.length > 12) nextErrors.plate = 'Nomor polisi tidak valid.'
+    if (!brand) nextErrors.brand = 'Tipe/Merek wajib diisi.'
+    if (!form.id && !form.ulpId) nextErrors.ulpId = 'ULP wajib dipilih.'
+    if (!form.templateId) nextErrors.templateId = 'Pilih template kebutuhan.'
+    else if (!candidatesLoading && !filteredCandidates.some((candidate) => candidate.id === form.templateId)) {
+      nextErrors.templateId = 'Template tidak sesuai dengan jenis dan penugasan yang dipilih.'
+    }
+    setFieldErrors(nextErrors)
     setFormError('')
+    if (Object.keys(nextErrors).length) {
+      focusField(['ulpId', 'plate', 'brand', 'templateId'].find((key) => nextErrors[key]))
+      return
+    }
+
+    setSaveStatus('saving')
     try {
-      await saveOpsVehicle({
+      const saved = await saveOpsVehicle({
         id: form.id,
         contractId: contractUuid,
         up3Id: up3Uuid,
@@ -288,13 +459,25 @@ export default function KendaraanUlp({
         notes: form.notes,
         templateId: form.templateId,
       })
+      const nextForm = {
+        ...form,
+        id: saved.vehicle.id,
+        revision: saved.vehicle.revision,
+        ulpId: saved.vehicle.ulpId,
+        plate: saved.vehicle.plateDisplay,
+        brand: saved.vehicle.brand,
+        notes: saved.vehicle.notes ?? '',
+        templateId: saved.vehicle.templateId ?? form.templateId,
+      }
+      setForm(nextForm)
+      setBaseline(vehicleSnapshot(nextForm))
+      setSaveStatus('saved')
       setNotice(form.id ? 'Kendaraan diperbarui.' : 'Kendaraan terdaftar.')
-      closeForm()
       await loadList()
+      await loadCandidates(saved.vehicle.id)
     } catch (saveError) {
       setFormError(saveError.message || 'Kendaraan gagal disimpan.')
-    } finally {
-      setBusy(false)
+      setSaveStatus('dirty')
     }
   }
 
@@ -397,7 +580,13 @@ export default function KendaraanUlp({
   const pageEnd = Math.min(data.total, page * PAGE_SIZE + data.rows.length)
   const canGoPrev = page > 0
   const canGoNext = (page + 1) * PAGE_SIZE < data.total
-  const selectedCandidate = candidates.find((candidate) => candidate.id === form?.templateId) ?? null
+  const hasListFilter = Boolean(filters.search || filters.status || (canPickUlp && filters.ulpId))
+  const emptyListMessage = hasListFilter
+    ? 'Tidak ada kendaraan yang cocok dengan pencarian/filter.'
+    : 'Belum ada kendaraan terdaftar pada scope ini.'
+  const contextLocked = Boolean(form?.id)
+  const currentTypeName = selectedCandidate?.vehicleTypeName ?? 'Memuat...'
+  const currentAssignmentName = selectedCandidate?.assignmentName ?? 'Memuat...'
 
   return (
     <div className="alkes-section">
@@ -463,106 +652,226 @@ export default function KendaraanUlp({
       {notice && <p className="sla-export-note">{notice}</p>}
 
       {form && canManage && (
-        <div className="sla-sign-group ops-vehicle-form">
-          <div className="sla-sign-group-head">
-            <div className="sla-context-field">
-              <span className="sla-context-label">Nomor Polisi *</span>
-              <input
-                className="sla-input sla-input-text"
-                value={form.plate}
-                disabled={busy}
-                onChange={(event) => setForm((prev) => ({ ...prev, plate: event.target.value }))}
-                placeholder="cth: B 3892 BDA"
-              />
+        <div className="sla-sign-group ops-vehicle-form alkes-form-surface">
+          <div className="alkes-form-heading">
+            <div>
+              <strong>{form.id ? 'Edit Kendaraan' : 'Registrasi Kendaraan'}</strong>
+              <p className="sla-table-hint">Pilih konteks sekali, lalu periksa pratinjau kebutuhan sebelum menyimpan.</p>
             </div>
-            <div className="sla-context-field">
-              <span className="sla-context-label">Tipe/Merek *</span>
-              <input
-                className="sla-input sla-input-text"
-                value={form.brand}
-                disabled={busy}
-                onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))}
-                placeholder="cth: Type B Double Axle 2x4"
-              />
+            {selectedCandidate && (
+              <span className="alkes-meta-pill">{selectedCandidate.templateCode} · v{selectedCandidate.versionNumber}</span>
+            )}
+          </div>
+
+          <div className="ops-vehicle-form-section">
+            <div className="ops-vehicle-section-head">
+              <strong>Identitas Kendaraan</strong>
+              <span className="sla-table-hint">Nomor polisi dan tipe/merek wajib diisi.</span>
             </div>
-            {!form.id && canPickUlp && (
+            <div className="sla-sign-group-head">
               <div className="sla-context-field">
-                <span className="sla-context-label">ULP *</span>
+                <span className="sla-context-label">{form.id ? 'ULP' : 'ULP *'}</span>
+                {!form.id && canPickUlp ? (
+                  <select ref={ulpRef} className="sla-context-select" value={form.ulpId} disabled={busy} onChange={(event) => updateVehicleField('ulpId', event.target.value)} aria-invalid={Boolean(fieldErrors.ulpId)}>
+                    <option value="">Pilih ULP</option>
+                    {ulpOptions.map((unit) => (
+                      <option key={unit.uuid} value={unit.uuid}>{unit.displayName ?? unit.legacyKey}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input className="sla-input sla-input-text" value={unitLabel(form.ulpId)} disabled />
+                )}
+                {fieldErrors.ulpId && <p className="alkes-field-error">{fieldErrors.ulpId}</p>}
+              </div>
+              <div className="sla-context-field">
+                <span className="sla-context-label">Nomor Polisi *</span>
+                <input ref={plateRef} className="sla-input sla-input-text" value={form.plate} disabled={busy} onChange={(event) => updateVehicleField('plate', event.target.value)} placeholder="cth: B 3892 BDA" aria-invalid={Boolean(fieldErrors.plate)} />
+                {fieldErrors.plate && <p className="alkes-field-error">{fieldErrors.plate}</p>}
+              </div>
+              <div className="sla-context-field">
+                <span className="sla-context-label">Tipe/Merek *</span>
+                <input ref={brandRef} className="sla-input sla-input-text" value={form.brand} disabled={busy} onChange={(event) => updateVehicleField('brand', event.target.value)} placeholder="cth: Type B Double Axle 2x4" aria-invalid={Boolean(fieldErrors.brand)} />
+                {fieldErrors.brand && <p className="alkes-field-error">{fieldErrors.brand}</p>}
+              </div>
+            </div>
+            <details className="alkes-advanced">
+              <summary>Informasi tambahan</summary>
+              <div className="sla-sign-group-head">
+                <div className="sla-context-field ops-vehicle-wide">
+                  <span className="sla-context-label">Catatan</span>
+                  <input className="sla-input sla-input-text" value={form.notes} disabled={busy} onChange={(event) => updateVehicleField('notes', event.target.value)} />
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div className="ops-vehicle-form-section">
+            <div className="ops-vehicle-section-head">
+              <strong>Acuan Kebutuhan</strong>
+              <span className="sla-table-hint">Pilih jenis dan penugasan untuk mempersempit kandidat.</span>
+            </div>
+            <div className="sla-sign-group-head">
+              <div className="sla-context-field">
+                <span className="sla-context-label">Jenis Kendaraan *</span>
                 <select
                   className="sla-context-select"
-                  value={form.ulpId}
-                  disabled={busy}
-                  onChange={(event) => setForm((prev) => ({ ...prev, ulpId: event.target.value }))}
+                  value={form.vehicleTypeId}
+                  disabled={busy || candidatesLoading || contextLocked}
+                  onChange={(event) => {
+                    setForm((prev) => ({ ...prev, vehicleTypeId: event.target.value, assignmentId: '', variantFilter: '', templateId: '' }))
+                    clearFieldError('templateId')
+                    setFormError('')
+                  }}
                 >
-                  <option value="">Pilih ULP</option>
-                  {ulpOptions.map((unit) => (
-                    <option key={unit.uuid} value={unit.uuid}>{unit.displayName ?? unit.legacyKey}</option>
+                  {!contextLocked && <option value="">Pilih jenis</option>}
+                  {contextLocked && form.vehicleTypeId && !typeOptions.some((item) => item.id === form.vehicleTypeId) && (
+                    <option value={form.vehicleTypeId}>{currentTypeName}</option>
+                  )}
+                  {typeOptions.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
                 </select>
               </div>
-            )}
-            {form.id && (
               <div className="sla-context-field">
-                <span className="sla-context-label">ULP</span>
-                <input className="sla-input sla-input-text" value={unitLabel(form.ulpId)} disabled />
+                <span className="sla-context-label">Penugasan *</span>
+                <select
+                  className="sla-context-select"
+                  value={form.assignmentId}
+                  disabled={busy || candidatesLoading || contextLocked}
+                  onChange={(event) => {
+                    setForm((prev) => ({ ...prev, assignmentId: event.target.value, variantFilter: '', templateId: '' }))
+                    clearFieldError('templateId')
+                    setFormError('')
+                  }}
+                >
+                  {!contextLocked && <option value="">Pilih penugasan</option>}
+                  {contextLocked && form.assignmentId && !assignmentOptions.some((item) => item.id === form.assignmentId) && (
+                    <option value={form.assignmentId}>{currentAssignmentName}</option>
+                  )}
+                  {assignmentOptions.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="sla-context-field">
+                <span className="sla-context-label">Varian/Model (opsional)</span>
+                <select
+                  className="sla-context-select"
+                  value={form.variantFilter}
+                  disabled={busy || candidatesLoading}
+                  onChange={(event) => {
+                    setForm((prev) => ({ ...prev, variantFilter: event.target.value, templateId: '' }))
+                    clearFieldError('templateId')
+                    setFormError('')
+                  }}
+                >
+                  <option value="">Semua varian</option>
+                  {variantOptions.map((item) => (
+                    <option key={item.key} value={item.key}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="sla-context-field ops-vehicle-wide">
+                <span className="sla-context-label">Acuan Template Kebutuhan *</span>
+                <select
+                  ref={templateRef}
+                  className="sla-context-select"
+                  value={form.templateId}
+                  disabled={busy || candidatesLoading || !filteredCandidates.length}
+                  onChange={(event) => {
+                    const candidate = candidates.find((item) => item.id === event.target.value)
+                    setForm((prev) => ({
+                      ...prev,
+                      templateId: event.target.value,
+                      ...(candidate ? {
+                        vehicleTypeId: candidate.vehicleTypeId,
+                        assignmentId: candidate.assignmentId,
+                        variantFilter: variantKey(candidate.vehicleVariant),
+                      } : {}),
+                    }))
+                    clearFieldError('templateId')
+                    setFormError('')
+                  }}
+                  aria-invalid={Boolean(fieldErrors.templateId)}
+                >
+                  <option value="">{candidatesLoading ? 'Memuat acuan...' : 'Pilih acuan template'}</option>
+                  {filteredCandidates.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidateLabel(candidate)}{candidate.templateLegacy ? ' · legacy' : ''}
+                    </option>
+                  ))}
+                </select>
+                {fieldErrors.templateId && <p className="alkes-field-error">{fieldErrors.templateId}</p>}
+                {candidatesError && (
+                  <p className="sla-blocked-note">
+                    {candidatesError}{' '}
+                    <button type="button" className="sla-btn" disabled={candidatesLoading} onClick={() => loadCandidates(form.id || null)}>
+                      Coba lagi
+                    </button>
+                  </p>
+                )}
+                {!candidatesLoading && !candidatesError && !candidates.length && (
+                  <p className="sla-blocked-note">Belum ada template Aktif yang dapat dipakai sebagai acuan.</p>
+                )}
+                {!candidatesLoading && !candidatesError && candidates.length > 0 && !filteredCandidates.length && (
+                  <p className="sla-blocked-note">Tidak ada template sesuai pilihan. Ubah jenis, penugasan, atau varian.</p>
+                )}
+                {form.id && !candidatesError && candidates.length > 0 && (
+                  <p className="sla-table-hint">Jenis dan penugasan dikunci agar acuan tetap pada kelompok yang sama.</p>
+                )}
+                {!form.id && filteredCandidates.length === 1 && (
+                  <p className="sla-table-hint">Hanya satu template yang sesuai. Pilih template tersebut untuk melanjutkan.</p>
+                )}
+                {selectedCandidate?.templateLegacy && (
+                  <p className="sla-table-hint">Acuan versi legacy: nama peralatan mengikuti katalog saat ini sampai versi baru diterbitkan.</p>
+                )}
+              </div>
+            </div>
+
+            {selectedCandidate && (
+              <div className="ops-vehicle-selected-template">
+                <div>
+                  <strong>{selectedCandidate.templateName}</strong>
+                  <div className="sla-table-sub">{selectedCandidate.templateCode} · v{selectedCandidate.versionNumber} · berlaku {formatDate(selectedCandidate.effectiveFrom)}</div>
+                </div>
+                <div className="ops-vehicle-selected-meta">
+                  <span>{selectedCandidate.itemsCount} jenis alat</span>
+                  {selectedCandidate.templateLegacy && <span className="sla-status-badge sla-status-draft">Legacy</span>}
+                </div>
               </div>
             )}
-            <div className="sla-context-field ops-vehicle-wide">
-              <span className="sla-context-label">Catatan</span>
-              <input
-                className="sla-input sla-input-text"
-                value={form.notes}
-                disabled={busy}
-                onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-              />
+          </div>
+
+          <div className="ops-vehicle-preview">
+            <div className="ops-vehicle-preview-head">
+              <strong>Pratinjau Kebutuhan Peralatan</strong>
+              <span className="sla-table-hint">{preview.length} jenis peralatan</span>
+            </div>
+            {previewError && (
+              <p className="sla-blocked-note">
+                {previewError}{' '}
+                <button type="button" className="sla-btn" onClick={() => setPreviewNonce((value) => value + 1)}>
+                  Coba lagi
+                </button>
+              </p>
+            )}
+            {!form.templateId ? (
+              <p className="sla-table-hint">Pilih acuan template untuk melihat rincian kebutuhan.</p>
+            ) : (
+              <ItemsTable items={preview} />
+            )}
+          </div>
+
+          {formError && <p className="sla-blocked-note">{formError}</p>}
+          <div className="alkes-savebar">
+            <span className={`alkes-save-status ${dirty ? 'is-dirty' : saveStatus === 'saved' ? 'is-saved' : ''}`}>{statusText}</span>
+            <div className="alkes-save-actions">
+              <button type="button" className="sla-btn sla-btn-primary" disabled={busy || candidatesLoading || saveStatus === 'saving'} onClick={submitForm}>
+                {busy || saveStatus === 'saving' ? 'Menyimpan...' : form.id ? 'Simpan Perubahan' : 'Simpan Kendaraan'}
+              </button>
+              <button type="button" className="sla-btn" disabled={busy} onClick={closeForm}>Batal</button>
             </div>
           </div>
-
-          <div className="sla-context-field ops-vehicle-wide">
-            <span className="sla-context-label">Acuan Template Kebutuhan *</span>
-            <select
-              className="sla-context-select"
-              value={form.templateId}
-              disabled={busy || candidatesLoading}
-              onChange={(event) => setForm((prev) => ({ ...prev, templateId: event.target.value }))}
-            >
-              <option value="">{candidatesLoading ? 'Memuat acuan...' : 'Pilih acuan template'}</option>
-              {candidates.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidateLabel(candidate)}{candidate.templateLegacy ? ' · legacy' : ''}
-                </option>
-              ))}
-            </select>
-            {candidatesError && <p className="sla-blocked-note">{candidatesError}</p>}
-            {!candidatesLoading && !candidatesError && !candidates.length && (
-              <p className="sla-blocked-note">Belum ada template Aktif yang dapat dipakai sebagai acuan.</p>
-            )}
-            {form.id && !candidatesError && candidates.length > 0 && (
-              <p className="sla-table-hint">Kendaraan dengan acuan hanya dapat berpindah pada jenis kendaraan dan penugasan yang sama.</p>
-            )}
-            {selectedCandidate?.templateLegacy && (
-              <p className="sla-table-hint">Acuan versi legacy: nama peralatan mengikuti katalog saat ini sampai versi baru diterbitkan.</p>
-            )}
-          </div>
-
-          <div className="sla-detail-tabs" style={{ margin: '12px 0 8px' }}>
-            <strong>Pratinjau Kebutuhan Peralatan</strong>
-            <span className="sla-table-hint">{preview.length} jenis peralatan</span>
-          </div>
-          {previewError && <p className="sla-blocked-note">{previewError}</p>}
-          {!form.templateId ? (
-            <p className="sla-table-hint">Pilih acuan template untuk melihat rincian kebutuhan.</p>
-          ) : (
-            <ItemsTable items={preview} />
-          )}
-
-          <div className="sla-master-actions ops-vehicle-form-actions">
-            <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={submitForm}>
-              {busy ? 'Menyimpan...' : form.id ? 'Simpan Perubahan' : 'Daftarkan Kendaraan'}
-            </button>
-            <button type="button" className="sla-btn" disabled={busy} onClick={closeForm}>Batal</button>
-          </div>
-          {formError && <p className="sla-blocked-note">{formError}</p>}
         </div>
       )}
 
@@ -610,7 +919,6 @@ export default function KendaraanUlp({
           {detailTab === 'identitas' && (
             <div className="ops-vehicle-grid">
               <div><span className="sla-context-label">Nomor Polisi</span><strong>{detail.vehicle.plateDisplay}</strong></div>
-              <div><span className="sla-context-label">Normalisasi</span><strong>{detail.vehicle.plateNormalized}</strong></div>
               <div><span className="sla-context-label">Tipe/Merek</span><strong>{detail.vehicle.brand}</strong></div>
               <div><span className="sla-context-label">ULP</span><strong>{unitLabel(detail.vehicle.ulpId)}</strong></div>
               <div>
@@ -763,13 +1071,12 @@ export default function KendaraanUlp({
               </thead>
               <tbody>
                 {!data.rows.length && (
-                  <tr><td colSpan={6}>Belum ada kendaraan terdaftar pada scope ini.</td></tr>
+                  <tr><td colSpan={6}>{emptyListMessage}</td></tr>
                 )}
                 {data.rows.map((row) => (
                   <tr key={row.id}>
                     <td>
                       <strong>{row.plateDisplay}</strong>
-                      <div className="sla-table-sub">{row.plateNormalized}</div>
                     </td>
                     <td>{row.brand}</td>
                     <td>{unitLabel(row.ulpId)}</td>
