@@ -111,23 +111,34 @@ create index if not exists ix_ops_equipment_items_category on public.ops_equipme
 create index if not exists ix_ops_templates_lookup on public.ops_equipment_templates (contract_id, up3_id, status);
 create index if not exists ix_ops_template_items_template on public.ops_equipment_template_items (template_id);
 
+-- Trigger audit dipasang hanya bila kolom revision sudah ada. Tahap 1 lokal
+-- belum memiliki kolom revision; migrasi Tahap 2 menambahkannya lalu memasang
+-- trigger ini (trg_ops_*_audit) secara idempoten. Dengan demikian replai dari
+-- nol tetap aman pada urutan migrasi mana pun.
 do $$
+declare
+  v_table text;
 begin
-  if not exists (select 1 from pg_trigger where tgname = 'trg_ops_vehicle_types_audit') then
-    create trigger trg_ops_vehicle_types_audit before update on public.ops_vehicle_types for each row execute function public.touch_audit_columns();
-  end if;
-  if not exists (select 1 from pg_trigger where tgname = 'trg_ops_vehicle_assignments_audit') then
-    create trigger trg_ops_vehicle_assignments_audit before update on public.ops_vehicle_assignments for each row execute function public.touch_audit_columns();
-  end if;
-  if not exists (select 1 from pg_trigger where tgname = 'trg_ops_equipment_categories_audit') then
-    create trigger trg_ops_equipment_categories_audit before update on public.ops_equipment_categories for each row execute function public.touch_audit_columns();
-  end if;
-  if not exists (select 1 from pg_trigger where tgname = 'trg_ops_equipment_items_audit') then
-    create trigger trg_ops_equipment_items_audit before update on public.ops_equipment_items for each row execute function public.touch_audit_columns();
-  end if;
-  if not exists (select 1 from pg_trigger where tgname = 'trg_ops_equipment_templates_audit') then
-    create trigger trg_ops_equipment_templates_audit before update on public.ops_equipment_templates for each row execute function public.touch_audit_columns();
-  end if;
+  foreach v_table in array array[
+    'ops_vehicle_types', 'ops_vehicle_assignments', 'ops_equipment_categories',
+    'ops_equipment_items', 'ops_equipment_templates'
+  ] loop
+    if not exists (
+      select 1 from pg_trigger tg
+      join pg_class c on c.oid = tg.tgrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relname = v_table
+        and tg.tgname = 'trg_' || v_table || '_audit'
+    ) and exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = v_table and column_name = 'revision'
+    ) then
+      execute format(
+        'create trigger %I before update on public.%I for each row execute function public.touch_audit_columns()',
+        'trg_' || v_table || '_audit', v_table
+      );
+    end if;
+  end loop;
 end;
 $$;
 

@@ -1417,6 +1417,11 @@ export default function SLAPelayananTeknikPage({
           contractUuid={orgMap?.contractUuid ?? null}
           up3Uuid={orgMap?.up3Uuid ?? null}
           canManage={isSuperAdmin || isAdminUp3}
+          units={orgMap?.units ?? []}
+          vehicleUlpUuid={adminUlpAccess?.operational_unit_id ?? null}
+          canManageVehicles={isSuperAdmin || isAdminUlp}
+          canPickVehicleUlp={isSuperAdmin}
+          canViewVehicles={isSuperAdmin || isAdminUp3 || isAdminUlp}
         />
       ) : (
         <section className="placeholder">

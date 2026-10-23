@@ -4947,6 +4947,46 @@ summary:focus-visible {
   }
 }
 
+/* ---------- Registrasi Kendaraan ULP ---------- */
+.ops-vehicle-form .sla-sign-group-head,
+.ops-vehicle-inline-form .sla-sign-group-head {
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+}
+
+.ops-vehicle-wide {
+  grid-column: 1 / -1;
+}
+
+.ops-vehicle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 10px 18px;
+  padding: 4px 0 10px;
+}
+
+.ops-vehicle-grid > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ops-vehicle-grid .sla-status-badge {
+  justify-self: start;
+}
+
+.ops-vehicle-inline-form {
+  margin-top: 8px;
+}
+
+.ops-vehicle-form-actions {
+  justify-content: flex-end;
+}
+
+.ops-vehicle-pagination {
+  margin-top: 4px;
+}
+
 /* Status badge improvements */
 .sla-status-badge {
   font-size: 11px;
