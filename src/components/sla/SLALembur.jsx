@@ -2330,28 +2330,28 @@ export default function SLALembur({
                             <label className="sla-context-field">
                               <span className="sla-context-label">Jumlah Gawang Var ROW *</span>
                               <div className="lembur-row-count">
-                                <input type="number" min="1" step="1" inputMode="numeric" ref={fieldRef('rowVarSpanCount')} className={`sla-context-select${fieldInvalidClass('rowVarSpanCount')}`} value={draft.rowVarSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowVarSpanCount:e.target.value })} placeholder="0" />
+                                <input type="number" min="1" step="1" inputMode="numeric" ref={fieldRef('rowVarSpanCount')} className={`sla-context-select${fieldInvalidClass('rowVarSpanCount')}`} value={draft.rowVarSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowVarSpanCount:e.target.value })} placeholder="Min. 1" />
                                 <span>gawang</span>
                               </div>
                             </label>
                             <label className="sla-context-field">
                               <span className="sla-context-label">Jumlah Gawang Pangkas</span>
                               <div className="lembur-row-count">
-                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowPruningSpanCount')} className={`sla-context-select${fieldInvalidClass('rowPruningSpanCount')}`} value={draft.rowPruningSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowPruningSpanCount:e.target.value })} placeholder="0" />
+                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowPruningSpanCount')} className={`sla-context-select${fieldInvalidClass('rowPruningSpanCount')}`} value={draft.rowPruningSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowPruningSpanCount:e.target.value })} placeholder="Opsional" />
                                 <span>gawang</span>
                               </div>
                             </label>
                             <label className="sla-context-field">
                               <span className="sla-context-label">Jumlah Tebang Diameter 20–40 cm</span>
                               <div className="lembur-row-count">
-                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowFelling2040Count')} className={`sla-context-select${fieldInvalidClass('rowFelling2040Count')}`} value={draft.rowFelling2040Count} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowFelling2040Count:e.target.value })} placeholder="0" />
+                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowFelling2040Count')} className={`sla-context-select${fieldInvalidClass('rowFelling2040Count')}`} value={draft.rowFelling2040Count} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowFelling2040Count:e.target.value })} placeholder="Opsional" />
                                 <span>batang</span>
                               </div>
                             </label>
                             <label className="sla-context-field">
                               <span className="sla-context-label">Jumlah Tebang Diameter 41–60 cm</span>
                               <div className="lembur-row-count">
-                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowFelling4160Count')} className={`sla-context-select${fieldInvalidClass('rowFelling4160Count')}`} value={draft.rowFelling4160Count} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowFelling4160Count:e.target.value })} placeholder="0" />
+                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowFelling4160Count')} className={`sla-context-select${fieldInvalidClass('rowFelling4160Count')}`} value={draft.rowFelling4160Count} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowFelling4160Count:e.target.value })} placeholder="Opsional" />
                                 <span>batang</span>
                               </div>
                             </label>
