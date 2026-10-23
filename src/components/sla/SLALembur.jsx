@@ -1028,8 +1028,15 @@ export default function SLALembur({
     if (!draft.description || !draft.description.trim()) return invalid('Keterangan pekerjaan wajib diisi.', 'description')
     if (isRowWork) {
       const varSpan = parseRowCount(draft.rowVarSpanCount)
-      if (varSpan == null) return invalid('Jumlah gawang Var ROW wajib diisi.', 'rowVarSpanCount')
-      if (!Number.isInteger(varSpan) || varSpan < 1) return invalid('Jumlah gawang Var ROW harus bilangan bulat minimal 1.', 'rowVarSpanCount')
+      // Revisi data ROW lama: angka volume boleh kosong karena input
+      // terkunci dan memang belum pernah terisi; peserta hanya memperbaiki
+      // jam dan evidence. Pengajuan baru tetap wajib Var ROW minimal 1.
+      if (isRevision) {
+        if (varSpan != null && (!Number.isInteger(varSpan) || varSpan < 1)) return invalid('Jumlah gawang Var ROW harus bilangan bulat minimal 1.', 'rowVarSpanCount')
+      } else {
+        if (varSpan == null) return invalid('Jumlah gawang Var ROW wajib diisi.', 'rowVarSpanCount')
+        if (!Number.isInteger(varSpan) || varSpan < 1) return invalid('Jumlah gawang Var ROW harus bilangan bulat minimal 1.', 'rowVarSpanCount')
+      }
       for (const [key, label] of Object.entries(ROW_OPTIONAL_COUNT_LABELS)) {
         const count = parseRowCount(draft[key])
         if (count != null && (!Number.isInteger(count) || count < 0)) {

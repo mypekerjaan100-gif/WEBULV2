@@ -19,6 +19,35 @@ assert(sql.includes('add column if not exists row_felling_41_60_count integer'),
 assert(sql.includes('overtime_activities_row_quantities_check'), 'Constraint volume ROW hilang')
 assert(sql.includes('row_var_span_count >= 0'), 'Constraint nilai negatif hilang')
 
+const guardUrl = new URL(
+  '../../supabase/migrations/20261023010000_overtime_row_volume_guard.sql',
+  import.meta.url,
+)
+const guardSql = readFileSync(fileURLToPath(guardUrl), 'utf8')
+assert(guardSql.includes('create trigger overtime_activities_row_volume_guard'), 'Trigger guard volume hilang')
+assert(guardSql.includes('old.row_var_span_count is not null and new.row_var_span_count is null'), 'Guard penghapusan Var ROW hilang')
+assert(guardSql.includes("raise exception 'Volume pekerjaan ROW tidak boleh dikosongkan setelah terisi'"), 'Pesan guard penghapusan hilang')
+
+const strictUrl = new URL(
+  '../../supabase/migrations/20261023020000_overtime_row_new_strict.sql',
+  import.meta.url,
+)
+const strictSql = readFileSync(fileURLToPath(strictUrl), 'utf8')
+const strictSaveStart = strictSql.indexOf('create or replace function public.save_overtime_work_draft_l3(')
+assert(strictSaveStart >= 0, 'M2 save_overtime_work_draft_l3 tidak ditemukan')
+const strictSave = strictSql.slice(strictSaveStart, strictSql.indexOf('grant execute on function public.save_overtime_work_draft_l3'))
+assert(strictSave.includes("raise exception 'Jumlah gawang Var ROW wajib diisi'"), 'M2 validasi wajib Var ROW hilang')
+assert(strictSave.includes("raise exception 'Jumlah gawang Var ROW minimal 1'"), 'M2 validasi minimal 1 hilang')
+assert(strictSave.includes("raise exception 'Volume pekerjaan ROW hanya berlaku untuk kategori ROW'"), 'M2 penolakan volume non-ROW hilang')
+assert(strictSave.includes("v_activity.status = 'CORRECTION_REQUIRED'"), 'M2 toleransi revisi data lama hilang')
+assert(strictSave.includes('v_activity.row_var_span_count is null'), 'M2 toleransi revisi data lama (kolom) hilang')
+assert(strictSave.includes('v_activity.row_var_span_count is distinct from p_row_var_span_count'), 'M2 kunci revisi Var ROW hilang')
+
+const strictSubmitStart = strictSql.indexOf('create or replace function public.submit_overtime_work_l3(')
+assert(strictSubmitStart >= 0, 'M2 submit_overtime_work_l3 tidak ditemukan')
+const strictSubmit = strictSql.slice(strictSubmitStart, strictSql.indexOf('grant execute on function public.submit_overtime_work_l3'))
+assert(strictSubmit.includes("raise exception 'Jumlah gawang Var ROW wajib diisi minimal 1'"), 'M2 submit tidak memvalidasi volume ROW')
+
 const saveStart = sql.indexOf('create or replace function public.save_overtime_work_draft_l3(')
 assert(saveStart >= 0, 'RPC save_overtime_work_draft_l3 tidak ditemukan')
 const saveBody = sql.slice(saveStart, sql.indexOf('grant execute on function public.save_overtime_work_draft_l3'))
@@ -74,6 +103,8 @@ assert(component.includes('<span>batang</span>'), 'Satuan batang hilang')
 assert(!/Total Tebang|Jumlah Tebang Total|rowTotalCount/.test(component), 'Tidak boleh ada total otomatis tebang')
 assert(!component.includes('rowVarSpanCount) +'), 'Var ROW tidak boleh dijumlahkan dengan field lain')
 assert(component.includes('rowVarSpanCount: isRowWork ? parseRowCount(draft.rowVarSpanCount) : null'), 'Payload hanya untuk kategori ROW')
+assert(component.includes('Revisi data ROW lama: angka volume boleh kosong'), 'Catatan toleransi revisi ROW lama hilang')
+assert(component.includes("if (varSpan != null && (!Number.isInteger(varSpan) || varSpan < 1))"), 'Toleransi revisi ROW lama (Var kosong lolos) hilang')
 assert(component.includes('disabled={isEvidenceOnlyRevision || isRevision}'), 'Input ROW harus terkunci saat revisi')
 assert(component.includes('first.rowVarSpanCount == null'), 'editDraft tidak memuat nilai tersimpan')
 assert(component.includes('<h3>Hasil Pekerjaan ROW</h3>'), 'Detail tidak menampilkan Hasil Pekerjaan ROW')
