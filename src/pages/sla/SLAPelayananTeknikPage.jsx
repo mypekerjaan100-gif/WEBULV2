@@ -27,7 +27,7 @@ import SLAMasterOrganisasi from '../../components/sla/SLAMasterOrganisasi.jsx'
 import SLAMasterLokasi from '../../components/sla/SLAMasterLokasi.jsx'
 import SLAMasterJabatan from '../../components/sla/SLAMasterJabatan.jsx'
 import AlatKendaraanMaster from '../../components/sla/AlatKendaraanMaster.jsx'
-import KendaraanUlp from '../../components/sla/KendaraanUlp.jsx'
+import UlpConditionReport from '../../components/sla/UlpConditionReport.jsx'
 import SLADatabasePegawai from '../../components/sla/SLADatabasePegawai.jsx'
 import SLAMasterPenandatangan from '../../components/sla/SLAMasterPenandatangan.jsx'
 import SLAPengaturanSLA from '../../components/sla/SLAPengaturanSLA.jsx'
@@ -150,7 +150,7 @@ function mergeSupabasePositions(prev, posRows) {
     .concat(supabasePositions.filter((p) => !existing.has(p.id)))
 }
 
-const VEHICLE_TAB_DISABLED = true
+const VEHICLE_TAB_DISABLED = false
 
 export default function SLAPelayananTeknikPage({
   onBack,
@@ -243,15 +243,32 @@ export default function SLAPelayananTeknikPage({
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
   const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
+  const moduleEditorState = useRef({ dirty: false, busy: false })
+  const handleEditorStateChange = useCallback((state) => { moduleEditorState.current = state }, [])
+  const canLeaveEditor = () => {
+    const { dirty, busy } = moduleEditorState.current
+    if (busy) return false
+    return !dirty || window.confirm('Perubahan Alat & Kendaraan belum disimpan. Tinggalkan form?')
+  }
+  const selectModule = (nextModule) => {
+    if (nextModule === moduleId) return true
+    if (!canLeaveEditor()) {
+      onRouteChange?.({ module: moduleId, periode: period })
+      return false
+    }
+    moduleEditorState.current = { dirty: false, busy: false }
+    setModuleId(nextModule)
+    return true
+  }
 
   useEffect(() => {
     if (!canManageUp3Operations || !approvalTarget) return
     if (approvalTarget.source === 'lembur') {
+      if (!selectModule('lembur')) return
       const targetPeriod = slaPeriods.find((label) => periodKeyFromLabel(label) === approvalTarget.periodMonth) ?? periodLabelFromMonth(approvalTarget.periodMonth)
       if (targetPeriod) setPeriod(targetPeriod)
-      setModuleId('lembur')
     } else if (approvalTarget.source === 'variable' || approvalTarget.source === 'feeder') {
-      setModuleId('variable-cost')
+      selectModule('variable-cost')
     }
   }, [canManageUp3Operations, approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -677,17 +694,21 @@ export default function SLAPelayananTeknikPage({
   useEffect(() => {
     if (!routeRequest) return
     if (VEHICLE_TAB_DISABLED && routeRequest.module === 'kendaraan-ulp') {
-      setModuleId('sla')
+      selectModule('sla')
       return
     }
     if (routeRequest.module && orgMapStatus === 'loading') return
     if (routeRequest.module && routeRequest.module !== moduleId
       && visibleModules.some((module) => module.id === routeRequest.module)) {
-      setModuleId(routeRequest.module)
+      if (!selectModule(routeRequest.module)) return
     } else if (!routeRequest.module && moduleId !== 'sla') {
-      setModuleId('sla')
+      if (!selectModule('sla')) return
     }
     if (routeRequest.periode && slaPeriods.includes(routeRequest.periode) && routeRequest.periode !== period) {
+      if (!canLeaveEditor()) {
+        onRouteChange?.({ module: moduleId, periode: period })
+        return
+      }
       setPeriod(routeRequest.periode)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1017,8 +1038,8 @@ export default function SLAPelayananTeknikPage({
       title={VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp' ? 'Alat & Kendaraan sementara dinonaktifkan' : undefined}
       onClick={() => {
         if (VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp') return
+        if (!selectModule(module.id)) return
         if (configMenuRef.current) configMenuRef.current.open = false
-        setModuleId(module.id)
       }}
     >
       {module.name}
@@ -1041,7 +1062,7 @@ export default function SLAPelayananTeknikPage({
           <h1 className="page-title">Pelayanan Teknik</h1>
           <p className="page-description">Kelola pelaporan dan monitoring pekerjaan secara terintegrasi.</p>
         </div>
-        <button type="button" className="back-button pt-back-button" onClick={onBack}>
+        <button type="button" className="back-button pt-back-button" onClick={() => { if (canLeaveEditor()) onBack?.() }}>
           <Icon name="arrow-left" size={16} /> Dashboard
         </button>
       </header>
@@ -1070,7 +1091,7 @@ export default function SLAPelayananTeknikPage({
           <select
             className="sla-context-select"
             value={selectedManagementScope?.key ?? ''}
-            onChange={(event) => onManagementScopeChange?.(event.target.value)}
+            onChange={(event) => { if (canLeaveEditor()) onManagementScopeChange?.(event.target.value) }}
           >
             {managementScopes.map((scope) => (
               <option key={scope.key} value={scope.key}>{scope.internalUlName}</option>
@@ -1439,19 +1460,28 @@ export default function SLAPelayananTeknikPage({
           {orgMapError || 'Organisasi tidak tersedia.'}
         </StatePanel>
       ) : moduleId === 'kendaraan-ulp' ? (
-        <KendaraanUlp
+        <UlpConditionReport
+          key={`${orgMap.contractUuid}:${orgMap.up3Uuid}:${periodMonth}`}
           contractUuid={orgMap.contractUuid}
           up3Uuid={orgMap.up3Uuid}
           ownUlpUuid={adminUlpAccess?.operational_unit_id ?? null}
           canManage={isSuperAdmin || isAdminUlp}
-          canPickUlp={isSuperAdmin}
+          canPickUlp={isSuperAdmin || isAdminUp3}
           units={orgMap.units}
+          initialMonth={periodMonth}
+          onMonthChange={(month) => setPeriod(periodLabelFromMonth(month))}
+          onOpenStandards={isSuperAdmin || isAdminUp3 ? () => selectModule('alat-kendaraan') : undefined}
+          onEditorStateChange={handleEditorStateChange}
         />
       ) : moduleId === 'alat-kendaraan' ? (
         <AlatKendaraanMaster
+          key={`${orgMap?.contractUuid}:${orgMap?.up3Uuid}`}
           contractUuid={orgMap?.contractUuid ?? null}
           up3Uuid={orgMap?.up3Uuid ?? null}
           canManage={isSuperAdmin || isAdminUp3}
+          canManageVehicles={isSuperAdmin}
+          units={orgMap?.units || []}
+          onEditorStateChange={handleEditorStateChange}
         />
       ) : (
         <section className="placeholder">

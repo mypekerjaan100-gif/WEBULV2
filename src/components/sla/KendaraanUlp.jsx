@@ -73,7 +73,14 @@ function vehicleSnapshot(form) {
   })
 }
 
-function ItemsTable({ items }) {
+function ItemsTable({ items, loading = false, error = '', onRetry }) {
+  if (loading) return <p className="sla-table-hint" role="status">Memuat rincian kebutuhan...</p>
+  if (error) return (
+    <p className="sla-blocked-note" role="alert">
+      {error}{' '}
+      <button type="button" className="sla-btn" onClick={onRetry}>Coba lagi</button>
+    </p>
+  )
   if (!items.length) {
     return <p className="sla-table-hint">Tidak ada rincian kebutuhan.</p>
   }
@@ -131,6 +138,7 @@ export default function KendaraanUlp({
   canManage = false,
   canPickUlp = false,
   units = [],
+  onEditorStateChange,
 }) {
   const ulpOptions = useMemo(
     () => units
@@ -158,6 +166,10 @@ export default function KendaraanUlp({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const mutationPending = useRef(false)
+  const listRequest = useRef(0)
+  const candidatesRequest = useRef(0)
+  const detailRequest = useRef(0)
 
   const [form, setForm] = useState(null)
   const [baseline, setBaseline] = useState('')
@@ -170,6 +182,7 @@ export default function KendaraanUlp({
   const [preview, setPreview] = useState([])
   const [previewError, setPreviewError] = useState('')
   const [previewNonce, setPreviewNonce] = useState(0)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const plateRef = useRef(null)
   const brandRef = useRef(null)
   const ulpRef = useRef(null)
@@ -177,6 +190,9 @@ export default function KendaraanUlp({
 
   const [detail, setDetail] = useState(null)
   const [detailItems, setDetailItems] = useState([])
+  const [detailItemsLoading, setDetailItemsLoading] = useState(false)
+  const [detailItemsError, setDetailItemsError] = useState('')
+  const [detailItemsNonce, setDetailItemsNonce] = useState(0)
   const [detailTab, setDetailTab] = useState('identitas')
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
@@ -188,6 +204,12 @@ export default function KendaraanUlp({
 
   const scopeReady = Boolean(contractUuid && up3Uuid)
 
+  useEffect(() => () => {
+    listRequest.current += 1
+    candidatesRequest.current += 1
+    detailRequest.current += 1
+  }, [contractUuid, up3Uuid])
+
   useEffect(() => {
     setFilters((prev) => ({
       ...prev,
@@ -197,6 +219,7 @@ export default function KendaraanUlp({
   }, [ownUlpUuid, canPickUlp])
 
   const loadList = useCallback(async () => {
+    const request = ++listRequest.current
     if (!scopeReady) {
       setLoading(false)
       return
@@ -213,19 +236,27 @@ export default function KendaraanUlp({
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       })
+      if (request !== listRequest.current) return
+      const lastPage = Math.max(0, Math.ceil(result.total / PAGE_SIZE) - 1)
+      if (page > lastPage) {
+        setPage(lastPage)
+        return
+      }
       setData(result)
     } catch (loadError) {
-      setError(loadError.message || 'Daftar kendaraan gagal dimuat.')
+      if (request === listRequest.current) setError(loadError.message || 'Daftar kendaraan gagal dimuat.')
     } finally {
-      setLoading(false)
+      if (request === listRequest.current) setLoading(false)
     }
   }, [scopeReady, contractUuid, up3Uuid, filters.ulpId, filters.search, filters.status, page])
 
   useEffect(() => {
     loadList()
+    return () => { listRequest.current += 1 }
   }, [loadList])
 
   const loadCandidates = async (vehicleId) => {
+    const request = ++candidatesRequest.current
     setCandidatesLoading(true)
     setCandidates([])
     setCandidatesError('')
@@ -233,11 +264,11 @@ export default function KendaraanUlp({
       const rows = vehicleId
         ? await listVehicleTemplateCandidates({ vehicleId })
         : await listVehicleTemplateCandidates({ contractId: contractUuid, up3Id: up3Uuid })
-      setCandidates(rows)
+      if (request === candidatesRequest.current) setCandidates(rows)
     } catch (loadError) {
-      setCandidatesError(loadError.message || 'Acuan template gagal dimuat.')
+      if (request === candidatesRequest.current) setCandidatesError(loadError.message || 'Acuan template gagal dimuat.')
     } finally {
-      setCandidatesLoading(false)
+      if (request === candidatesRequest.current) setCandidatesLoading(false)
     }
   }
 
@@ -245,6 +276,7 @@ export default function KendaraanUlp({
     let cancelled = false
     setPreview([])
     setPreviewError('')
+    setPreviewLoading(Boolean(form?.templateId))
     if (!form?.templateId) return undefined
     listTemplateItemsForVehicle(form.templateId)
       .then((items) => {
@@ -253,20 +285,26 @@ export default function KendaraanUlp({
       .catch((loadError) => {
         if (!cancelled) setPreviewError(loadError.message || 'Rincian kebutuhan gagal dimuat.')
       })
+      .finally(() => { if (!cancelled) setPreviewLoading(false) })
     return () => { cancelled = true }
   }, [form?.templateId, previewNonce])
 
   useEffect(() => {
     let cancelled = false
     setDetailItems([])
+    setDetailItemsError('')
+    setDetailItemsLoading(Boolean(detail && detailTab === 'acuan' && detail.assignment?.templateId))
     if (!detail || detailTab !== 'acuan' || !detail.assignment?.templateId) return undefined
     listTemplateItemsForVehicle(detail.assignment.templateId)
       .then((items) => {
         if (!cancelled) setDetailItems(items)
       })
-      .catch(() => {})
+      .catch((loadError) => {
+        if (!cancelled) setDetailItemsError(loadError.message || 'Rincian kebutuhan gagal dimuat.')
+      })
+      .finally(() => { if (!cancelled) setDetailItemsLoading(false) })
     return () => { cancelled = true }
-  }, [detail, detailTab])
+  }, [detail, detailTab, detailItemsNonce])
 
   useEffect(() => {
     if (!form?.id || !form.templateId || form.vehicleTypeId || !candidates.length) return
@@ -325,6 +363,12 @@ export default function KendaraanUlp({
 
   const selectedCandidate = candidates.find((candidate) => candidate.id === form?.templateId) ?? null
   const dirty = Boolean(form && baseline && vehicleSnapshot(form) !== baseline)
+  const auxiliaryDirty = Boolean(statusForm?.reason.trim() || ulpForm?.reason.trim() || ulpForm?.newUlpId)
+
+  useEffect(() => {
+    onEditorStateChange?.({ dirty: dirty || auxiliaryDirty, busy })
+    return () => onEditorStateChange?.({ dirty: false, busy: false })
+  }, [dirty, auxiliaryDirty, busy, onEditorStateChange])
   const statusText = busy || saveStatus === 'saving'
     ? 'Menyimpan...'
     : dirty
@@ -334,14 +378,14 @@ export default function KendaraanUlp({
         : 'Belum ada perubahan'
 
   useEffect(() => {
-    if (!dirty) return undefined
+    if (!dirty && !auxiliaryDirty && !busy) return undefined
     const handler = (event) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+  }, [dirty, auxiliaryDirty, busy])
 
   const focusField = (key) => {
     const refs = { plate: plateRef, brand: brandRef, ulpId: ulpRef, templateId: templateRef }
@@ -364,6 +408,7 @@ export default function KendaraanUlp({
   }
 
   const resetFormState = () => {
+    candidatesRequest.current += 1
     setForm(null)
     setPreview([])
     setFormError('')
@@ -373,14 +418,18 @@ export default function KendaraanUlp({
   }
 
   const closeForm = () => {
+    if (mutationPending.current) return
     if (dirty && !window.confirm('Perubahan kendaraan belum disimpan. Tutup form?')) return
     resetFormState()
   }
 
-  const confirmDiscard = () => !dirty || window.confirm('Perubahan kendaraan belum disimpan. Lanjutkan?')
+  const confirmDiscard = () => (!dirty && !auxiliaryDirty) || window.confirm('Perubahan kendaraan belum disimpan. Lanjutkan?')
+  const confirmAuxiliaryDiscard = () => !auxiliaryDirty || window.confirm('Alasan/koreksi belum disimpan. Lanjutkan?')
 
   const openCreate = () => {
-    if (!canManage || !confirmDiscard()) return
+    if (!canManage || mutationPending.current || !confirmDiscard()) return
+    setStatusForm(null)
+    setUlpForm(null)
     setFormError('')
     setFieldErrors({})
     setCandidatesError('')
@@ -403,7 +452,9 @@ export default function KendaraanUlp({
   }
 
   const openEdit = (row) => {
-    if (!canManage || !confirmDiscard()) return
+    if (!canManage || mutationPending.current || !confirmDiscard()) return
+    setStatusForm(null)
+    setUlpForm(null)
     setFormError('')
     setFieldErrors({})
     setCandidatesError('')
@@ -426,7 +477,7 @@ export default function KendaraanUlp({
   }
 
   const submitForm = async () => {
-    if (!form || busy || saveStatus === 'saving') return
+    if (!form || mutationPending.current || candidatesLoading || candidatesError) return
     const plate = displayPlate(form.plate)
     const brand = String(form.brand ?? '').trim()
     const normalized = normalizePlate(plate)
@@ -446,6 +497,10 @@ export default function KendaraanUlp({
       return
     }
 
+    mutationPending.current = true
+    detailRequest.current += 1
+    setDetailLoading(false)
+    setBusy(true)
     setSaveStatus('saving')
     try {
       const saved = await saveOpsVehicle({
@@ -472,16 +527,23 @@ export default function KendaraanUlp({
       setForm(nextForm)
       setBaseline(vehicleSnapshot(nextForm))
       setSaveStatus('saved')
+      setDetail((prev) => prev?.vehicle.id === saved.vehicle.id ? { ...prev, vehicle: saved.vehicle, assignment: saved.assignment } : prev)
       setNotice(form.id ? 'Kendaraan diperbarui.' : 'Kendaraan terdaftar.')
+      if (detail?.vehicle.id === saved.vehicle.id) await refreshDetail(saved.vehicle.id)
       await loadList()
       await loadCandidates(saved.vehicle.id)
     } catch (saveError) {
       setFormError(saveError.message || 'Kendaraan gagal disimpan.')
       setSaveStatus('dirty')
+    } finally {
+      mutationPending.current = false
+      setBusy(false)
     }
   }
 
   const openDetail = async (row) => {
+    if (mutationPending.current || !confirmAuxiliaryDiscard()) return
+    const request = ++detailRequest.current
     setDetailLoading(true)
     setDetailError('')
     setStatusForm(null)
@@ -491,36 +553,62 @@ export default function KendaraanUlp({
         getOpsVehicle(row.id),
         listOpsVehicleHistory({ vehicleId: row.id }),
       ])
+      if (request !== detailRequest.current) return
       setDetail(detailData)
       setHistory(historyRows)
       setDetailTab('identitas')
     } catch (loadError) {
+      if (request !== detailRequest.current) return
       setDetail(null)
       setDetailError(loadError.message || 'Detail kendaraan gagal dimuat.')
     } finally {
-      setDetailLoading(false)
+      if (request === detailRequest.current) setDetailLoading(false)
     }
   }
 
   const refreshDetail = async (vehicleId) => {
-    const [detailData, historyRows] = await Promise.all([
-      getOpsVehicle(vehicleId),
-      listOpsVehicleHistory({ vehicleId }),
-    ])
-    setDetail(detailData)
-    setHistory(historyRows)
+    const request = ++detailRequest.current
+    setDetailError('')
+    try {
+      const [detailData, historyRows] = await Promise.all([
+        getOpsVehicle(vehicleId),
+        listOpsVehicleHistory({ vehicleId }),
+      ])
+      if (request !== detailRequest.current) return
+      setDetail(detailData)
+      setHistory(historyRows)
+    } catch (loadError) {
+      if (request === detailRequest.current) setDetailError(`Perubahan tersimpan, tetapi detail gagal dimuat ulang: ${loadError.message}`)
+    }
+  }
+
+  const toggleAuxiliaryForm = (kind) => {
+    if (mutationPending.current || form?.id === detail?.vehicle.id || !confirmAuxiliaryDiscard()) return
+    setStatusError('')
+    setUlpError('')
+    setStatusForm(kind === 'status' && !statusForm ? { target: detail.vehicle.status === 'Aktif' ? 'Tidak Aktif' : 'Aktif', reason: '' } : null)
+    setUlpForm(kind === 'ulp' && !ulpForm ? { newUlpId: '', reason: '' } : null)
+  }
+
+  const closeDetail = () => {
+    if (mutationPending.current || !confirmAuxiliaryDiscard()) return
+    detailRequest.current += 1
+    setStatusForm(null)
+    setUlpForm(null)
+    setDetail(null)
   }
 
   const submitStatus = async () => {
-    if (!detail || !statusForm) return
+    if (!detail || !statusForm || mutationPending.current || form?.id === detail.vehicle.id) return
     if (!statusForm.reason.trim()) {
       setStatusError('Alasan perubahan status wajib diisi.')
       return
     }
+    mutationPending.current = true
     setBusy(true)
     setStatusError('')
     try {
-      await setOpsVehicleStatus({
+      const saved = await setOpsVehicleStatus({
         vehicleId: detail.vehicle.id,
         status: statusForm.target,
         reason: statusForm.reason.trim(),
@@ -528,17 +616,19 @@ export default function KendaraanUlp({
       })
       setNotice(statusForm.target === 'Aktif' ? 'Kendaraan diaktifkan kembali.' : 'Kendaraan dinonaktifkan.')
       setStatusForm(null)
+      setDetail((prev) => prev ? { ...prev, vehicle: saved.vehicle, assignment: saved.assignment } : prev)
       await refreshDetail(detail.vehicle.id)
       await loadList()
     } catch (statusMutationError) {
       setStatusError(statusMutationError.message || 'Status kendaraan gagal diubah.')
     } finally {
+      mutationPending.current = false
       setBusy(false)
     }
   }
 
   const submitUlpCorrection = async () => {
-    if (!detail || !ulpForm) return
+    if (!detail || !ulpForm || mutationPending.current || form?.id === detail.vehicle.id) return
     if (!ulpForm.newUlpId) {
       setUlpError('ULP tujuan wajib dipilih.')
       return
@@ -547,6 +637,7 @@ export default function KendaraanUlp({
       setUlpError('Alasan koreksi ULP wajib diisi.')
       return
     }
+    mutationPending.current = true
     setBusy(true)
     setUlpError('')
     try {
@@ -563,6 +654,7 @@ export default function KendaraanUlp({
     } catch (ulpMutationError) {
       setUlpError(ulpMutationError.message || 'Koreksi ULP gagal disimpan.')
     } finally {
+      mutationPending.current = false
       setBusy(false)
     }
   }
@@ -589,7 +681,7 @@ export default function KendaraanUlp({
   const currentAssignmentName = selectedCandidate?.assignmentName ?? 'Memuat...'
 
   return (
-    <div className="alkes-section">
+    <fieldset className="alkes-section alkes-controls" disabled={busy} aria-busy={busy}>
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Kendaraan ULP</h2>
         <div className="alkes-toolbar-actions">
@@ -670,27 +762,27 @@ export default function KendaraanUlp({
             </div>
             <div className="sla-sign-group-head">
               <div className="sla-context-field">
-                <span className="sla-context-label">{form.id ? 'ULP' : 'ULP *'}</span>
+                <label htmlFor="vehicle-ulp" className="sla-context-label">{form.id ? 'ULP' : 'ULP *'}</label>
                 {!form.id && canPickUlp ? (
-                  <select ref={ulpRef} className="sla-context-select" value={form.ulpId} disabled={busy} onChange={(event) => updateVehicleField('ulpId', event.target.value)} aria-invalid={Boolean(fieldErrors.ulpId)}>
+                  <select id="vehicle-ulp" ref={ulpRef} className="sla-context-select" value={form.ulpId} disabled={busy} onChange={(event) => updateVehicleField('ulpId', event.target.value)} aria-invalid={Boolean(fieldErrors.ulpId)}>
                     <option value="">Pilih ULP</option>
                     {ulpOptions.map((unit) => (
                       <option key={unit.uuid} value={unit.uuid}>{unit.displayName ?? unit.legacyKey}</option>
                     ))}
                   </select>
                 ) : (
-                  <input className="sla-input sla-input-text" value={unitLabel(form.ulpId)} disabled />
+                  <input id="vehicle-ulp" className="sla-input sla-input-text" value={unitLabel(form.ulpId)} disabled />
                 )}
                 {fieldErrors.ulpId && <p className="alkes-field-error">{fieldErrors.ulpId}</p>}
               </div>
               <div className="sla-context-field">
-                <span className="sla-context-label">Nomor Polisi *</span>
-                <input ref={plateRef} className="sla-input sla-input-text" value={form.plate} disabled={busy} onChange={(event) => updateVehicleField('plate', event.target.value)} placeholder="cth: B 3892 BDA" aria-invalid={Boolean(fieldErrors.plate)} />
+                <label htmlFor="vehicle-plate" className="sla-context-label">Nomor Polisi *</label>
+                <input id="vehicle-plate" ref={plateRef} className="sla-input sla-input-text" value={form.plate} disabled={busy} onChange={(event) => updateVehicleField('plate', event.target.value)} placeholder="cth: B 3892 BDA" aria-invalid={Boolean(fieldErrors.plate)} />
                 {fieldErrors.plate && <p className="alkes-field-error">{fieldErrors.plate}</p>}
               </div>
               <div className="sla-context-field">
-                <span className="sla-context-label">Tipe/Merek *</span>
-                <input ref={brandRef} className="sla-input sla-input-text" value={form.brand} disabled={busy} onChange={(event) => updateVehicleField('brand', event.target.value)} placeholder="cth: Type B Double Axle 2x4" aria-invalid={Boolean(fieldErrors.brand)} />
+                <label htmlFor="vehicle-brand" className="sla-context-label">Tipe/Merek *</label>
+                <input id="vehicle-brand" ref={brandRef} className="sla-input sla-input-text" value={form.brand} disabled={busy} onChange={(event) => updateVehicleField('brand', event.target.value)} placeholder="cth: Type B Double Axle 2x4" aria-invalid={Boolean(fieldErrors.brand)} />
                 {fieldErrors.brand && <p className="alkes-field-error">{fieldErrors.brand}</p>}
               </div>
             </div>
@@ -712,8 +804,9 @@ export default function KendaraanUlp({
             </div>
             <div className="sla-sign-group-head">
               <div className="sla-context-field">
-                <span className="sla-context-label">Jenis Kendaraan *</span>
+                <label htmlFor="vehicle-type" className="sla-context-label">Jenis Kendaraan *</label>
                 <select
+                  id="vehicle-type"
                   className="sla-context-select"
                   value={form.vehicleTypeId}
                   disabled={busy || candidatesLoading || contextLocked}
@@ -733,8 +826,9 @@ export default function KendaraanUlp({
                 </select>
               </div>
               <div className="sla-context-field">
-                <span className="sla-context-label">Penugasan *</span>
+                <label htmlFor="vehicle-assignment" className="sla-context-label">Penugasan *</label>
                 <select
+                  id="vehicle-assignment"
                   className="sla-context-select"
                   value={form.assignmentId}
                   disabled={busy || candidatesLoading || contextLocked}
@@ -754,8 +848,9 @@ export default function KendaraanUlp({
                 </select>
               </div>
               <div className="sla-context-field">
-                <span className="sla-context-label">Varian/Model (opsional)</span>
+                <label htmlFor="vehicle-variant" className="sla-context-label">Varian/Model (opsional)</label>
                 <select
+                  id="vehicle-variant"
                   className="sla-context-select"
                   value={form.variantFilter}
                   disabled={busy || candidatesLoading}
@@ -772,8 +867,9 @@ export default function KendaraanUlp({
                 </select>
               </div>
               <div className="sla-context-field ops-vehicle-wide">
-                <span className="sla-context-label">Acuan Template Kebutuhan *</span>
+                <label htmlFor="vehicle-template" className="sla-context-label">Acuan Template Kebutuhan *</label>
                 <select
+                  id="vehicle-template"
                   ref={templateRef}
                   className="sla-context-select"
                   value={form.templateId}
@@ -847,18 +943,10 @@ export default function KendaraanUlp({
               <strong>Pratinjau Kebutuhan Peralatan</strong>
               <span className="sla-table-hint">{preview.length} jenis peralatan</span>
             </div>
-            {previewError && (
-              <p className="sla-blocked-note">
-                {previewError}{' '}
-                <button type="button" className="sla-btn" onClick={() => setPreviewNonce((value) => value + 1)}>
-                  Coba lagi
-                </button>
-              </p>
-            )}
             {!form.templateId ? (
               <p className="sla-table-hint">Pilih acuan template untuk melihat rincian kebutuhan.</p>
             ) : (
-              <ItemsTable items={preview} />
+              <ItemsTable items={preview} loading={previewLoading} error={previewError} onRetry={() => setPreviewNonce((value) => value + 1)} />
             )}
           </div>
 
@@ -875,7 +963,7 @@ export default function KendaraanUlp({
         </div>
       )}
 
-      {detailError && <p className="sla-blocked-note">{detailError}</p>}
+      {detailError && <p className="sla-blocked-note" role="alert">{detailError}{' '}{detail && <button type="button" className="sla-btn" onClick={() => refreshDetail(detail.vehicle.id)}>Muat Ulang Detail</button>}</p>}
 
       {detailLoading ? (
         <p className="sla-table-hint">Memuat detail kendaraan...</p>
@@ -890,16 +978,16 @@ export default function KendaraanUlp({
                 </button>
               )}
               {canManage && (
-                <button type="button" className="sla-btn" disabled={busy} onClick={() => { setStatusError(''); setStatusForm(statusForm ? null : { target: detail.vehicle.status === 'Aktif' ? 'Tidak Aktif' : 'Aktif', reason: '' }) }}>
+                <button type="button" className="sla-btn" disabled={busy || form?.id === detail.vehicle.id} onClick={() => toggleAuxiliaryForm('status')}>
                   {detail.vehicle.status === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}
                 </button>
               )}
               {canManage && (
-                <button type="button" className="sla-btn" disabled={busy} onClick={() => { setUlpError(''); setUlpForm(ulpForm ? null : { newUlpId: '', reason: '' }) }}>
+                <button type="button" className="sla-btn" disabled={busy || form?.id === detail.vehicle.id} onClick={() => toggleAuxiliaryForm('ulp')}>
                   Koreksi ULP
                 </button>
               )}
-              <button type="button" className="sla-btn" disabled={busy} onClick={() => setDetail(null)}>Tutup</button>
+              <button type="button" className="sla-btn" disabled={busy} onClick={closeDetail}>Tutup</button>
             </div>
           </div>
 
@@ -948,7 +1036,7 @@ export default function KendaraanUlp({
                     <div><span className="sla-context-label">Berlaku Mulai</span><strong>{formatDate(detail.assignment.effectiveFrom)}</strong></div>
                     <div><span className="sla-context-label">Status Metadata</span><strong>{detail.assignment.templateLegacy ? 'Legacy (mengikuti katalog)' : 'Terbit terkunci'}</strong></div>
                   </div>
-                  <ItemsTable items={detailItems} />
+                  <ItemsTable items={detailItems} loading={detailItemsLoading} error={detailItemsError} onRetry={() => setDetailItemsNonce((value) => value + 1)} />
                 </>
               ) : (
                 <p className="sla-blocked-note">Kendaraan tidak memiliki acuan aktif.</p>
@@ -1119,6 +1207,6 @@ export default function KendaraanUlp({
           </div>
         </>
       )}
-    </div>
+    </fieldset>
   )
 }

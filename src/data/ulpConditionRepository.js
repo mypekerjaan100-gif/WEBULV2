@@ -1,0 +1,62 @@
+import { supabase } from '../lib/supabaseClient.js'
+
+async function rpc(name, parameters) {
+  const { data, error } = await supabase.rpc(name, parameters)
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42P01') throw new Error('Fitur pemeriksaan kendaraan belum tersedia di database. Hubungi administrator.')
+    if (error.code === '42501') throw new Error('Anda tidak memiliki izin untuk tindakan ini pada ULP tersebut.')
+    if (error.code === '40001') throw new Error('Data telah berubah atau sedang digunakan. Muat ulang data terbaru sebelum menyimpan; isian tetap dipertahankan.')
+    if (error.code === '23505' || error.code === '23P01' || /plate.*(already|another|unique|registered|duplicate)/i.test(error.message || '')) throw new Error('Nomor polisi sudah digunakan pada periode yang bertumpang tindih. Periksa nopol dan masa berlaku penetapannya.')
+    if (/report.*(already|exist)|existing.*report|frozen monthly fleet/i.test(error.message || '')) throw new Error('Periode tersebut sudah memiliki laporan. Gunakan bulan mulai/akhir yang belum dilaporkan agar riwayat tidak berubah.')
+    if (/active template/i.test(error.message || '')) throw new Error('Pilih template kendaraan berstatus Aktif yang sudah diterbitkan.')
+    if (/legacy.*(scope|plate)|linked.*registry|registry.*(scope|type|assignment|link)/i.test(error.message || '')) throw new Error('Nopol berkaitan dengan data kendaraan lama. Hubungi admin untuk memeriksa ULP, jenis kendaraan, dan penugasannya.')
+    throw new Error(error.message || 'Permintaan tidak berhasil. Silakan coba lagi.')
+  }
+  return data
+}
+
+const scope = ({ contractId, up3Id }) => ({ p_contract_id: contractId, p_up3_id: up3Id })
+const period = (month) => `${month.slice(0, 7)}-01`
+
+export function listPrescribedVehicles(context) {
+  return rpc('ops_list_prescribed_vehicles', { ...scope(context), p_period_month: period(context.month) })
+}
+
+export function createPrescribedVehicles(context, form) {
+  return rpc('ops_create_prescribed_vehicles', {
+    ...scope(context), p_ulp_id: form.ulpId, p_template_id: form.templateId,
+    p_label: form.label.trim(), p_contract_reference: form.contractReference.trim(),
+    p_count: Number(form.count), p_effective_month: period(form.month),
+  })
+}
+
+export function endPrescribedVehicle(slot, month) {
+  return rpc('ops_end_prescribed_vehicle', { p_slot_id: slot.id, p_end_month: period(month), p_expected_revision: slot.revision })
+}
+
+export function setPrescribedVehiclePlate(slot, plate) {
+  return rpc('ops_set_prescribed_vehicle_plate', { p_slot_id: slot.id, p_plate: plate.trim(), p_expected_revision: slot.revision })
+}
+
+export function getUlpConditionReport(context) {
+  return rpc('ops_get_vehicle_condition_report', {
+    ...scope(context), p_ulp_id: context.ulpId, p_period_month: period(context.month),
+  })
+}
+
+export function listUlpConditionOverview(context) {
+  return rpc('ops_list_vehicle_condition_overview', { ...scope(context), p_period_month: period(context.month) })
+}
+
+export function saveUlpConditionReport(context, bundle, items) {
+  return rpc('ops_save_vehicle_condition_report', {
+    ...scope(context), p_ulp_id: context.ulpId, p_period_month: period(context.month),
+    p_expected_revision: bundle.report?.revision || 0,
+    p_items: items.map(({ key, good_qty, bad_qty, note }) => ({
+      key,
+      good_qty: good_qty == null || String(good_qty).trim() === '' ? null : Number(good_qty),
+      bad_qty: bad_qty == null || String(bad_qty).trim() === '' ? null : Number(bad_qty),
+      note: note || '',
+    })),
+  })
+}

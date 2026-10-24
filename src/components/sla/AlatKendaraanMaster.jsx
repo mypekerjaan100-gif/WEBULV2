@@ -1,7 +1,11 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import PrescribedFleetAdmin from './PrescribedFleetAdmin.jsx'
+import EquipmentImportPanel from './EquipmentImportPanel.jsx'
+import KendaraanUlp from './KendaraanUlp.jsx'
 import {
   archiveOpsTemplate,
   duplicateOpsTemplate,
+  importOpsEquipment,
   listOpsEquipment,
   listOpsMasters,
   listOpsTemplateItems,
@@ -13,11 +17,15 @@ import {
 } from '../../data/opsEquipmentRepository.js'
 
 const TABS = [
+  { id: 'template', label: 'Template Kebutuhan' },
+  { id: 'penetapan', label: 'Penetapan Kendaraan' },
+]
+const CATALOG_TABS = [
+  { id: 'peralatan', label: 'Daftar Peralatan' },
+  { id: 'kategori', label: 'Kategori Peralatan' },
   { id: 'jenis', label: 'Jenis Kendaraan' },
   { id: 'penugasan', label: 'Penugasan Kendaraan' },
-  { id: 'kategori', label: 'Kategori Peralatan' },
-  { id: 'peralatan', label: 'Daftar Peralatan' },
-  { id: 'template', label: 'Kebutuhan Peralatan' },
+  { id: 'registrasi-kendaraan', label: 'Registrasi Kendaraan Lama' },
 ]
 
 const KIND_OF_TAB = { jenis: 'vehicle_type', penugasan: 'assignment', kategori: 'category' }
@@ -84,6 +92,7 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
   }
 
   const closeForm = () => {
+    if (busy) return
     if (dirty && !window.confirm('Perubahan data belum disimpan. Tutup form?')) return
     resetForm()
   }
@@ -95,12 +104,14 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
     setBaseline(JSON.stringify(next))
   }
   const startEdit = (row) => {
+    if (busy || (dirty && !window.confirm('Perubahan data belum disimpan. Ganti data yang diedit?'))) return
     const next = { id: row.id, code: row.code, name: row.name, description: row.description ?? '', isActive: row.isActive }
     setError('')
     setForm(next)
     setBaseline(JSON.stringify(next))
   }
   const submit = async () => {
+    if (!form || busy) return
     if (!form.code.trim() || !form.name.trim()) {
       setError('Kode dan nama wajib diisi.')
       return
@@ -110,6 +121,14 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
       resetForm()
     } catch (saveError) {
       setError(saveError.message || 'Data gagal disimpan.')
+    }
+  }
+
+  const toggleStatus = async (row) => {
+    try {
+      await onToggle(kind, row)
+    } catch (toggleError) {
+      setError(toggleError.message || 'Status gagal diubah.')
     }
   }
 
@@ -159,9 +178,9 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
               </button>
             </div>
           </div>
-          {error && <p className="sla-blocked-note">{error}</p>}
         </div>
       )}
+      {error && <p className="sla-blocked-note" role="alert">{error}</p>}
       <div className="sla-preview-scroll">
         <table className="sla-preview-table alkes-table">
           <thead>
@@ -191,7 +210,7 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
                   <td>
                     <div className="sla-master-actions">
                       <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(row)}>Edit</button>
-                      <button type="button" className="sla-btn" disabled={busy} onClick={() => onToggle(kind, row)}>
+                      <button type="button" className="sla-btn" disabled={busy || form?.id === row.id} onClick={() => toggleStatus(row)}>
                         {row.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                       </button>
                     </div>
@@ -208,23 +227,35 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
 }
 
 function emptyEquipmentForm() {
-  return { id: null, code: '', name: '', categoryId: '', unit: 'unit', specification: '', description: '', isActive: true }
+  return { id: null, code: '', name: '', categoryId: '', unit: 'unit', ageMonths: '', specification: '', description: '', isActive: true }
+}
+
+function parseEquipmentAge(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return { value: null, error: '' }
+  if (!/^\d+$/.test(raw)) return { value: null, error: 'Umur harus bilangan bulat bulan atau dikosongkan.' }
+  const number = Number(raw)
+  if (!Number.isSafeInteger(number) || number > 2147483647) return { value: null, error: 'Umur terlalu besar.' }
+  return { value: number, error: '' }
 }
 
 function equipmentSnapshot(form) {
   return JSON.stringify(form)
 }
 
-function EquipmentSection({ rows, categories, search, onSearch, canManage, busy, onSave, onToggle, onDirtyChange }) {
+function EquipmentSection({ rows, categories, search, onSearch, canManage, busy, onSave, onToggle, onImport, onDirtyChange }) {
   const [form, setForm] = useState(null)
   const [baseline, setBaseline] = useState('')
   const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES)
   const [page, setPage] = useState(0)
   const [fieldErrors, setFieldErrors] = useState({})
   const [error, setError] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
   const advancedRef = useRef(null)
   const nameRef = useRef(null)
   const categoryRef = useRef(null)
+  const unitRef = useRef(null)
+  const ageRef = useRef(null)
   const codeRef = useRef(null)
   const categoryById = useMemo(() => new Map(categories.map((item) => [item.id, item])), [categories])
   const filtered = useMemo(() => {
@@ -256,6 +287,7 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
 
   const startAdd = () => {
     const next = emptyEquipmentForm()
+    setImportOpen(false)
     setFieldErrors({})
     setError('')
     setForm(next)
@@ -263,16 +295,19 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
   }
 
   const startEdit = (row) => {
+    if (busy || (dirty && !window.confirm('Perubahan alat belum disimpan. Ganti alat yang diedit?'))) return
     const next = {
       id: row.id,
       code: row.code,
       name: row.name,
       categoryId: row.categoryId,
       unit: row.unit,
+      ageMonths: row.ageMonths == null ? '' : String(row.ageMonths),
       specification: row.specification ?? '',
       description: row.description ?? '',
       isActive: row.isActive,
     }
+    setImportOpen(false)
     setFieldErrors({})
     setError('')
     setForm(next)
@@ -280,24 +315,27 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
   }
 
   const closeForm = () => {
+    if (busy) return
     if (dirty && !window.confirm('Perubahan alat belum disimpan. Tutup form?')) return
     resetForm()
   }
 
   const submit = async () => {
+    if (!form || busy) return
     const next = {}
+    const age = parseEquipmentAge(form.ageMonths)
     if (!form.name.trim()) next.name = 'Nama alat wajib diisi.'
     if (!form.categoryId) next.categoryId = 'Kategori wajib dipilih.'
     if (!form.unit.trim()) next.unit = 'Satuan wajib diisi.'
-    if (!form.code.trim()) next.code = 'Kode alat wajib diisi.'
+    if (age.error) next.ageMonths = age.error
     setFieldErrors(next)
     setError('')
     if (Object.keys(next).length) {
-      if (next.code && advancedRef.current) advancedRef.current.open = true
       window.requestAnimationFrame(() => {
         if (next.name) nameRef.current?.focus()
         else if (next.categoryId) categoryRef.current?.focus()
-        else if (next.code) codeRef.current?.focus()
+        else if (next.unit) unitRef.current?.focus()
+        else if (next.ageMonths) ageRef.current?.focus()
       })
       return
     }
@@ -306,6 +344,14 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
       resetForm()
     } catch (saveError) {
       setError(saveError.message || 'Peralatan gagal disimpan.')
+    }
+  }
+
+  const toggleStatus = async (row) => {
+    try {
+      await onToggle(row)
+    } catch (toggleError) {
+      setError(toggleError.message || 'Status alat gagal diubah.')
     }
   }
 
@@ -334,6 +380,11 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
+          {canManage && !form && (
+            <button type="button" className="sla-btn" disabled={busy} onClick={() => setImportOpen((value) => !value)}>
+              {importOpen ? 'Tutup Impor' : 'Impor CSV/Excel'}
+            </button>
+          )}
           {canManage && (
             <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? closeForm() : startAdd())}>
               {form ? 'Batal' : 'Tambah Alat'}
@@ -341,44 +392,57 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
           )}
         </div>
       </div>
+      {importOpen && canManage && !form && (
+        <EquipmentImportPanel
+          categories={categories}
+          equipment={rows}
+          busy={busy}
+          onImport={onImport}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
       {form && canManage && (
         <div className="sla-sign-group alkes-form-surface">
           <div className="alkes-form-heading">
             <div>
               <strong>{form.id ? 'Edit Alat' : 'Tambah Alat'}</strong>
-              <p className="sla-table-hint">Isi nama, kategori, dan satuan. Kode dan spesifikasi ada di informasi tambahan.</p>
+              <p className="sla-table-hint">Isi nama, kategori, satuan, dan umur dalam bulan. Kode alat otomatis bila dikosongkan.</p>
             </div>
             <span className="alkes-form-count">{filtered.length} alat</span>
           </div>
           <div className="sla-sign-group-head">
             <div className="sla-context-field alkes-field-wide">
-              <span className="sla-context-label">Nama Alat *</span>
-              <input ref={nameRef} className="sla-input sla-input-text" value={form.name} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} aria-invalid={Boolean(fieldErrors.name)} />
+              <label htmlFor="equipment-name" className="sla-context-label">Nama Alat *</label>
+              <input id="equipment-name" ref={nameRef} className="sla-input sla-input-text" value={form.name} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} aria-invalid={Boolean(fieldErrors.name)} />
               {fieldErrors.name && <p className="alkes-field-error">{fieldErrors.name}</p>}
             </div>
             <div className="sla-context-field">
-              <span className="sla-context-label">Kategori *</span>
-              <select ref={categoryRef} className="sla-context-select" value={form.categoryId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, categoryId: event.target.value }))} aria-invalid={Boolean(fieldErrors.categoryId)}>
+              <label htmlFor="equipment-category" className="sla-context-label">Kategori *</label>
+              <select id="equipment-category" ref={categoryRef} className="sla-context-select" value={form.categoryId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, categoryId: event.target.value }))} aria-invalid={Boolean(fieldErrors.categoryId)}>
                 <option value="">Pilih kategori</option>
-                {categories.filter((item) => item.isActive).map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
+                {categories.filter((item) => item.isActive || item.id === form.categoryId).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
                 ))}
               </select>
               {fieldErrors.categoryId && <p className="alkes-field-error">{fieldErrors.categoryId}</p>}
             </div>
             <div className="sla-context-field">
-              <span className="sla-context-label">Satuan *</span>
-              <input className="sla-input sla-input-text" value={form.unit} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} placeholder="unit/buah/set/pasang" aria-invalid={Boolean(fieldErrors.unit)} />
+              <label htmlFor="equipment-unit" className="sla-context-label">Satuan *</label>
+              <input id="equipment-unit" ref={unitRef} className="sla-input sla-input-text" value={form.unit} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} placeholder="unit/buah/set/pasang" aria-invalid={Boolean(fieldErrors.unit)} />
               {fieldErrors.unit && <p className="alkes-field-error">{fieldErrors.unit}</p>}
+            </div>
+            <div className="sla-context-field">
+              <label htmlFor="equipment-age" className="sla-context-label">Umur (Bulan)</label>
+              <input id="equipment-age" ref={ageRef} className="sla-input sla-input-text" inputMode="numeric" value={form.ageMonths} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, ageMonths: event.target.value }))} placeholder="cth: 24" aria-invalid={Boolean(fieldErrors.ageMonths)} />
+              {fieldErrors.ageMonths && <p className="alkes-field-error">{fieldErrors.ageMonths}</p>}
             </div>
           </div>
           <details ref={advancedRef} className="alkes-advanced">
-            <summary>Informasi tambahan</summary>
+            <summary>Informasi tambahan (Kode Alat otomatis bila kosong)</summary>
             <div className="sla-sign-group-head">
               <div className="sla-context-field">
-                <span className="sla-context-label">Kode Alat *</span>
-                <input ref={codeRef} className="sla-input sla-input-text" value={form.code} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="cth: ALT001" aria-invalid={Boolean(fieldErrors.code)} />
-                {fieldErrors.code && <p className="alkes-field-error">{fieldErrors.code}</p>}
+                <label htmlFor="equipment-code" className="sla-context-label">Kode Alat</label>
+                <input id="equipment-code" ref={codeRef} className="sla-input sla-input-text" value={form.code} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="Kosongkan untuk dibuat otomatis" />
               </div>
               <div className="sla-context-field">
                 <span className="sla-context-label">Status</span>
@@ -397,7 +461,6 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
               </div>
             </div>
           </details>
-          {error && <p className="sla-blocked-note">{error}</p>}
           <div className="alkes-savebar">
             <span className={`alkes-save-status ${dirty ? 'is-dirty' : ''}`}>
               {busy ? 'Menyimpan...' : dirty ? 'Ada perubahan belum disimpan' : 'Belum ada perubahan'}
@@ -411,6 +474,7 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
           </div>
         </div>
       )}
+      {error && <p className="sla-blocked-note" role="alert">{error}</p>}
       <div className="sla-preview-scroll">
         <table className="sla-preview-table alkes-table">
           <thead>
@@ -418,13 +482,14 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
               <th>Nama Alat</th>
               <th>Kategori</th>
               <th>Satuan</th>
+              <th>Umur</th>
               <th>Status</th>
               {canManage && <th>Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {!filtered.length && (
-              <tr><td colSpan={canManage ? 5 : 4}>{emptyMessage}</td></tr>
+              <tr><td colSpan={canManage ? 6 : 5}>{emptyMessage}</td></tr>
             )}
             {pageRows.map((row) => (
               <tr key={row.id}>
@@ -434,6 +499,7 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
                 </td>
                 <td>{categoryById.get(row.categoryId)?.name ?? '—'}</td>
                 <td>{row.unit}</td>
+                <td>{row.ageMonths == null ? <span className="sla-table-sub">Belum diisi</span> : `${row.ageMonths} bln`}</td>
                 <td>
                   <span className={`sla-status-badge ${row.isActive ? 'sla-status-active' : 'sla-status-archive'}`}>
                     {row.isActive ? 'Aktif' : 'Nonaktif'}
@@ -443,7 +509,7 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
                   <td>
                     <div className="sla-master-actions">
                       <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(row)}>Edit</button>
-                      <button type="button" className="sla-btn" disabled={busy} onClick={() => onToggle(row)}>
+                      <button type="button" className="sla-btn" disabled={busy || form?.id === row.id} onClick={() => toggleStatus(row)}>
                         {row.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                       </button>
                     </div>
@@ -501,6 +567,9 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('')
   const [openNotes, setOpenNotes] = useState(() => new Set())
   const [highlightKey, setHighlightKey] = useState('')
+  const [editLoading, setEditLoading] = useState(false)
+  const editRequest = useRef(0)
+  const editPending = useRef(false)
   const qtyRefs = useRef(new Map())
   const nameRef = useRef(null)
   const typeRef = useRef(null)
@@ -513,6 +582,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   const categoryById = useMemo(() => new Map(categories.map((item) => [item.id, item])), [categories])
 
   useEffect(() => () => {
+    editRequest.current += 1
     if (highlightTimer.current) window.clearTimeout(highlightTimer.current)
   }, [])
 
@@ -597,11 +667,15 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }, [baseline])
 
   const dirty = Boolean(form && baseline && templateSnapshot(form) !== baseline)
-  const selectedEquipment = equipmentById.get(selectedEquipmentId) ?? null
+  const selectedEquipment = catalogGroups.flatMap((group) => group.items).find((item) => item.id === selectedEquipmentId) ?? null
 
   useEffect(() => {
-    onDirtyChange?.(dirty)
-  }, [dirty, onDirtyChange])
+    if (selectedEquipmentId && !selectedEquipment) setSelectedEquipmentId('')
+  }, [selectedEquipmentId, selectedEquipment])
+
+  useEffect(() => {
+    onDirtyChange?.(dirty || editLoading)
+  }, [dirty, editLoading, onDirtyChange])
 
   useEffect(() => {
     setPage(0)
@@ -654,11 +728,13 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }
 
   const closeForm = () => {
+    if (busy || editPending.current) return
     if (dirty && !window.confirm('Draft template belum disimpan. Tutup form?')) return
     resetForm()
   }
 
   const startCreate = () => {
+    if (busy || editPending.current) return
     if (dirty && !window.confirm('Draft template belum disimpan. Buat template baru?')) return
     const next = emptyTemplateForm()
     setFieldErrors({})
@@ -677,8 +753,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }
 
   const startEdit = async (template) => {
+    if (busy || editPending.current) return
     if (dirty && !window.confirm('Draft template belum disimpan. Ganti template yang diedit?')) return
-    setFormError('')
     setFieldErrors({})
     setRowErrors({})
     setItemsError('')
@@ -687,8 +763,12 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     setCatalogMessage('')
     setCatalogSearch('')
     setSelectedEquipmentId('')
+    const request = ++editRequest.current
+    editPending.current = true
+    setEditLoading(true)
     try {
       const items = await onExpand(template.id)
+      if (request !== editRequest.current) return
       const next = {
         id: template.id,
         templateName: template.templateName,
@@ -714,7 +794,12 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
       })
       setSaveStatus('idle')
     } catch (loadError) {
-      setFormError(loadError.message || 'Rincian template gagal dimuat.')
+      if (request === editRequest.current) setActionError(loadError.message || 'Rincian template gagal dimuat.')
+    } finally {
+      if (request === editRequest.current) {
+        editPending.current = false
+        setEditLoading(false)
+      }
     }
   }
 
@@ -793,7 +878,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }
 
   const submitDraft = async () => {
-    if (!form || busy || saveStatus === 'saving') return
+    if (!form || busy || editPending.current || saveStatus === 'saving') return
     const nextFieldErrors = {}
     const nextRowErrors = {}
     if (!form.templateName.trim()) nextFieldErrors.templateName = 'Nama template wajib diisi.'
@@ -806,7 +891,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
       }
       const raw = String(row.requiredQty ?? '').trim()
       if (raw === '') nextRowErrors[row.key] = 'Jumlah wajib diisi.'
-      else if (!/^\d+$/.test(raw)) nextRowErrors[row.key] = 'Gunakan bilangan bulat 0 atau lebih.'
+      else if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) > 2147483647) nextRowErrors[row.key] = 'Gunakan bilangan bulat 0 sampai 2147483647.'
     }
     setFieldErrors(nextFieldErrors)
     setRowErrors(nextRowErrors)
@@ -926,9 +1011,9 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }
 
   return (
-    <div className="alkes-section">
+    <fieldset className="alkes-section alkes-controls" disabled={busy || editLoading} aria-busy={busy || editLoading}>
       <div className="sla-settings-toolbar">
-        <h2 className="sla-settings-title">Kebutuhan Peralatan</h2>
+        <h2 className="sla-settings-title">Template Kebutuhan Peralatan</h2>
         <div className="alkes-toolbar-actions">
           <input
             className="sla-input sla-input-text alkes-search"
@@ -949,6 +1034,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           )}
         </div>
       </div>
+      <p className="sla-flat-note">Buat satu daftar alat untuk setiap jenis kendaraan dan penugasan. Template yang sudah diterbitkan dipakai kembali saat menetapkan kendaraan ke ULP.</p>
+      {editLoading && <p className="sla-table-hint" role="status">Memuat draft template...</p>}
       {actionError && <p className="sla-blocked-note">{actionError}</p>}
       {form && canManage && (
         <div className="sla-sign-group alkes-form-surface">
@@ -973,8 +1060,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               <span className="sla-context-label">Jenis Kendaraan *</span>
               <select ref={typeRef} className="sla-context-select" value={form.vehicleTypeId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, vehicleTypeId: event.target.value }))} aria-invalid={Boolean(fieldErrors.vehicleTypeId)}>
                 <option value="">Pilih jenis</option>
-                {types.filter((item) => item.isActive).map((item) => (
-                  <option key={item.id} value={item.id}>{item.code} — {item.name}</option>
+                {types.filter((item) => item.isActive || item.id === form.vehicleTypeId).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
                 ))}
               </select>
               {fieldErrors.vehicleTypeId && <p className="alkes-field-error">{fieldErrors.vehicleTypeId}</p>}
@@ -983,8 +1070,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               <span className="sla-context-label">Penugasan *</span>
               <select ref={assignmentRef} className="sla-context-select" value={form.assignmentId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, assignmentId: event.target.value }))} aria-invalid={Boolean(fieldErrors.assignmentId)}>
                 <option value="">Pilih penugasan</option>
-                {assignments.filter((item) => item.isActive).map((item) => (
-                  <option key={item.id} value={item.id}>{item.code} — {item.name}</option>
+                {assignments.filter((item) => item.isActive || item.id === form.assignmentId).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
                 ))}
               </select>
               {fieldErrors.assignmentId && <p className="alkes-field-error">{fieldErrors.assignmentId}</p>}
@@ -1085,9 +1172,10 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                               inputMode="numeric"
                               value={row.requiredQty}
                               disabled={busy}
-                              onChange={(event) => updateRow(row.key, { requiredQty: event.target.value.replace(/[^\d]/g, '') })}
+                              onChange={(event) => updateRow(row.key, { requiredQty: event.target.value })}
                               onKeyDown={(event) => handleQtyKeyDown(event, row.key)}
                               aria-invalid={Boolean(rowErrors[row.key])}
+                              aria-describedby={rowErrors[row.key] ? `qty-error-${row.key}` : undefined}
                               aria-label={`Jumlah Kebutuhan ${row.equipment?.name ?? ''}`}
                             />
                             {rowErrors[row.key] && <p className="alkes-field-error">{rowErrors[row.key]}</p>}
@@ -1126,6 +1214,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               <button type="button" className="sla-btn sla-btn-primary" disabled={busy || saveStatus === 'saving'} onClick={submitDraft}>
                 {busy || saveStatus === 'saving' ? 'Menyimpan...' : 'Simpan Draft'}
               </button>
+              {form.id && <button type="button" className="sla-btn" disabled={busy || dirty || saveStatus === 'saving'} onClick={() => { const draft = templates.find((template) => template.id === form.id); if (draft) handlePublish(draft) }}>Terbitkan Template</button>}
               <button type="button" className="sla-btn" disabled={busy} onClick={closeForm}>Tutup</button>
             </div>
           </div>
@@ -1135,10 +1224,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
         <table className="sla-preview-table alkes-table alkes-table--wide">
           <thead>
             <tr>
-              <th>Kode</th>
               <th>Template</th>
               <th>Jenis / Penugasan</th>
-              <th>Versi</th>
               <th>Status</th>
               <th>Alat</th>
               {canManage && <th>Aksi</th>}
@@ -1146,26 +1233,26 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           </thead>
           <tbody>
             {!filtered.length && (
-              <tr><td colSpan={canManage ? 7 : 6}>{emptyMessage}</td></tr>
+              <tr><td colSpan={canManage ? 5 : 4}>{emptyMessage}</td></tr>
             )}
             {pageRows.map((template) => {
               const items = templateItems[template.id] ?? null
               return (
                 <tr key={template.id}>
-                  <td><strong>{template.templateCode}</strong></td>
                   <td>
-                    {template.templateName}
+                    <strong>{template.templateName}</strong>
+                    <div className="sla-table-sub">{template.templateCode} / Versi {template.versionNumber}</div>
                     <div className="sla-table-sub">
                       {template.vehicleVariant ? `Varian: ${template.vehicleVariant} · ` : ''}Berlaku: {template.effectiveFrom || '—'}
                     </div>
                     {items && (
                       <div className="sla-table-sub">
-                        {items.map((item) => `${equipmentById.get(item.equipmentId)?.name ?? '?'} × ${item.requiredQty}`).join(' · ') || '—'}
+                        {items.map((item) => `${item.equipmentName || '?'} × ${item.requiredQty}`).join(' · ') || '—'}
+                        {items.some((item) => item.legacyMetadata) && ' (Legacy: nama mengikuti katalog saat ini)'}
                       </div>
                     )}
                   </td>
                   <td>{typeById.get(template.vehicleTypeId)?.name ?? '—'} / {assignmentById.get(template.assignmentId)?.name ?? '—'}</td>
-                  <td>v{template.versionNumber}</td>
                   <td>
                     <span className={`sla-status-badge ${STATUS_BADGE[template.status] ?? 'sla-status-draft'}`}>
                       {template.status}
@@ -1198,16 +1285,17 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
         </table>
       </div>
       <ListPagination total={filtered.length} page={safePage} onChange={setPage} itemLabel="template" />
-    </div>
+    </fieldset>
   )
 }
 
-export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }) {
-  const [tab, setTab] = useState('jenis')
+export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, canManageVehicles = false, units = [], onEditorStateChange }) {
+  const [tab, setTab] = useState('template')
   const [tabDirty, setTabDirty] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [supportingBusy, setSupportingBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
   const [types, setTypes] = useState([])
@@ -1216,10 +1304,19 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
   const [equipment, setEquipment] = useState([])
   const [templates, setTemplates] = useState([])
   const [templateItems, setTemplateItems] = useState({})
+  const mutationPending = useRef(false)
+  const loadRequest = useRef(0)
+  const handleSupportingState = useCallback((state) => { setTabDirty(state.dirty); setSupportingBusy(state.busy) }, [])
+
+  useEffect(() => {
+    onEditorStateChange?.({ dirty: tabDirty, busy: busy || supportingBusy })
+    return () => onEditorStateChange?.({ dirty: false, busy: false })
+  }, [tabDirty, busy, supportingBusy, onEditorStateChange])
 
   const scopeReady = Boolean(contractUuid && up3Uuid)
 
   const reload = async ({ silent = false } = {}) => {
+    const request = ++loadRequest.current
     if (!scopeReady) {
       if (!silent) setLoading(false)
       return
@@ -1236,6 +1333,7 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
         listOpsEquipment({ contractId: contractUuid, up3Id: up3Uuid }),
         listOpsTemplates({ contractId: contractUuid, up3Id: up3Uuid }),
       ])
+      if (request !== loadRequest.current) return
       setTypes(typeRows)
       setAssignments(assignmentRows)
       setCategories(categoryRows)
@@ -1243,28 +1341,32 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
       setTemplates(templateRows)
       setTemplateItems({})
     } catch (error) {
+      if (request !== loadRequest.current) return
       if (silent) setNotice(error.message || 'Master data gagal dimuat ulang.')
       else setLoadError(error.message || 'Master data gagal dimuat.')
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent && request === loadRequest.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     reload()
+    return () => { loadRequest.current += 1 }
   }, [contractUuid, up3Uuid])
 
   useEffect(() => {
-    if (!tabDirty) return undefined
+    if (!tabDirty && !busy && !supportingBusy) return undefined
     const handler = (event) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [tabDirty])
+  }, [tabDirty, busy, supportingBusy])
 
   const mutate = async (work) => {
+    if (mutationPending.current) throw new Error('Penyimpanan masih berlangsung.')
+    mutationPending.current = true
     setBusy(true)
     setNotice('')
     try {
@@ -1272,6 +1374,7 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
       await reload({ silent: true })
       return result
     } finally {
+      mutationPending.current = false
       setBusy(false)
     }
   }
@@ -1289,24 +1392,35 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
   const handleSaveEquipment = (form) => mutate(() => saveOpsEquipment({
     id: form.id, contractId: contractUuid, up3Id: up3Uuid,
     code: form.code, name: form.name, categoryId: form.categoryId, unit: form.unit,
+    ageMonths: parseEquipmentAge(form.ageMonths).value,
     specification: form.specification, description: form.description, isActive: form.isActive,
   }).then(() => setNotice('Peralatan tersimpan.')))
 
   const handleToggleEquipment = (row) => mutate(() => saveOpsEquipment({
     id: row.id, contractId: contractUuid, up3Id: up3Uuid,
     code: row.code, name: row.name, categoryId: row.categoryId, unit: row.unit,
+    ageMonths: row.ageMonths,
     specification: row.specification ?? '', description: row.description ?? '', isActive: !row.isActive,
   }).then(() => setNotice(`"${row.name}" ${row.isActive ? 'dinonaktifkan' : 'diaktifkan'}.`)))
 
+  const handleImportEquipment = (rows) => mutate(() => importOpsEquipment({
+    contractId: contractUuid, up3Id: up3Uuid, rows,
+  }).then((result) => {
+    setNotice(`Impor peralatan selesai: ${result.inserted ?? 0} baru, ${result.updated ?? 0} diperbarui, ${result.skipped ?? 0} dilewati.`)
+    return result
+  }))
+
   const handleExpandTemplate = async (templateId) => {
     if (templateItems[templateId]) return templateItems[templateId]
-    const items = await listOpsTemplateItems(templateId, equipment)
-    setTemplateItems((prev) => ({ ...prev, [templateId]: items }))
+    const request = loadRequest.current
+    const published = templates.some((template) => template.id === templateId && template.status !== 'Draft')
+    const items = await listOpsTemplateItems(templateId, equipment, published)
+    if (request === loadRequest.current) setTemplateItems((prev) => ({ ...prev, [templateId]: items }))
     return items
   }
 
   const handlePublish = async (template) => {
-    await mutate(() => publishOpsTemplate(template.id).then(() => setNotice('Template diterbitkan.')))
+    await mutate(() => publishOpsTemplate(template.id).then(() => setNotice('Template diterbitkan. Lanjutkan ke Penetapan Kendaraan untuk menentukan ULP tujuan.')))
   }
 
   const handleArchive = async (template) => {
@@ -1318,6 +1432,7 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
   }
 
   const switchTab = (nextTab) => {
+    if (mutationPending.current || supportingBusy) return
     if (nextTab === tab) {
       setSearch('')
       setNotice('')
@@ -1345,8 +1460,8 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
         <h2 className="sla-settings-title">Master Data Alat & Kendaraan</h2>
       </div>
       <p className="sla-flat-note">
-        Katalog dan template kebutuhan peralatan kendaraan operasional
-        untuk scope organisasi yang dipilih.
+        Satu template alat mengikuti jenis kendaraan dan penugasannya,
+        untuk scope organisasi yang dipilih. UP3 menetapkan kendaraan; ULP melengkapi nomor kendaraan dan kondisi alatnya.
         {!canManage && ' Akun ini hanya dapat melihat (read-only).'}
       </p>
       {loading ? (
@@ -1355,19 +1470,22 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
         <p className="sla-blocked-note">{loadError} <button type="button" className="sla-btn" onClick={() => reload()}>Coba lagi</button></p>
       ) : (
         <>
-          <div className="sla-detail-tabs">
+          <div className="uc-admin-navigation"><div className="sla-detail-tabs">
             {TABS.map((item) => (
               <button
                 key={item.id}
                 type="button"
+                disabled={busy || supportingBusy}
                 className={`sla-detail-tab ${tab === item.id ? 'sla-detail-tab-active' : ''}`}
                 onClick={() => switchTab(item.id)}
               >
                 {item.label}
               </button>
             ))}
-          </div>
+          </div><details className="uc-catalog-menu"><summary>Katalog & Data Pendukung</summary><div>{CATALOG_TABS.filter((item) => item.id !== 'registrasi-kendaraan' || canManage).map((item) => <button key={item.id} type="button" className={`sla-btn ${tab === item.id ? 'sla-btn-primary' : ''}`} disabled={busy || supportingBusy} onClick={() => switchTab(item.id)}>{item.label}</button>)}</div></details></div>
           {notice && <p className="sla-export-note">{notice}</p>}
+          {tab === 'penetapan' && <PrescribedFleetAdmin contractUuid={contractUuid} up3Uuid={up3Uuid} templates={templates} types={types} assignments={assignments} units={units} canManage={canManage} onDirtyChange={setTabDirty} onBusyChange={setSupportingBusy} />}
+          {tab === 'registrasi-kendaraan' && canManage && <KendaraanUlp contractUuid={contractUuid} up3Uuid={up3Uuid} canManage={canManageVehicles} canPickUlp units={units} onEditorStateChange={handleSupportingState} />}
           {['jenis', 'penugasan', 'kategori'].includes(tab) && (
             <MasterSection
               key={tab}
@@ -1393,6 +1511,7 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage }
               busy={busy}
               onSave={handleSaveEquipment}
               onToggle={handleToggleEquipment}
+              onImport={handleImportEquipment}
               onDirtyChange={setTabDirty}
             />
           )}

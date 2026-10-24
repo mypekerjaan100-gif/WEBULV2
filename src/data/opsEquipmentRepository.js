@@ -22,6 +22,7 @@ function mapEquipment(row) {
     name: row.name,
     categoryId: row.category_id,
     unit: row.unit ?? 'unit',
+    ageMonths: row.age_months == null ? null : Number(row.age_months),
     specification: row.specification ?? '',
     description: row.description ?? '',
     isActive: row.is_active !== false,
@@ -47,16 +48,17 @@ export function mapTemplate(row) {
   }
 }
 
-function mapTemplateItem(row, equipmentById = new Map()) {
+function mapTemplateItem(row, equipmentById = new Map(), published = false) {
   const equipment = equipmentById.get(row.equipment_id) ?? null
   return {
     id: row.id,
     templateId: row.template_id,
     equipmentId: row.equipment_id,
-    equipmentName: equipment?.name ?? '',
-    equipmentCode: equipment?.code ?? '',
+    equipmentName: (published ? row.equipment_name : null) ?? equipment?.name ?? '',
+    equipmentCode: (published ? row.equipment_code : null) ?? equipment?.code ?? '',
     categoryId: equipment?.categoryId ?? null,
-    unit: equipment?.unit ?? 'unit',
+    unit: (published ? row.equipment_unit : null) ?? equipment?.unit ?? 'unit',
+    legacyMetadata: published && row.equipment_name == null,
     requiredQty: Number(row.required_qty ?? 0),
     note: row.note ?? '',
     sortOrder: row.sort_order ?? 0,
@@ -110,8 +112,8 @@ export async function listOpsEquipment({ contractId, up3Id }) {
   return (data ?? []).map(mapEquipment)
 }
 
-export async function saveOpsEquipment({ id = null, contractId, up3Id, code, name, categoryId, unit = 'unit', specification = '', description = '', isActive = true }) {
-  const { data, error } = await supabase.rpc('ops_save_equipment', {
+export async function saveOpsEquipment({ id = null, contractId, up3Id, code, name, categoryId, unit = 'unit', specification = '', description = '', isActive = true, ageMonths = null }) {
+  const { data, error } = await supabase.rpc('ops_save_equipment_v2', {
     p_id: id,
     p_contract_id: contractId,
     p_up3_id: up3Id,
@@ -122,9 +124,24 @@ export async function saveOpsEquipment({ id = null, contractId, up3Id, code, nam
     p_specification: specification,
     p_description: description,
     p_is_active: isActive,
+    p_age_months: ageMonths,
   })
   if (error) throw new Error(error.message || 'Peralatan gagal disimpan.')
   return mapEquipment(data)
+}
+
+export async function importOpsEquipment({ contractId, up3Id, rows }) {
+  const { data, error } = await supabase.rpc('ops_import_equipment', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_items: rows,
+  })
+  if (error) {
+    if (error.code === '42501') throw new Error('Anda tidak memiliki izin mengimpor peralatan pada scope ini.')
+    if (/Kategori tidak aktif/i.test(error.message || '')) throw new Error('Kategori tujuan tidak aktif. Petakan ke kategori aktif lain.')
+    throw new Error(error.message || 'Peralatan gagal diimpor.')
+  }
+  return data
 }
 
 export async function listOpsTemplates({ contractId, up3Id }) {
@@ -139,7 +156,7 @@ export async function listOpsTemplates({ contractId, up3Id }) {
   return (data ?? []).map(mapTemplate)
 }
 
-export async function listOpsTemplateItems(templateId, equipmentList = []) {
+export async function listOpsTemplateItems(templateId, equipmentList = [], published = false) {
   const { data, error } = await supabase
     .from('ops_equipment_template_items')
     .select('*')
@@ -147,7 +164,7 @@ export async function listOpsTemplateItems(templateId, equipmentList = []) {
     .order('sort_order')
   if (error) throw new Error(error.message || 'Detail template gagal dimuat.')
   const equipmentById = new Map((equipmentList ?? []).map((item) => [item.id, item]))
-  return (data ?? []).map((row) => mapTemplateItem(row, equipmentById))
+  return (data ?? []).map((row) => mapTemplateItem(row, equipmentById, published))
 }
 
 export async function saveOpsTemplateDraft({ id = null, contractId, up3Id, templateName, vehicleTypeId, assignmentId, vehicleVariant = '', effectiveFrom = null, description = '', items = [] }) {
