@@ -1,8 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { conditionMonthLabel, currentConditionMonth, parseConditionCount } from '../../data/ulpConditionDomain.js'
-import { createPrescribedVehicles, endPrescribedVehicle, listPrescribedVehicles } from '../../data/ulpConditionRepository.js'
+import { createPrescribedVehiclesBatch, endPrescribedVehicle, listAffectedVehicleReports, listPrescribedVehicles } from '../../data/ulpConditionRepository.js'
 import AlkesModal from './AlkesModal.jsx'
 import SearchSelect from './SearchSelect.jsx'
+
+const REPORT_STATUS_LABEL = {
+  draft: 'Belum Lengkap',
+  compliant: 'Memenuhi',
+  non_compliant: 'Tidak Memenuhi',
+}
+
+function newRow() {
+  return { key: `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`, templateId: '', count: '1' }
+}
 
 export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates, types, assignments, units, canManage, onDirtyChange, onBusyChange }) {
   const [month, setMonth] = useState(currentConditionMonth())
@@ -18,6 +28,10 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
   const [endError, setEndError] = useState('')
   const [message, setMessage] = useState('')
   const [discardPrompt, setDiscardPrompt] = useState(false)
+  const [affectedReports, setAffectedReports] = useState([])
+  const [affectedLoading, setAffectedLoading] = useState(false)
+  const [affectedError, setAffectedError] = useState('')
+  const [affectedRetry, setAffectedRetry] = useState(0)
   const [reload, setReload] = useState(0)
   const lock = useRef(false)
   const discardRef = useRef(null)
@@ -27,15 +41,19 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
   const ulpName = (id) => ulps.find((unit) => unit.uuid === id)?.displayName || 'ULP'
   const typeName = (id) => types.find((type) => type.id === id)?.name || '-'
   const assignmentName = (id) => assignments.find((assignment) => assignment.id === id)?.name || '-'
-  const selectedTemplate = form?.templateId
-    ? activeTemplates.find((template) => template.id === form.templateId) || null
-    : null
   const ulpOptions = ulps.map((unit) => ({ value: unit.uuid, label: unit.displayName || unit.legacyKey }))
   const templateOptions = activeTemplates.map((template) => ({
     value: template.id,
     label: template.templateName,
     description: `${typeName(template.vehicleTypeId)} / ${assignmentName(template.assignmentId)} · Versi ${template.versionNumber}`,
   }))
+  const selectedTemplate = (templateId) => activeTemplates.find((template) => template.id === templateId) || null
+  const totalVehicles = (form?.rows || []).reduce((total, row) => {
+    const count = parseConditionCount(row.count)
+    return total + (count != null && !Number.isNaN(count) ? count : 0)
+  }, 0)
+  const optionsForRow = (row) => templateOptions.filter((option) => option.value === row.templateId
+    || !form.rows.some((other) => other.key !== row.key && other.templateId === option.value))
 
   useEffect(() => {
     if (!canManage) { setLoading(false); return undefined }
@@ -48,6 +66,28 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [contractUuid, up3Uuid, month, reload, canManage])
+
+  useEffect(() => {
+    if (!canManage || !form?.ulpId || !form?.month) {
+      setAffectedReports([])
+      setAffectedError('')
+      setAffectedLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    setAffectedLoading(true)
+    setAffectedError('')
+    listAffectedVehicleReports({ contractId: contractUuid, up3Id: up3Uuid, ulpId: form.ulpId, month: form.month })
+      .then((rows) => { if (!cancelled) setAffectedReports(rows || []) })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setAffectedReports([])
+          setAffectedError(loadError.message)
+        }
+      })
+      .finally(() => { if (!cancelled) setAffectedLoading(false) })
+    return () => { cancelled = true }
+  }, [contractUuid, up3Uuid, canManage, form?.ulpId, form?.month, affectedRetry])
 
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => {
@@ -64,7 +104,7 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
 
   const openForm = () => {
     if (lock.current) return
-    const next = { ulpId: ulpFilter, templateId: '', count: '1', label: '', contractReference: '', month }
+    const next = { ulpId: ulpFilter, month, contractReference: '', rows: [newRow()] }
     setForm(next)
     setBaseline(JSON.stringify(next))
     setEnding(null)
@@ -73,6 +113,16 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
     setEndError('')
     setMessage('')
     setDiscardPrompt(false)
+    setAffectedReports([])
+    setAffectedError('')
+    setAffectedLoading(Boolean(next.ulpId && next.month))
+  }
+  const changeFormContext = (patch) => {
+    setForm((prev) => prev ? { ...prev, ...patch } : prev)
+    setAffectedReports([])
+    setAffectedError('')
+    setAffectedLoading(Boolean((patch.ulpId ?? form?.ulpId) && (patch.month ?? form?.month)))
+    setFormError('')
   }
   const closeForm = (force = false) => {
     if (lock.current) return
@@ -84,6 +134,18 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
     setBaseline('')
     setFormError('')
     setDiscardPrompt(false)
+  }
+  const updateRow = (key, patch) => {
+    setForm((prev) => ({ ...prev, rows: prev.rows.map((row) => row.key === key ? { ...row, ...patch } : row) }))
+    setFormError('')
+  }
+  const addRow = () => {
+    setForm((prev) => ({ ...prev, rows: [...prev.rows, newRow()] }))
+    setFormError('')
+  }
+  const removeRow = (key) => {
+    setForm((prev) => ({ ...prev, rows: prev.rows.filter((row) => row.key !== key) }))
+    setFormError('')
   }
   const openEnding = (slot) => {
     if (lock.current) return
@@ -101,9 +163,37 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
   }
   const save = async () => {
     if (!form || lock.current) return
-    const count = parseConditionCount(form.count)
-    if (!form.ulpId || !form.templateId || !form.month || count == null || Number.isNaN(count) || count < 1 || count > 50) {
-      setFormError('Pilih ULP, template Aktif, bulan mulai, dan jumlah kendaraan 1 sampai 50.')
+    if (!form.ulpId || !form.month) {
+      setFormError('Pilih ULP tujuan dan bulan mulai berlaku.')
+      return
+    }
+    if (!form.rows.length) {
+      setFormError('Tambahkan minimal satu baris kendaraan.')
+      return
+    }
+    const invalidRow = form.rows.find((row) => {
+      const count = parseConditionCount(row.count)
+      return !row.templateId || count == null || Number.isNaN(count) || count < 1 || count > 50
+    })
+    if (invalidRow) {
+      setFormError('Setiap baris harus memiliki template dan jumlah kendaraan 1 sampai 50.')
+      return
+    }
+    const templateIds = form.rows.map((row) => row.templateId)
+    if (new Set(templateIds).size !== templateIds.length) {
+      setFormError('Setiap template hanya boleh dipilih sekali. Gabungkan jumlahnya dalam satu baris.')
+      return
+    }
+    if (totalVehicles > 200) {
+      setFormError('Total kendaraan dalam satu penetapan maksimal 200.')
+      return
+    }
+    if (affectedLoading) {
+      setFormError('Tunggu pemeriksaan laporan tersimpan selesai.')
+      return
+    }
+    if (affectedError) {
+      setFormError('Dampak laporan belum dapat diperiksa. Gunakan Periksa Lagi sebelum menyimpan.')
       return
     }
     lock.current = true
@@ -111,8 +201,11 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
     setFormError('')
     setDiscardPrompt(false)
     try {
-      await createPrescribedVehicles({ contractId: contractUuid, up3Id: up3Uuid }, form)
-      setMessage(`${count} kendaraan ditetapkan untuk ${ulpName(form.ulpId)} mulai ${conditionMonthLabel(form.month)}. Admin ULP dapat melengkapi nopol dan mengisi kondisinya.`)
+      const result = await createPrescribedVehiclesBatch({ contractId: contractUuid, up3Id: up3Uuid }, form)
+      const revised = result.reports_revised
+        ? ` ${result.reports_revised} laporan tersimpan direvisi; kendaraan baru menunggu nopol dan isian kondisi Admin ULP.`
+        : ''
+      setMessage(`${result.vehicles_created} kendaraan ditetapkan untuk ${ulpName(form.ulpId)} mulai ${conditionMonthLabel(form.month)}.${revised}`)
       setMonth(form.month)
       setForm(null)
       setBaseline('')
@@ -154,7 +247,7 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
         <div>
           <span className="uc-eyebrow">PENETAPAN OLEH UP3</span>
           <h3>Kendaraan untuk Setiap ULP</h3>
-          <p>Gunakan template kendaraan yang sudah ada. Pilih ULP dan jumlah kendaraan; nopol diisi Admin ULP.</p>
+          <p>Gunakan template kendaraan yang sudah ada. Satu ULP dapat memiliki beberapa kendaraan; nopol diisi Admin ULP.</p>
         </div>
         <button type="button" className="sla-btn sla-btn-primary" onClick={openForm}>Tetapkan Kendaraan</button>
       </header>
@@ -197,16 +290,21 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
           onClose={() => closeForm()}
           eyebrow="PENETAPAN KENDARAAN"
           title="Tetapkan Kendaraan ke ULP"
-          subtitle="Tentukan ULP, template, dan masa berlaku. Nopol dilengkapi Admin ULP."
+          subtitle="Satu ULP dapat memiliki beberapa kendaraan dengan template dan penugasan berbeda."
           size="medium"
           dismissDisabled={busy}
           footer={(
             <div className="uc-modal-footer">
-              <span>{busy ? 'Menyimpan...' : dirty ? 'Ada perubahan belum disimpan' : 'Lengkapi data penetapan'}</span>
+              <span>{busy ? 'Menyimpan...' : !totalVehicles ? 'Lengkapi daftar kendaraan' : dirty ? `${totalVehicles} kendaraan · ada perubahan belum disimpan` : `${totalVehicles} kendaraan siap ditetapkan`}</span>
               <div className="alkes-modal-actions">
                 <button type="button" className="sla-btn" disabled={busy} onClick={() => closeForm()}>Batal</button>
-                <button type="button" className="sla-btn sla-btn-primary" disabled={busy || !activeTemplates.length || !form.ulpId || !form.templateId} onClick={save}>
-                  {busy ? 'Menyimpan...' : 'Simpan Penetapan'}
+                <button
+                  type="button"
+                  className="sla-btn sla-btn-primary"
+                  disabled={busy || affectedLoading || Boolean(affectedError) || !form.rows.length}
+                  onClick={save}
+                >
+                  {busy ? 'Menyimpan...' : affectedReports.length ? 'Simpan & Revisi Laporan' : 'Simpan Penetapan'}
                 </button>
               </div>
             </div>
@@ -217,17 +315,17 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
             <section className="alkes-modal-section">
               <div className="alkes-modal-section-head">
                 <div>
-                  <h3>Unit dan Acuan</h3>
-                  <p>Pilih ULP tujuan dan template kendaraan yang sudah diterbitkan.</p>
+                  <h3>ULP dan Masa Berlaku</h3>
+                  <p>Pilih ULP dan bulan mulai satu kali untuk seluruh kendaraan di bawah.</p>
                 </div>
               </div>
-              <div className="uc-form-grid uc-form-grid--single">
+              <div className="uc-form-grid">
                 <div className="uc-field">
                   <span>ULP Tujuan *</span>
                   <SearchSelect
                     options={ulpOptions}
                     value={form.ulpId}
-                    onChange={(value) => setForm((prev) => ({ ...prev, ulpId: value }))}
+                    onChange={(value) => changeFormContext({ ulpId: value })}
                     placeholder="Pilih ULP"
                     searchPlaceholder="Cari ULP..."
                     emptyText="ULP tidak ditemukan."
@@ -236,70 +334,107 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
                     autoFocusTrigger
                   />
                 </div>
-                <div className="uc-field">
-                  <span>Template Kendaraan *</span>
-                  <SearchSelect
-                    options={templateOptions}
-                    value={form.templateId}
-                    onChange={(value) => setForm((prev) => ({ ...prev, templateId: value }))}
-                    placeholder="Pilih template"
-                    searchPlaceholder="Cari template, jenis, atau penugasan..."
-                    emptyText="Template Aktif tidak ditemukan."
-                    disabled={busy || !activeTemplates.length}
-                    ariaLabel="Template Kendaraan"
-                  />
-                </div>
+                <label className="uc-field">Mulai Berlaku *
+                  <input type="month" value={form.month} disabled={busy} onChange={(event) => changeFormContext({ month: event.target.value })} />
+                </label>
               </div>
-              {!activeTemplates.length && <p className="uc-alert">Belum ada template Aktif. Buat dan terbitkan melalui tab Template Kebutuhan terlebih dahulu.</p>}
             </section>
 
             <section className="alkes-modal-section">
               <div className="alkes-modal-section-head">
                 <div>
-                  <h3>Rincian Template</h3>
-                  <p>Jenis dan penugasan otomatis mengikuti template terpilih.</p>
+                  <h3>Daftar Kendaraan</h3>
+                  <p>Setiap baris mewakili satu template. Isi jumlah kendaraan yang dibutuhkan.</p>
+                </div>
+                <span className="sla-table-hint">{form.rows.length} baris · {totalVehicles} kendaraan</span>
+              </div>
+              {!activeTemplates.length && <p className="uc-alert">Belum ada template Aktif. Buat dan terbitkan melalui tab Template Kebutuhan terlebih dahulu.</p>}
+              <div className="uc-assignment-rows">
+                {form.rows.map((row, index) => {
+                  const template = selectedTemplate(row.templateId)
+                  return (
+                    <div key={row.key} className="uc-assignment-row">
+                      <div className="uc-assignment-row-head">
+                        <span>Kendaraan {index + 1}</span>
+                        <button type="button" className="sla-btn" disabled={busy || form.rows.length === 1} onClick={() => removeRow(row.key)}>Hapus</button>
+                      </div>
+                      <div className="uc-assignment-row-grid">
+                        <div className="uc-field">
+                          <span>Template Kendaraan *</span>
+                          <SearchSelect
+                            options={optionsForRow(row)}
+                            value={row.templateId}
+                            onChange={(value) => updateRow(row.key, { templateId: value })}
+                            placeholder="Pilih template"
+                            searchPlaceholder="Cari template, jenis, atau penugasan..."
+                            emptyText="Template Aktif tidak ditemukan."
+                            disabled={busy || !activeTemplates.length}
+                            ariaLabel={`Template Kendaraan ${index + 1}`}
+                          />
+                        </div>
+                        <label className="uc-field">Jumlah *
+                          <input inputMode="numeric" value={row.count} disabled={busy} onChange={(event) => updateRow(row.key, { count: event.target.value })} placeholder="1 - 50" />
+                        </label>
+                      </div>
+                      {template && (
+                        <div className="uc-assignment-row-summary">
+                          <span>{typeName(template.vehicleTypeId)}</span>
+                          <span>{assignmentName(template.assignmentId)}</span>
+                          <span>{template.vehicleVariant || 'Umum'}</span>
+                          <span>Versi {template.versionNumber}</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <button type="button" className="sla-btn uc-add-row" disabled={busy || !activeTemplates.length} onClick={addRow}>+ Tambah Baris Kendaraan</button>
+              <div className="uc-assignment-total"><span>Total kendaraan</span><strong>{totalVehicles}</strong></div>
+            </section>
+
+            <section className="alkes-modal-section">
+              <div className="alkes-modal-section-head">
+                <div>
+                  <h3>Dampak pada Laporan</h3>
+                  <p>Laporan tersimpan tidak akan kehilangan isian kondisi yang sudah ada.</p>
                 </div>
               </div>
-              {selectedTemplate ? (
-                <div className="uc-assignment-summary-grid">
-                  <div><span>Jenis Kendaraan</span><strong>{typeName(selectedTemplate.vehicleTypeId)}</strong></div>
-                  <div><span>Penugasan</span><strong>{assignmentName(selectedTemplate.assignmentId)}</strong></div>
-                  <div><span>Varian / Model</span><strong>{selectedTemplate.vehicleVariant || 'Umum'}</strong></div>
-                  <div><span>Versi Template</span><strong>Versi {selectedTemplate.versionNumber}</strong></div>
+              {!form.ulpId || !form.month ? (
+                <p className="uc-assignment-empty">Pilih ULP dan bulan mulai untuk memeriksa laporan tersimpan.</p>
+              ) : affectedLoading ? (
+                <p className="uc-assignment-empty" role="status">Memeriksa laporan tersimpan...</p>
+              ) : affectedError ? (
+                <div className="uc-alert uc-alert--error" role="alert">
+                  {affectedError}
+                  <button type="button" className="sla-btn" disabled={busy} onClick={() => setAffectedRetry((value) => value + 1)}>Periksa Lagi</button>
+                </div>
+              ) : affectedReports.length ? (
+                <div className="uc-report-impact">
+                  <strong>{affectedReports.length} laporan tersimpan akan direvisi</strong>
+                  <ul>
+                    {affectedReports.map((report) => (
+                      <li key={report.period_month}>
+                        {conditionMonthLabel(report.period_month)}
+                        <span>{REPORT_STATUS_LABEL[report.status] || report.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p>Kondisi kendaraan lama tetap utuh. Kendaraan baru masuk tanpa nopol dan kondisi, lalu laporan kembali berstatus Belum Lengkap untuk dilengkapi Admin ULP.</p>
                 </div>
               ) : (
-                <p className="uc-assignment-empty">Pilih template untuk melihat jenis kendaraan dan penugasannya.</p>
+                <div className="uc-report-impact is-clear">
+                  <strong>Belum ada laporan tersimpan</strong>
+                  <p>Penetapan ini akan menjadi daftar kendaraan awal untuk periode tersebut.</p>
+                </div>
               )}
             </section>
 
             <section className="alkes-modal-section">
-              <div className="alkes-modal-section-head">
-                <div>
-                  <h3>Jumlah dan Masa Berlaku</h3>
-                  <p>Satu penetapan mewakili satu kendaraan. Nopol dan kondisi dicatat terpisah per kendaraan.</p>
-                </div>
-              </div>
-              <div className="uc-form-grid">
-                <label className="uc-field">Jumlah Kendaraan *
-                  <input inputMode="numeric" value={form.count} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, count: event.target.value }))} placeholder="1 - 50" />
-                </label>
-                <label className="uc-field">Mulai Berlaku *
-                  <input type="month" value={form.month} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, month: event.target.value }))} />
-                </label>
-              </div>
-              <p className="uc-assignment-note">
-                {form.ulpId ? ulpName(form.ulpId) : 'ULP belum dipilih'} · {form.count || '0'} kendaraan · mulai {form.month ? conditionMonthLabel(form.month) : 'belum dipilih'}
-              </p>
               <details className="alkes-advanced">
                 <summary>Informasi tambahan (opsional)</summary>
-                <div className="uc-form-grid">
-                  <label className="uc-field">Nama / Pembeda Kendaraan
-                    <input maxLength={190} value={form.label} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, label: event.target.value }))} placeholder="Otomatis mengikuti jenis dan penugasan" />
-                  </label>
-                  <label className="uc-field">Acuan Kontrak / Addendum
-                    <input maxLength={500} value={form.contractReference} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, contractReference: event.target.value }))} placeholder="Nomor dokumen acuan, jika diperlukan" />
-                  </label>
-                </div>
+                <label className="uc-field">Acuan Kontrak / Addendum
+                  <input maxLength={500} value={form.contractReference} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, contractReference: event.target.value }))} placeholder="Nomor dokumen acuan, jika diperlukan" />
+                </label>
               </details>
             </section>
 

@@ -3,7 +3,7 @@ export const CONDITION_LABELS = {
   non_compliant: 'Tidak Memenuhi',
   draft: 'Belum Lengkap',
   unfilled: 'Belum Diisi',
-  invalid: 'Periksa Angka',
+  invalid: 'Periksa Isian',
   no_assigned_vehicles: 'Belum Ada Penetapan',
 }
 
@@ -17,13 +17,26 @@ export function parseConditionCount(value) {
 export function evaluateCondition(row) {
   const good = parseConditionCount(row.good_qty)
   const bad = parseConditionCount(row.bad_qty)
-  if (Number.isNaN(good) || Number.isNaN(bad)) return { status: 'invalid', available: null, percentage: null }
-  if (row.kind === 'vehicle' && ((good == null) !== (bad == null) || (good != null && bad != null && good + bad > 1))) return { status: 'invalid', available: null, percentage: null }
+  const required = Number(row.required_qty)
+  if (Number.isNaN(good) || Number.isNaN(bad)) {
+    return { status: 'invalid', available: null, percentage: null, issue: 'Gunakan bilangan bulat 0 atau lebih.' }
+  }
+  if (row.kind === 'vehicle' && ((good == null) !== (bad == null) || (good != null && bad != null && good + bad > 1))) {
+    return { status: 'invalid', available: null, percentage: null, issue: 'Kondisi kendaraan hanya satu pilihan Baik atau Rusak.' }
+  }
   if (good == null || bad == null) return { status: 'unfilled', available: null, percentage: null }
+  if (row.kind !== 'vehicle' && good + bad !== required) {
+    return {
+      status: 'invalid',
+      available: required,
+      percentage: null,
+      issue: 'Jumlah Baik + Rusak harus sama dengan jumlah kontrak.',
+    }
+  }
   return {
-    status: bad > 0 || good < row.required_qty ? 'non_compliant' : 'compliant',
-    available: good + bad,
-    percentage: row.required_qty > 0 ? Math.min(100, good / row.required_qty * 100) : null,
+    status: bad > 0 || good < required ? 'non_compliant' : 'compliant',
+    available: row.kind === 'vehicle' ? good + bad : required,
+    percentage: required > 0 ? Math.min(100, good / required * 100) : null,
   }
 }
 
@@ -61,6 +74,21 @@ export function summarizeFleet(vehicles, items) {
   const summary = summarizeConditions(items)
   const missingPlates = vehicles.filter((vehicle) => !vehicle.plate_display?.trim()).length
   return { ...summary, missingPlates, vehicleCount: vehicles.length, status: !vehicles.length ? 'no_assigned_vehicles' : missingPlates ? 'draft' : summary.status }
+}
+
+export function summarizeVehicle(vehicle, items) {
+  const vehicleItems = (items || []).filter((item) => item.vehicle_id === vehicle.id)
+  const summary = summarizeConditions(vehicleItems)
+  const unfilled = vehicleItems.filter((item) => evaluateCondition(item).status === 'unfilled').length
+  const missingPlate = !String(vehicle.plate_display || '').trim()
+  return {
+    ...summary,
+    unfilled,
+    missingPlate,
+    itemCount: vehicleItems.length,
+    hasAttention: summary.failed > 0,
+    isComplete: !unfilled && !summary.invalid && !missingPlate,
+  }
 }
 
 export function conditionSnapshot(items) {

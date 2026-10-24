@@ -9,6 +9,7 @@ async function rpc(name, parameters) {
     if (error.code === '23505' || error.code === '23P01' || /plate.*(already|another|unique|registered|duplicate)/i.test(error.message || '')) throw new Error('Nomor polisi sudah digunakan pada periode yang bertumpang tindih. Periksa nopol dan masa berlaku penetapannya.')
     if (/report.*(already|exist)|existing.*report|frozen monthly fleet/i.test(error.message || '')) throw new Error('Periode tersebut sudah memiliki laporan. Gunakan bulan mulai/akhir yang belum dilaporkan agar riwayat tidak berubah.')
     if (/active template/i.test(error.message || '')) throw new Error('Pilih template kendaraan berstatus Aktif yang sudah diterbitkan.')
+    if (/Good \+ damaged quantity must equal required quantity/i.test(error.message || '')) throw new Error('Jumlah Baik + Rusak harus sama dengan jumlah kontrak.')
     if (/legacy.*(scope|plate)|linked.*registry|registry.*(scope|type|assignment|link)/i.test(error.message || '')) throw new Error('Nopol berkaitan dengan data kendaraan lama. Hubungi admin untuk memeriksa ULP, jenis kendaraan, dan penugasannya.')
     throw new Error(error.message || 'Permintaan tidak berhasil. Silakan coba lagi.')
   }
@@ -22,11 +23,18 @@ export function listPrescribedVehicles(context) {
   return rpc('ops_list_prescribed_vehicles', { ...scope(context), p_period_month: period(context.month) })
 }
 
-export function createPrescribedVehicles(context, form) {
-  return rpc('ops_create_prescribed_vehicles', {
-    ...scope(context), p_ulp_id: form.ulpId, p_template_id: form.templateId,
-    p_label: form.label.trim(), p_contract_reference: form.contractReference.trim(),
-    p_count: Number(form.count), p_effective_month: period(form.month),
+export function createPrescribedVehiclesBatch(context, form) {
+  return rpc('ops_create_prescribed_vehicles_batch', {
+    ...scope(context), p_ulp_id: form.ulpId,
+    p_effective_month: period(form.month),
+    p_contract_reference: form.contractReference.trim(),
+    p_rows: form.rows.map((row) => ({ template_id: row.templateId, count: Number(row.count) })),
+  })
+}
+
+export function listAffectedVehicleReports(context) {
+  return rpc('ops_list_affected_vehicle_reports', {
+    ...scope(context), p_ulp_id: context.ulpId, p_from_month: period(context.month),
   })
 }
 
@@ -51,6 +59,20 @@ export function listUlpConditionOverview(context) {
 export function saveUlpConditionReport(context, bundle, items) {
   return rpc('ops_save_vehicle_condition_report', {
     ...scope(context), p_ulp_id: context.ulpId, p_period_month: period(context.month),
+    p_expected_revision: bundle.report?.revision || 0,
+    p_items: items.map(({ key, good_qty, bad_qty, note }) => ({
+      key,
+      good_qty: good_qty == null || String(good_qty).trim() === '' ? null : Number(good_qty),
+      bad_qty: bad_qty == null || String(bad_qty).trim() === '' ? null : Number(bad_qty),
+      note: note || '',
+    })),
+  })
+}
+
+export function saveUlpVehicleCondition(context, bundle, vehicleId, items) {
+  return rpc('ops_save_vehicle_condition_subset', {
+    ...scope(context), p_ulp_id: context.ulpId, p_period_month: period(context.month),
+    p_vehicle_id: vehicleId,
     p_expected_revision: bundle.report?.revision || 0,
     p_items: items.map(({ key, good_qty, bad_qty, note }) => ({
       key,
