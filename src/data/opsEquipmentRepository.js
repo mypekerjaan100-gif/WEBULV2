@@ -45,6 +45,9 @@ export function mapTemplate(row) {
     status: row.status ?? 'Draft',
     description: row.description ?? '',
     previousVersionId: row.previous_version_id ?? null,
+    createdAt: row.created_at ?? '',
+    updatedAt: row.updated_at ?? '',
+    publishedAt: row.published_at ?? '',
   }
 }
 
@@ -57,6 +60,7 @@ function mapTemplateItem(row, equipmentById = new Map(), published = false) {
     equipmentName: (published ? row.equipment_name : null) ?? equipment?.name ?? '',
     equipmentCode: (published ? row.equipment_code : null) ?? equipment?.code ?? '',
     categoryId: equipment?.categoryId ?? null,
+    categoryName: (published ? row.equipment_category_name : null) ?? '',
     unit: (published ? row.equipment_unit : null) ?? equipment?.unit ?? 'unit',
     legacyMetadata: published && row.equipment_name == null,
     requiredQty: Number(row.required_qty ?? 0),

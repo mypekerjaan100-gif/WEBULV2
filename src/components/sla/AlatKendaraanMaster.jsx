@@ -1,6 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PrescribedFleetAdmin from './PrescribedFleetAdmin.jsx'
 import EquipmentImportPanel from './EquipmentImportPanel.jsx'
+import AlkesModal from './AlkesModal.jsx'
+import CatalogPicker from './CatalogPicker.jsx'
+import TemplateDetailModal from './TemplateDetailModal.jsx'
 import KendaraanUlp from './KendaraanUlp.jsx'
 import {
   archiveOpsTemplate,
@@ -563,18 +566,24 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   const [templateMeta, setTemplateMeta] = useState(null)
   const [statusFilter, setStatusFilter] = useState('Semua')
   const [page, setPage] = useState(0)
-  const [catalogSearch, setCatalogSearch] = useState('')
-  const [selectedEquipmentId, setSelectedEquipmentId] = useState('')
   const [openNotes, setOpenNotes] = useState(() => new Set())
   const [highlightKey, setHighlightKey] = useState('')
   const [editLoading, setEditLoading] = useState(false)
+  const [discardPrompt, setDiscardPrompt] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailTemplate, setDetailTemplate] = useState(null)
+  const [detailItems, setDetailItems] = useState([])
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
   const editRequest = useRef(0)
+  const detailRequest = useRef(0)
   const editPending = useRef(false)
   const qtyRefs = useRef(new Map())
+  const discardRef = useRef(null)
   const nameRef = useRef(null)
   const typeRef = useRef(null)
   const assignmentRef = useRef(null)
-  const catalogSearchRef = useRef(null)
+  const catalogTriggerRef = useRef(null)
   const highlightTimer = useRef(null)
   const typeById = useMemo(() => new Map(types.map((item) => [item.id, item])), [types])
   const assignmentById = useMemo(() => new Map(assignments.map((item) => [item.id, item])), [assignments])
@@ -583,8 +592,17 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
 
   useEffect(() => () => {
     editRequest.current += 1
+    detailRequest.current += 1
     if (highlightTimer.current) window.clearTimeout(highlightTimer.current)
   }, [])
+
+  useEffect(() => {
+    if (!discardPrompt) return
+    window.requestAnimationFrame(() => {
+      discardRef.current?.scrollIntoView({ block: 'nearest' })
+      discardRef.current?.querySelector('button')?.focus()
+    })
+  }, [discardPrompt])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -631,32 +649,6 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   const orderedRows = useMemo(() => worksheetGroups.flatMap((group) => group.rows), [worksheetGroups])
   const rowNumbers = useMemo(() => new Map(orderedRows.map((row, index) => [row.key, index + 1])), [orderedRows])
 
-  const catalogGroups = useMemo(() => {
-    const q = catalogSearch.trim().toLowerCase()
-    const groups = new Map()
-    for (const item of equipment) {
-      if (!item.isActive) continue
-      const category = categoryById.get(item.categoryId)
-      if (q && !`${item.code} ${item.name} ${category?.name ?? ''}`.toLowerCase().includes(q)) continue
-      const key = category?.id ?? UNCATEGORIZED
-      if (!groups.has(key)) {
-        groups.set(key, {
-          key,
-          name: category?.name ?? 'Tanpa Kategori',
-          sortOrder: category?.sortOrder ?? Number.MAX_SAFE_INTEGER,
-          items: [],
-        })
-      }
-      groups.get(key).items.push(item)
-    }
-    return [...groups.values()]
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
-      .map((group) => ({
-        ...group,
-        items: group.items.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
-      }))
-  }, [equipment, categoryById, catalogSearch])
-
   const baselineRows = useMemo(() => {
     try {
       const parsed = JSON.parse(baseline || '{}')
@@ -667,11 +659,6 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }, [baseline])
 
   const dirty = Boolean(form && baseline && templateSnapshot(form) !== baseline)
-  const selectedEquipment = catalogGroups.flatMap((group) => group.items).find((item) => item.id === selectedEquipmentId) ?? null
-
-  useEffect(() => {
-    if (selectedEquipmentId && !selectedEquipment) setSelectedEquipmentId('')
-  }, [selectedEquipmentId, selectedEquipment])
 
   useEffect(() => {
     onDirtyChange?.(dirty || editLoading)
@@ -719,32 +706,32 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     setFormError('')
     setActionError('')
     setCatalogMessage('')
-    setCatalogSearch('')
-    setSelectedEquipmentId('')
     setOpenNotes(new Set())
     setHighlightKey('')
     setTemplateMeta(null)
     setSaveStatus('idle')
+    setDiscardPrompt(false)
   }
 
-  const closeForm = () => {
+  const closeForm = (force = false) => {
     if (busy || editPending.current) return
-    if (dirty && !window.confirm('Draft template belum disimpan. Tutup form?')) return
+    if (dirty && !force) {
+      setDiscardPrompt(true)
+      return
+    }
     resetForm()
   }
 
   const startCreate = () => {
     if (busy || editPending.current) return
-    if (dirty && !window.confirm('Draft template belum disimpan. Buat template baru?')) return
     const next = emptyTemplateForm()
+    setDiscardPrompt(false)
     setFieldErrors({})
     setRowErrors({})
     setItemsError('')
     setFormError('')
     setActionError('')
     setCatalogMessage('')
-    setCatalogSearch('')
-    setSelectedEquipmentId('')
     setOpenNotes(new Set())
     setTemplateMeta(null)
     setSaveStatus('idle')
@@ -754,15 +741,13 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
 
   const startEdit = async (template) => {
     if (busy || editPending.current) return
-    if (dirty && !window.confirm('Draft template belum disimpan. Ganti template yang diedit?')) return
     setFieldErrors({})
     setRowErrors({})
     setItemsError('')
     setFormError('')
     setActionError('')
     setCatalogMessage('')
-    setCatalogSearch('')
-    setSelectedEquipmentId('')
+    setDiscardPrompt(false)
     const request = ++editRequest.current
     editPending.current = true
     setEditLoading(true)
@@ -803,16 +788,10 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     }
   }
 
-  const addRow = () => {
-    if (!form) return
-    if (!selectedEquipment) {
-      setCatalogMessage('Pilih alat dari katalog terlebih dahulu.')
-      catalogSearchRef.current?.focus()
-      return
-    }
-    const existing = form.rows.find((row) => row.equipmentId === selectedEquipment.id)
+  const addEquipment = (equipmentItem) => {
+    if (!form || !equipmentItem || busy) return
+    const existing = form.rows.find((row) => row.equipmentId === equipmentItem.id)
     if (existing) {
-      setSelectedEquipmentId('')
       setCatalogMessage('Alat sudah ada di daftar. Baris yang ada ditandai.')
       highlightRow(existing.key)
       return
@@ -820,9 +799,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     const key = `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`
     setForm((prev) => ({
       ...prev,
-      rows: [...prev.rows, { key, equipmentId: selectedEquipment.id, requiredQty: '1', note: '' }],
+      rows: [...prev.rows, { key, equipmentId: equipmentItem.id, requiredQty: '1', note: '' }],
     }))
-    setSelectedEquipmentId('')
     setCatalogMessage('')
     setItemsError('')
     setFormError('')
@@ -874,11 +852,12 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     const index = orderedRows.findIndex((row) => row.key === key)
     const next = orderedRows[index + 1]
     if (next) focusRow(next.key)
-    else catalogSearchRef.current?.focus()
+    else window.requestAnimationFrame(() => catalogTriggerRef.current?.focus())
   }
 
   const submitDraft = async () => {
     if (!form || busy || editPending.current || saveStatus === 'saving') return
+    setDiscardPrompt(false)
     const nextFieldErrors = {}
     const nextRowErrors = {}
     if (!form.templateName.trim()) nextFieldErrors.templateName = 'Nama template wajib diisi.'
@@ -899,7 +878,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     setItemsError(orderedRows.length ? '' : 'Tambahkan minimal satu alat dari katalog.')
     if (orderedRows.length === 0) {
       setCatalogMessage('Pilih alat dari katalog untuk memulai.')
-      catalogSearchRef.current?.focus()
+      window.requestAnimationFrame(() => catalogTriggerRef.current?.focus())
       return
     }
     if (Object.keys(nextFieldErrors).length) {
@@ -965,7 +944,9 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   const handlePublish = async (template) => {
     setActionError('')
     if (form?.id === template.id && dirty) {
-      setActionError('Simpan draft template terlebih dahulu sebelum menerbitkan versi ini.')
+      const warning = 'Simpan draft template terlebih dahulu sebelum menerbitkan versi ini.'
+      setActionError(warning)
+      setFormError(warning)
       return
     }
     if (!window.confirm(`Terbitkan "${template.templateName}" v${template.versionNumber} sebagai Aktif?`)) return
@@ -973,8 +954,27 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
       await onPublish(template)
       if (form?.id === template.id) resetForm()
     } catch (publishError) {
-      setActionError(publishError.message || 'Template gagal diterbitkan.')
+      const message = publishError.message || 'Template gagal diterbitkan.'
+      setActionError(message)
+      if (form?.id === template.id) setFormError(message)
     }
+  }
+
+  const publishCurrentDraft = () => {
+    if (!form?.id) return
+    setDiscardPrompt(false)
+    const invalid = orderedRows.find((row) => {
+      const raw = String(row.requiredQty ?? '').trim()
+      return !/^\d+$/.test(raw) || Number(raw) <= 0
+    })
+    if (invalid) {
+      setFormError('Semua Jumlah Kebutuhan harus lebih dari 0 sebelum template diterbitkan.')
+      focusRow(invalid.key)
+      return
+    }
+    setFormError('')
+    const draft = templates.find((template) => template.id === form.id)
+    if (draft) handlePublish(draft)
   }
 
   const handleArchive = async (template) => {
@@ -1001,13 +1001,37 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     }
   }
 
-  const handleExpand = async (template) => {
-    setActionError('')
+  const openDetail = async (template) => {
+    const request = ++detailRequest.current
+    setDetailOpen(true)
+    setDetailTemplate(template)
+    setDetailItems(templateItems[template.id] || [])
+    setDetailError('')
+    setDetailLoading(!templateItems[template.id])
     try {
-      await onExpand(template.id)
-    } catch (expandError) {
-      setActionError(expandError.message || 'Rincian template gagal dimuat.')
+      const items = await onExpand(template.id)
+      if (request !== detailRequest.current) return
+      setDetailItems(items)
+    } catch (loadError) {
+      if (request === detailRequest.current) setDetailError(loadError.message || 'Rincian template gagal dimuat.')
+    } finally {
+      if (request === detailRequest.current) setDetailLoading(false)
     }
+  }
+
+  const closeDetail = () => {
+    detailRequest.current += 1
+    setDetailOpen(false)
+    setDetailTemplate(null)
+    setDetailItems([])
+    setDetailError('')
+    setDetailLoading(false)
+  }
+
+  const editFromDetail = () => {
+    const template = detailTemplate
+    closeDetail()
+    if (template) startEdit(template)
   }
 
   return (
@@ -1028,8 +1052,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             <option value="Diarsipkan">Diarsipkan</option>
           </select>
           {canManage && (
-            <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? closeForm() : startCreate())}>
-              {form ? 'Tutup Form' : 'Buat Template'}
+            <button type="button" className="sla-btn sla-btn-primary" disabled={busy || Boolean(form)} onClick={startCreate}>
+              Buat Template
             </button>
           )}
         </div>
@@ -1038,27 +1062,40 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
       {editLoading && <p className="sla-table-hint" role="status">Memuat draft template...</p>}
       {actionError && <p className="sla-blocked-note">{actionError}</p>}
       {form && canManage && (
-        <div className="sla-sign-group alkes-form-surface">
-          <div className="alkes-form-heading">
-            <div>
-              <strong>{form.id ? 'Edit Draft Template' : 'Template Kebutuhan Baru'}</strong>
-              <p className="sla-table-hint">Isi konteks sekali, lalu masukkan Jumlah Kebutuhan langsung pada tabel.</p>
+        <AlkesModal
+          open
+          onClose={() => closeForm()}
+          eyebrow={form.id ? 'EDIT DRAFT TEMPLATE' : 'TEMPLATE KEBUTUHAN BARU'}
+          title={form.id ? 'Edit Draft Template' : 'Buat Template Kebutuhan'}
+          subtitle="Tentukan konteks kendaraan, lalu isi jumlah kebutuhan alat langsung pada tabel."
+          meta={templateMeta && (
+            <>
+              <span>{templateMeta.templateCode}</span>
+              <span>Versi {templateMeta.versionNumber}</span>
+              <span className={`sla-status-badge ${STATUS_BADGE[templateMeta.status] || 'sla-status-draft'}`}>{templateMeta.status}</span>
+            </>
+          )}
+          size="wide"
+          className="alkes-template-form-modal"
+          dismissDisabled={busy || saveStatus === 'saving'}
+        >
+          <div className="alkes-modal-form">
+          <section className="alkes-modal-section">
+            <div className="alkes-modal-section-head">
+              <div>
+                <h3>Informasi Template</h3>
+                <p>Standar ini berlaku untuk satu jenis kendaraan dan penugasan.</p>
+              </div>
             </div>
-            {templateMeta && (
-              <span className="alkes-meta-pill">
-                {templateMeta.templateCode} · v{templateMeta.versionNumber} · {templateMeta.status}
-              </span>
-            )}
-          </div>
           <div className="sla-sign-group-head">
             <div className="sla-context-field alkes-field-wide">
-              <span className="sla-context-label">Nama Template *</span>
-              <input ref={nameRef} className="sla-input sla-input-text" value={form.templateName} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, templateName: event.target.value }))} placeholder="cth: Roda 2 — Koordinator" aria-invalid={Boolean(fieldErrors.templateName)} />
+              <label htmlFor="template-name" className="sla-context-label">Nama Template *</label>
+              <input id="template-name" data-autofocus ref={nameRef} className="sla-input sla-input-text" value={form.templateName} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, templateName: event.target.value }))} placeholder="cth: Roda 2 - Koordinator" aria-invalid={Boolean(fieldErrors.templateName)} />
               {fieldErrors.templateName && <p className="alkes-field-error">{fieldErrors.templateName}</p>}
             </div>
             <div className="sla-context-field">
-              <span className="sla-context-label">Jenis Kendaraan *</span>
-              <select ref={typeRef} className="sla-context-select" value={form.vehicleTypeId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, vehicleTypeId: event.target.value }))} aria-invalid={Boolean(fieldErrors.vehicleTypeId)}>
+              <label htmlFor="template-type" className="sla-context-label">Jenis Kendaraan *</label>
+              <select id="template-type" ref={typeRef} className="sla-context-select" value={form.vehicleTypeId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, vehicleTypeId: event.target.value }))} aria-invalid={Boolean(fieldErrors.vehicleTypeId)}>
                 <option value="">Pilih jenis</option>
                 {types.filter((item) => item.isActive || item.id === form.vehicleTypeId).map((item) => (
                   <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
@@ -1067,8 +1104,8 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               {fieldErrors.vehicleTypeId && <p className="alkes-field-error">{fieldErrors.vehicleTypeId}</p>}
             </div>
             <div className="sla-context-field">
-              <span className="sla-context-label">Penugasan *</span>
-              <select ref={assignmentRef} className="sla-context-select" value={form.assignmentId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, assignmentId: event.target.value }))} aria-invalid={Boolean(fieldErrors.assignmentId)}>
+              <label htmlFor="template-assignment" className="sla-context-label">Penugasan *</label>
+              <select id="template-assignment" ref={assignmentRef} className="sla-context-select" value={form.assignmentId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, assignmentId: event.target.value }))} aria-invalid={Boolean(fieldErrors.assignmentId)}>
                 <option value="">Pilih penugasan</option>
                 {assignments.filter((item) => item.isActive || item.id === form.assignmentId).map((item) => (
                   <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
@@ -1077,50 +1114,43 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               {fieldErrors.assignmentId && <p className="alkes-field-error">{fieldErrors.assignmentId}</p>}
             </div>
             <div className="sla-context-field">
-              <span className="sla-context-label">Varian/Model (opsional)</span>
-              <input className="sla-input sla-input-text" value={form.vehicleVariant} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, vehicleVariant: event.target.value }))} placeholder="cth: Terios (kosongkan bila umum)" />
+              <label htmlFor="template-variant" className="sla-context-label">Varian/Model (opsional)</label>
+              <input id="template-variant" className="sla-input sla-input-text" value={form.vehicleVariant} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, vehicleVariant: event.target.value }))} placeholder="cth: Terios (kosongkan bila umum)" />
             </div>
             <div className="sla-context-field">
-              <span className="sla-context-label">Tanggal Berlaku</span>
-              <input type="date" className="sla-context-select" value={form.effectiveFrom} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))} />
+              <label htmlFor="template-effective" className="sla-context-label">Tanggal Berlaku</label>
+              <input id="template-effective" type="date" className="sla-context-select" value={form.effectiveFrom} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))} />
             </div>
           </div>
           <details className="alkes-advanced">
             <summary>Informasi tambahan</summary>
             <div className="sla-sign-group-head">
               <div className="sla-context-field alkes-field-wide">
-                <span className="sla-context-label">Deskripsi</span>
-                <input className="sla-input sla-input-text" value={form.description} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
+                <label htmlFor="template-description" className="sla-context-label">Deskripsi</label>
+                <input id="template-description" className="sla-input sla-input-text" value={form.description} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
               </div>
             </div>
           </details>
-          <div className="alkes-worksheet-head">
+          </section>
+          <section className="alkes-modal-section">
+          <div className="alkes-modal-section-head">
             <div>
-              <strong>Daftar Alat</strong>
-              <span className="sla-table-hint">{allRowCount} jenis · {categoryCount} kategori</span>
+              <h3>Daftar Kebutuhan</h3>
+              <p>Pilih alat dari katalog untuk langsung menambah baris. Nama, kategori, dan satuan terisi otomatis.</p>
             </div>
-            <div className="alkes-catalog-toolbar">
-              <input
-                ref={catalogSearchRef}
-                className="sla-input sla-input-text alkes-search"
-                value={catalogSearch}
-                onChange={(event) => setCatalogSearch(event.target.value)}
-                placeholder="Cari alat di katalog"
-              />
-              <select className="sla-context-select" value={selectedEquipmentId} onChange={(event) => { setSelectedEquipmentId(event.target.value); setCatalogMessage('') }} disabled={busy}>
-                <option value="">Pilih alat dari katalog</option>
-                {catalogGroups.map((group) => (
-                  <optgroup key={group.key} label={group.name}>
-                    {group.items.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name} · {item.unit}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <button type="button" className="sla-btn" disabled={busy || !selectedEquipmentId} onClick={addRow}>Tambah Alat</button>
-            </div>
+            <span className="sla-table-hint">{allRowCount} jenis · {categoryCount} kategori</span>
           </div>
-          {catalogMessage && <p className="sla-table-hint">{catalogMessage}</p>}
+            <div className="alkes-catalog-toolbar alkes-catalog-toolbar--single">
+              <CatalogPicker
+                equipment={equipment}
+                categories={categories}
+                existingIds={form.rows.map((row) => row.equipmentId)}
+                disabled={busy}
+                onSelect={addEquipment}
+                triggerRef={catalogTriggerRef}
+              />
+            </div>
+          {catalogMessage && <p className="sla-table-hint" role="status">{catalogMessage}</p>}
           {itemsError && <p className="alkes-field-error">{itemsError}</p>}
           <div className="alkes-worksheet-scroll">
             <table className="alkes-worksheet-table">
@@ -1207,18 +1237,32 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               </tbody>
             </table>
           </div>
-          {formError && <p className="sla-blocked-note">{formError}</p>}
+          </section>
+          {formError && <p className="alkes-modal-alert" role="alert">{formError}</p>}
+          {discardPrompt && (
+            <div ref={discardRef} className="alkes-modal-discard" role="alert">
+              <div>
+                <strong>Draft belum disimpan</strong>
+                <span>Perubahan terbaru akan hilang jika modal ditutup sekarang.</span>
+              </div>
+              <div className="alkes-modal-actions">
+                <button type="button" className="sla-btn" disabled={busy || saveStatus === 'saving'} onClick={() => setDiscardPrompt(false)}>Tetap Mengedit</button>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={busy || saveStatus === 'saving'} onClick={() => closeForm(true)}>Tutup Tanpa Menyimpan</button>
+              </div>
+            </div>
+          )}
           <div className="alkes-savebar">
             <span className={`alkes-save-status ${dirty ? 'is-dirty' : saveStatus === 'saved' ? 'is-saved' : ''}`}>{statusText}</span>
             <div className="alkes-save-actions">
               <button type="button" className="sla-btn sla-btn-primary" disabled={busy || saveStatus === 'saving'} onClick={submitDraft}>
                 {busy || saveStatus === 'saving' ? 'Menyimpan...' : 'Simpan Draft'}
               </button>
-              {form.id && <button type="button" className="sla-btn" disabled={busy || dirty || saveStatus === 'saving'} onClick={() => { const draft = templates.find((template) => template.id === form.id); if (draft) handlePublish(draft) }}>Terbitkan Template</button>}
-              <button type="button" className="sla-btn" disabled={busy} onClick={closeForm}>Tutup</button>
+              {form.id && <button type="button" className="sla-btn" disabled={busy || dirty || saveStatus === 'saving'} onClick={publishCurrentDraft}>Terbitkan Template</button>}
+              <button type="button" className="sla-btn" disabled={busy} onClick={() => closeForm()}>Batal</button>
             </div>
           </div>
-        </div>
+          </div>
+        </AlkesModal>
       )}
       <div className="sla-preview-scroll">
         <table className="sla-preview-table alkes-table alkes-table--wide">
@@ -1227,17 +1271,14 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               <th>Template</th>
               <th>Jenis / Penugasan</th>
               <th>Status</th>
-              <th>Alat</th>
-              {canManage && <th>Aksi</th>}
+              <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
             {!filtered.length && (
-              <tr><td colSpan={canManage ? 5 : 4}>{emptyMessage}</td></tr>
+              <tr><td colSpan={4}>{emptyMessage}</td></tr>
             )}
-            {pageRows.map((template) => {
-              const items = templateItems[template.id] ?? null
-              return (
+            {pageRows.map((template) => (
                 <tr key={template.id}>
                   <td>
                     <strong>{template.templateName}</strong>
@@ -1245,12 +1286,6 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                     <div className="sla-table-sub">
                       {template.vehicleVariant ? `Varian: ${template.vehicleVariant} · ` : ''}Berlaku: {template.effectiveFrom || '—'}
                     </div>
-                    {items && (
-                      <div className="sla-table-sub">
-                        {items.map((item) => `${item.equipmentName || '?'} × ${item.requiredQty}`).join(' · ') || '—'}
-                        {items.some((item) => item.legacyMetadata) && ' (Legacy: nama mengikuti katalog saat ini)'}
-                      </div>
-                    )}
                   </td>
                   <td>{typeById.get(template.vehicleTypeId)?.name ?? '—'} / {assignmentById.get(template.assignmentId)?.name ?? '—'}</td>
                   <td>
@@ -1258,33 +1293,45 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                       {template.status}
                     </span>
                   </td>
-                  <td>{items ? items.length : '…'}</td>
-                  {canManage && (
-                    <td>
-                      <div className="sla-master-actions">
-                        <button type="button" className="sla-btn" disabled={busy} onClick={() => handleExpand(template)}>Lihat</button>
-                        {template.status === 'Draft' && (
-                          <>
-                            <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(template)}>Edit</button>
-                            <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => handlePublish(template)}>Terbitkan</button>
-                          </>
-                        )}
-                        {template.status !== 'Draft' && (
-                          <button type="button" className="sla-btn" disabled={busy} onClick={() => handleDuplicate(template)}>Duplikasi</button>
-                        )}
-                        {template.status === 'Aktif' && (
-                          <button type="button" className="sla-btn" disabled={busy} onClick={() => handleArchive(template)}>Arsipkan</button>
-                        )}
-                      </div>
-                    </td>
-                  )}
+                  <td>
+                    <div className="sla-master-actions">
+                      <button type="button" className="sla-btn" disabled={busy} onClick={() => openDetail(template)}>Lihat</button>
+                      {canManage && template.status === 'Draft' && (
+                        <>
+                          <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(template)}>Edit</button>
+                          <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => handlePublish(template)}>Terbitkan</button>
+                        </>
+                      )}
+                      {canManage && template.status !== 'Draft' && (
+                        <button type="button" className="sla-btn" disabled={busy} onClick={() => handleDuplicate(template)}>Duplikasi</button>
+                      )}
+                      {canManage && template.status === 'Aktif' && (
+                        <button type="button" className="sla-btn" disabled={busy} onClick={() => handleArchive(template)}>Arsipkan</button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
-              )
-            })}
+            ))}
           </tbody>
         </table>
       </div>
       <ListPagination total={filtered.length} page={safePage} onChange={setPage} itemLabel="template" />
+      <TemplateDetailModal
+        open={detailOpen}
+        template={detailTemplate}
+        items={detailItems}
+        loading={detailLoading}
+        error={detailError}
+        busy={busy}
+        canManage={canManage}
+        equipmentById={equipmentById}
+        categoryById={categoryById}
+        typeById={typeById}
+        assignmentById={assignmentById}
+        onClose={closeDetail}
+        onEdit={editFromDetail}
+        onRetry={() => { if (detailTemplate) openDetail(detailTemplate) }}
+      />
     </fieldset>
   )
 }
