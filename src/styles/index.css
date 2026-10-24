@@ -10806,6 +10806,7 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .uc-status--compliant { color: #176b49; background: #eaf5ef; }
 .uc-status--non_compliant, .uc-status--invalid { color: #a12c33; background: #fceced; }
 .uc-status--draft { color: #8a6017; background: #fbf3e0; }
+.uc-status--default { color: #1d4ed8; background: #e8f0fe; }
 .uc-row--failed td:first-child { box-shadow: inset 3px 0 0 #c34d53; }
 .uc-item-unit, .uc-row-reason { display: block; margin-top: 4px; color: var(--color-text-muted); font-size: 10px; line-height: 1.5; }
 .uc-item-unit { max-width: 420px; overflow-wrap: anywhere; }
@@ -11197,9 +11198,13 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .uc-assignment-row-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 100px;
   gap: 12px;
   align-items: end;
+}
+
+.uc-table--fleet {
+  min-width: 900px;
 }
 
 .uc-assignment-row-summary {
@@ -11287,6 +11292,7 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 :root[data-theme='dark'] .uc-status--compliant { color: #9ed9b7; background: #173d32; }
 :root[data-theme='dark'] .uc-status--non_compliant, :root[data-theme='dark'] .uc-status--invalid { color: #f4adb3; background: #482934; }
 :root[data-theme='dark'] .uc-status--draft { color: #ebcd8f; background: #413623; }
+:root[data-theme='dark'] .uc-status--default { color: #a9c5ff; background: #1e355d; }
 @media (max-width: 720px) {
   .uc-workspace { gap: 16px; }
   .uc-header, .uc-context { align-items: stretch; flex-direction: column; width: 100%; }
@@ -11592,6 +11598,29 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .alkes-field-wide {
   grid-column: 1 / -1;
   min-width: 0;
+}
+
+.alkes-derived-name {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.alkes-derived-name.is-placeholder {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .alkes-advanced {

@@ -76,6 +76,37 @@ export function summarizeFleet(vehicles, items) {
   return { ...summary, missingPlates, vehicleCount: vehicles.length, status: !vehicles.length ? 'no_assigned_vehicles' : missingPlates ? 'draft' : summary.status }
 }
 
+export function defaultVehicleIds(items) {
+  const groups = new Map()
+  for (const item of items || []) {
+    if (!groups.has(item.vehicle_id)) groups.set(item.vehicle_id, [])
+    groups.get(item.vehicle_id).push(item)
+  }
+  return new Set([...groups.entries()]
+    .filter(([, rows]) => rows.length > 0 && rows.every((row) => (
+      (row.good_qty == null || String(row.good_qty).trim() === '')
+      && (row.bad_qty == null || String(row.bad_qty).trim() === '')
+    )))
+    .map(([vehicleId]) => vehicleId))
+}
+
+export function applyMonthlyConditionDefaults(items) {
+  const defaults = defaultVehicleIds(items)
+  return (items || []).map((item) => {
+    if (!defaults.has(item.vehicle_id)) return item
+    const vehicle = item.kind === 'vehicle'
+    const required = Number(item.required_qty || 0)
+    return {
+      ...item,
+      good_qty: vehicle ? 1 : required,
+      bad_qty: 0,
+      status: 'compliant',
+      available_qty: vehicle ? 1 : required,
+      percentage: required > 0 ? 100 : null,
+    }
+  })
+}
+
 export function summarizeVehicle(vehicle, items) {
   const vehicleItems = (items || []).filter((item) => item.vehicle_id === vehicle.id)
   const summary = summarizeConditions(vehicleItems)

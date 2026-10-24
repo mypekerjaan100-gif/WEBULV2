@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { conditionMonthLabel, currentConditionMonth, parseConditionCount } from '../../data/ulpConditionDomain.js'
 import { createPrescribedVehiclesBatch, endPrescribedVehicle, listAffectedVehicleReports, listPrescribedVehicles } from '../../data/ulpConditionRepository.js'
+import { fetchLocationsFromSupabase } from '../../data/locationRepository.js'
+import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 import AlkesModal from './AlkesModal.jsx'
 import SearchSelect from './SearchSelect.jsx'
 
@@ -11,7 +13,11 @@ const REPORT_STATUS_LABEL = {
 }
 
 function newRow() {
-  return { key: `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`, templateId: '', count: '1' }
+  return { key: `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`, templateId: '', locationId: '', count: '1' }
+}
+
+function locationLabel(name, type) {
+  return type === 'KANTOR_JAGA' ? `KJ ${name}` : name
 }
 
 export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates, types, assignments, units, canManage, onDirtyChange, onBusyChange }) {
@@ -32,6 +38,9 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
   const [affectedLoading, setAffectedLoading] = useState(false)
   const [affectedError, setAffectedError] = useState('')
   const [affectedRetry, setAffectedRetry] = useState(0)
+  const [locations, setLocations] = useState([])
+  const [locationsLoading, setLocationsLoading] = useState(true)
+  const [locationsError, setLocationsError] = useState('')
   const [reload, setReload] = useState(0)
   const lock = useRef(false)
   const discardRef = useRef(null)
@@ -48,12 +57,33 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
     description: `${typeName(template.vehicleTypeId)} / ${assignmentName(template.assignmentId)} · Versi ${template.versionNumber}`,
   }))
   const selectedTemplate = (templateId) => activeTemplates.find((template) => template.id === templateId) || null
+  const selectedLocation = (locationId) => locations.find((location) => location.id === locationId) || null
+  const slotLocation = (slot) => slot.location_id
+    ? locationLabel(slot.location_name || 'Kantor', slot.location_type)
+    : 'Belum ditetapkan'
+  const locationOptions = useMemo(() => {
+    if (!form?.ulpId) return []
+    return locations
+      .filter((location) => location.contractId === contractUuid && location.up3Id === up3Uuid
+        && location.unitId === form.ulpId && location.ownStatus === 'Aktif'
+        && (location.type === 'UNIT_OFFICE' || location.type === 'KANTOR_JAGA'))
+      .map((location) => {
+        const name = currentLocationNameOf(location)
+        return {
+          value: location.id,
+          label: locationLabel(name, location.type),
+          description: location.type === 'KANTOR_JAGA' ? 'Kantor Jaga' : 'Kantor ULP',
+          type: location.type,
+          sortOrder: location.sortOrder ?? 0,
+        }
+      })
+      .sort((a, b) => (a.type === 'UNIT_OFFICE' ? 0 : 1) - (b.type === 'UNIT_OFFICE' ? 0 : 1)
+        || a.sortOrder - b.sortOrder || a.label.localeCompare(b.label))
+  }, [locations, form?.ulpId, contractUuid, up3Uuid])
   const totalVehicles = (form?.rows || []).reduce((total, row) => {
     const count = parseConditionCount(row.count)
     return total + (count != null && !Number.isNaN(count) ? count : 0)
   }, 0)
-  const optionsForRow = (row) => templateOptions.filter((option) => option.value === row.templateId
-    || !form.rows.some((other) => other.key !== row.key && other.templateId === option.value))
 
   useEffect(() => {
     if (!canManage) { setLoading(false); return undefined }
@@ -66,6 +96,27 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [contractUuid, up3Uuid, month, reload, canManage])
+
+  useEffect(() => {
+    if (!canManage) {
+      setLocationsLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    setLocationsLoading(true)
+    setLocationsError('')
+    fetchLocationsFromSupabase().then((rows) => {
+      if (!cancelled) setLocations(rows || [])
+    }).catch((loadError) => {
+      if (!cancelled) {
+        setLocations([])
+        setLocationsError(loadError.message || 'Daftar kantor gagal dimuat.')
+      }
+    }).finally(() => {
+      if (!cancelled) setLocationsLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [canManage])
 
   useEffect(() => {
     if (!canManage || !form?.ulpId || !form?.month) {
@@ -118,7 +169,15 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
     setAffectedLoading(Boolean(next.ulpId && next.month))
   }
   const changeFormContext = (patch) => {
-    setForm((prev) => prev ? { ...prev, ...patch } : prev)
+    const changesUlp = Object.prototype.hasOwnProperty.call(patch, 'ulpId')
+    setForm((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        ...patch,
+        ...(changesUlp ? { rows: prev.rows.map((row) => ({ ...row, locationId: '' })) } : {}),
+      }
+    })
     setAffectedReports([])
     setAffectedError('')
     setAffectedLoading(Boolean((patch.ulpId ?? form?.ulpId) && (patch.month ?? form?.month)))
@@ -173,15 +232,19 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
     }
     const invalidRow = form.rows.find((row) => {
       const count = parseConditionCount(row.count)
-      return !row.templateId || count == null || Number.isNaN(count) || count < 1 || count > 50
+      return !row.templateId || !row.locationId || count == null || Number.isNaN(count) || count < 1 || count > 50
     })
     if (invalidRow) {
-      setFormError('Setiap baris harus memiliki template dan jumlah kendaraan 1 sampai 50.')
+      setFormError('Setiap baris harus memiliki template, lokasi tujuan, dan jumlah kendaraan 1 sampai 50.')
       return
     }
-    const templateIds = form.rows.map((row) => row.templateId)
-    if (new Set(templateIds).size !== templateIds.length) {
-      setFormError('Setiap template hanya boleh dipilih sekali. Gabungkan jumlahnya dalam satu baris.')
+    const combinations = form.rows.map((row) => `${row.templateId}|${row.locationId}`)
+    if (new Set(combinations).size !== combinations.length) {
+      setFormError('Template yang sama boleh dipakai di lokasi berbeda, tetapi kombinasi template dan lokasi tidak boleh duplikat.')
+      return
+    }
+    if (locationsError) {
+      setFormError('Daftar lokasi belum berhasil dimuat. Muat ulang halaman sebelum menyimpan.')
       return
     }
     if (totalVehicles > 200) {
@@ -264,12 +327,13 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
       </div>
       {loading ? <p role="status">Memuat penetapan kendaraan...</p> : (
         <div className="uc-scroll">
-          <table className="uc-table">
-            <thead><tr><th>Kendaraan / ULP</th><th>Jenis dan Penugasan</th><th>Template Alat</th><th>Nopol</th><th>Berlaku Mulai</th><th /></tr></thead>
+          <table className="uc-table uc-table--fleet">
+            <thead><tr><th>Kendaraan / ULP</th><th>Lokasi Tujuan</th><th>Jenis dan Penugasan</th><th>Template Alat</th><th>Nopol</th><th>Berlaku Mulai</th><th /></tr></thead>
             <tbody>
               {fleet.filter((slot) => !ulpFilter || slot.ulp_id === ulpFilter).map((slot) => (
                 <tr key={slot.id}>
                   <td><strong>{slot.label}</strong><span className="uc-item-unit">{ulpName(slot.ulp_id)}</span></td>
+                  <td>{slot.location_id ? <strong>{slotLocation(slot)}</strong> : <span className="uc-status uc-status--draft">Belum ditetapkan</span>}</td>
                   <td>{slot.vehicle_type_name}<span className="uc-item-unit">{slot.assignment_name}</span></td>
                   <td>{slot.template_name}<span className="uc-item-unit">Versi {slot.template_version}</span></td>
                   <td>{slot.plate_display || <span className="uc-status uc-status--draft">Belum Diisi ULP</span>}</td>
@@ -277,7 +341,7 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
                   <td>{!slot.end_month && <button type="button" className="sla-btn" onClick={() => openEnding(slot)}>Akhiri</button>}</td>
                 </tr>
               ))}
-              {!fleet.some((slot) => !ulpFilter || slot.ulp_id === ulpFilter) && <tr><td colSpan={6}>Belum ada kendaraan yang ditetapkan untuk pilihan ini.</td></tr>}
+              {!fleet.some((slot) => !ulpFilter || slot.ulp_id === ulpFilter) && <tr><td colSpan={7}>Belum ada kendaraan yang ditetapkan untuk pilihan ini.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -290,8 +354,8 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
           onClose={() => closeForm()}
           eyebrow="PENETAPAN KENDARAAN"
           title="Tetapkan Kendaraan ke ULP"
-          subtitle="Satu ULP dapat memiliki beberapa kendaraan dengan template dan penugasan berbeda."
-          size="medium"
+          subtitle="Pilih template dan lokasi tujuan untuk setiap kendaraan. Lokasi mengikuti kantor ULP dan kantor jaga aktif."
+          size="wide"
           dismissDisabled={busy}
           footer={(
             <div className="uc-modal-footer">
@@ -301,7 +365,7 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
                 <button
                   type="button"
                   className="sla-btn sla-btn-primary"
-                  disabled={busy || affectedLoading || Boolean(affectedError) || !form.rows.length}
+                  disabled={busy || affectedLoading || Boolean(affectedError) || locationsLoading || Boolean(locationsError) || !form.rows.length}
                   onClick={save}
                 >
                   {busy ? 'Menyimpan...' : affectedReports.length ? 'Simpan & Revisi Laporan' : 'Simpan Penetapan'}
@@ -344,14 +408,20 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
               <div className="alkes-modal-section-head">
                 <div>
                   <h3>Daftar Kendaraan</h3>
-                  <p>Setiap baris mewakili satu template. Isi jumlah kendaraan yang dibutuhkan.</p>
+                  <p>Setiap baris menentukan template, kantor tujuan, dan jumlah kendaraan.</p>
                 </div>
                 <span className="sla-table-hint">{form.rows.length} baris · {totalVehicles} kendaraan</span>
               </div>
               {!activeTemplates.length && <p className="uc-alert">Belum ada template Aktif. Buat dan terbitkan melalui tab Template Kebutuhan terlebih dahulu.</p>}
+              {locationsLoading && <p className="uc-assignment-empty" role="status">Memuat daftar kantor ULP...</p>}
+              {locationsError && <p className="uc-alert uc-alert--error" role="alert">{locationsError}</p>}
+              {!locationsLoading && !locationsError && form.ulpId && !locationOptions.length && (
+                <p className="uc-alert">Belum ada kantor aktif untuk ULP ini. Lengkapi Master Lokasi terlebih dahulu.</p>
+              )}
               <div className="uc-assignment-rows">
                 {form.rows.map((row, index) => {
                   const template = selectedTemplate(row.templateId)
+                  const location = selectedLocation(row.locationId)
                   return (
                     <div key={row.key} className="uc-assignment-row">
                       <div className="uc-assignment-row-head">
@@ -362,7 +432,7 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
                         <div className="uc-field">
                           <span>Template Kendaraan *</span>
                           <SearchSelect
-                            options={optionsForRow(row)}
+                            options={templateOptions}
                             value={row.templateId}
                             onChange={(value) => updateRow(row.key, { templateId: value })}
                             placeholder="Pilih template"
@@ -372,16 +442,27 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
                             ariaLabel={`Template Kendaraan ${index + 1}`}
                           />
                         </div>
+                        <div className="uc-field">
+                          <span>Lokasi Tujuan *</span>
+                          <SearchSelect
+                            options={locationOptions}
+                            value={row.locationId}
+                            onChange={(value) => updateRow(row.key, { locationId: value })}
+                            placeholder={form.ulpId ? 'Pilih kantor tujuan' : 'Pilih ULP dahulu'}
+                            searchPlaceholder="Cari kantor ULP atau kantor jaga..."
+                            emptyText="Belum ada kantor aktif untuk ULP ini."
+                            disabled={busy || !form.ulpId || locationsLoading || !locationOptions.length}
+                            ariaLabel={`Lokasi Tujuan ${index + 1}`}
+                          />
+                        </div>
                         <label className="uc-field">Jumlah *
                           <input inputMode="numeric" value={row.count} disabled={busy} onChange={(event) => updateRow(row.key, { count: event.target.value })} placeholder="1 - 50" />
                         </label>
                       </div>
-                      {template && (
+                      {(template || location) && (
                         <div className="uc-assignment-row-summary">
-                          <span>{typeName(template.vehicleTypeId)}</span>
-                          <span>{assignmentName(template.assignmentId)}</span>
-                          <span>{template.vehicleVariant || 'Umum'}</span>
-                          <span>Versi {template.versionNumber}</span>
+                          {template && <><span>{typeName(template.vehicleTypeId)}</span><span>{assignmentName(template.assignmentId)}</span><span>{template.vehicleVariant || 'Umum'}</span><span>Versi {template.versionNumber}</span></>}
+                          {location && <span>{location.label}</span>}
                         </div>
                       )}
                     </div>
@@ -487,6 +568,7 @@ export default function PrescribedFleetAdmin({ contractUuid, up3Uuid, templates,
               <div className="uc-assignment-summary-grid">
                 <div><span>Kendaraan</span><strong>{ending.slot.label}</strong></div>
                 <div><span>ULP</span><strong>{ulpName(ending.slot.ulp_id)}</strong></div>
+                <div><span>Lokasi Tujuan</span><strong>{slotLocation(ending.slot)}</strong></div>
                 <div><span>Jenis Kendaraan</span><strong>{ending.slot.vehicle_type_name || '-'}</strong></div>
                 <div><span>Template</span><strong>{ending.slot.template_name || '-'}</strong></div>
                 <div><span>Berlaku Mulai</span><strong>{conditionMonthLabel(ending.slot.effective_month)}</strong></div>

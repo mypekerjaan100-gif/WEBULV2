@@ -535,6 +535,14 @@ function emptyTemplateForm() {
   }
 }
 
+function autoTemplateName(form, types, assignments) {
+  const typeName = types.find((item) => item.id === form?.vehicleTypeId)?.name || ''
+  const assignmentName = assignments.find((item) => item.id === form?.assignmentId)?.name || ''
+  const variant = String(form?.vehicleVariant || '').trim()
+  if (!typeName || !assignmentName) return ''
+  return [typeName, assignmentName, variant].filter(Boolean).join(' - ')
+}
+
 function templateSnapshot(form) {
   return JSON.stringify({
     id: form.id,
@@ -580,7 +588,6 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   const editPending = useRef(false)
   const qtyRefs = useRef(new Map())
   const discardRef = useRef(null)
-  const nameRef = useRef(null)
   const typeRef = useRef(null)
   const assignmentRef = useRef(null)
   const catalogTriggerRef = useRef(null)
@@ -667,6 +674,24 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   useEffect(() => {
     setPage(0)
   }, [search, statusFilter])
+
+  const updateTemplateContext = (patch) => {
+    setForm((prev) => {
+      if (!prev) return prev
+      const next = { ...prev, ...patch }
+      return { ...next, templateName: autoTemplateName(next, types, assignments) }
+    })
+    setFieldErrors((prev) => {
+      const next = { ...prev }
+      Object.keys(patch).forEach((key) => {
+        if (key === 'vehicleTypeId') delete next.vehicleTypeId
+        if (key === 'assignmentId') delete next.assignmentId
+        delete next.templateName
+      })
+      return next
+    })
+    setFormError('')
+  }
 
   const allRowCount = orderedRows.length
   const categoryCount = worksheetGroups.length
@@ -769,6 +794,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           note: item.note ?? '',
         })),
       }
+      next.templateName = autoTemplateName(next, types, assignments) || template.templateName
       setForm(next)
       setBaseline(templateSnapshot(next))
       setOpenNotes(new Set(items.map((item, index) => (item.note ? `r${index}` : null)).filter(Boolean)))
@@ -860,9 +886,9 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     setDiscardPrompt(false)
     const nextFieldErrors = {}
     const nextRowErrors = {}
-    if (!form.templateName.trim()) nextFieldErrors.templateName = 'Nama template wajib diisi.'
     if (!form.vehicleTypeId) nextFieldErrors.vehicleTypeId = 'Jenis kendaraan wajib dipilih.'
     if (!form.assignmentId) nextFieldErrors.assignmentId = 'Penugasan wajib dipilih.'
+    if (!form.templateName.trim()) nextFieldErrors.templateName = 'Nama template dibentuk otomatis setelah jenis dan penugasan dipilih.'
     for (const row of orderedRows) {
       if (!row.equipment) {
         nextRowErrors[row.key] = 'Alat tidak ditemukan.'
@@ -883,8 +909,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     }
     if (Object.keys(nextFieldErrors).length) {
       window.requestAnimationFrame(() => {
-        if (nextFieldErrors.templateName) nameRef.current?.focus()
-        else if (nextFieldErrors.vehicleTypeId) typeRef.current?.focus()
+        if (nextFieldErrors.vehicleTypeId) typeRef.current?.focus()
         else if (nextFieldErrors.assignmentId) assignmentRef.current?.focus()
       })
       return
@@ -974,6 +999,10 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     }
     setFormError('')
     const draft = templates.find((template) => template.id === form.id)
+    if (draft && draft.templateName !== form.templateName.trim()) {
+      setFormError('Simpan draft terlebih dahulu agar nama template otomatis diterapkan sebelum diterbitkan.')
+      return
+    }
     if (draft) handlePublish(draft)
   }
 
@@ -1088,14 +1117,9 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
               </div>
             </div>
           <div className="sla-sign-group-head">
-            <div className="sla-context-field alkes-field-wide">
-              <label htmlFor="template-name" className="sla-context-label">Nama Template *</label>
-              <input id="template-name" data-autofocus ref={nameRef} className="sla-input sla-input-text" value={form.templateName} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, templateName: event.target.value }))} placeholder="cth: Roda 2 - Koordinator" aria-invalid={Boolean(fieldErrors.templateName)} />
-              {fieldErrors.templateName && <p className="alkes-field-error">{fieldErrors.templateName}</p>}
-            </div>
             <div className="sla-context-field">
               <label htmlFor="template-type" className="sla-context-label">Jenis Kendaraan *</label>
-              <select id="template-type" ref={typeRef} className="sla-context-select" value={form.vehicleTypeId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, vehicleTypeId: event.target.value }))} aria-invalid={Boolean(fieldErrors.vehicleTypeId)}>
+              <select id="template-type" data-autofocus ref={typeRef} className="sla-context-select" value={form.vehicleTypeId} disabled={busy} onChange={(event) => updateTemplateContext({ vehicleTypeId: event.target.value })} aria-invalid={Boolean(fieldErrors.vehicleTypeId)}>
                 <option value="">Pilih jenis</option>
                 {types.filter((item) => item.isActive || item.id === form.vehicleTypeId).map((item) => (
                   <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
@@ -1105,7 +1129,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             </div>
             <div className="sla-context-field">
               <label htmlFor="template-assignment" className="sla-context-label">Penugasan *</label>
-              <select id="template-assignment" ref={assignmentRef} className="sla-context-select" value={form.assignmentId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, assignmentId: event.target.value }))} aria-invalid={Boolean(fieldErrors.assignmentId)}>
+              <select id="template-assignment" ref={assignmentRef} className="sla-context-select" value={form.assignmentId} disabled={busy} onChange={(event) => updateTemplateContext({ assignmentId: event.target.value })} aria-invalid={Boolean(fieldErrors.assignmentId)}>
                 <option value="">Pilih penugasan</option>
                 {assignments.filter((item) => item.isActive || item.id === form.assignmentId).map((item) => (
                   <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
@@ -1115,7 +1139,14 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             </div>
             <div className="sla-context-field">
               <label htmlFor="template-variant" className="sla-context-label">Varian/Model (opsional)</label>
-              <input id="template-variant" className="sla-input sla-input-text" value={form.vehicleVariant} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, vehicleVariant: event.target.value }))} placeholder="cth: Terios (kosongkan bila umum)" />
+              <input id="template-variant" className="sla-input sla-input-text" value={form.vehicleVariant} disabled={busy} onChange={(event) => updateTemplateContext({ vehicleVariant: event.target.value })} placeholder="cth: Terios (kosongkan bila umum)" />
+            </div>
+            <div className="sla-context-field alkes-field-wide">
+              <label htmlFor="template-name" className="sla-context-label">Nama Template (otomatis)</label>
+              <output id="template-name" className={`alkes-derived-name${form.templateName ? '' : ' is-placeholder'}`} aria-live="polite">
+                {form.templateName || 'Nama otomatis setelah jenis kendaraan dan penugasan dipilih'}
+              </output>
+              {fieldErrors.templateName && <p className="alkes-field-error">{fieldErrors.templateName}</p>}
             </div>
             <div className="sla-context-field">
               <label htmlFor="template-effective" className="sla-context-label">Tanggal Berlaku</label>

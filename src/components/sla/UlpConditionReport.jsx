@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import {
-  CONDITION_LABELS, conditionMonthLabel, conditionSnapshot, currentConditionMonth,
-  evaluateCondition, groupConditionItems, groupVehicleConditions, parseConditionCount, summarizeConditions,
-  summarizeFleet, summarizeVehicle,
+  CONDITION_LABELS, applyMonthlyConditionDefaults, conditionMonthLabel, conditionSnapshot, currentConditionMonth,
+  defaultVehicleIds, evaluateCondition, groupConditionItems, groupVehicleConditions, parseConditionCount,
+  summarizeConditions, summarizeFleet, summarizeVehicle,
 } from '../../data/ulpConditionDomain.js'
 import {
   getUlpConditionReport, listUlpConditionOverview, saveUlpVehicleCondition, setPrescribedVehiclePlate,
@@ -15,6 +15,16 @@ function Status({ value }) {
 
 function timestamp(value) {
   return value ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Pontianak' }).format(new Date(value)) : ''
+}
+
+function vehicleLocationLabel(vehicle) {
+  if (!vehicle?.location_name) return ''
+  return vehicle.location_type === 'KANTOR_JAGA' ? `KJ ${vehicle.location_name}` : vehicle.location_name
+}
+
+function historyStatus(entry) {
+  const historyItems = applyMonthlyConditionDefaults(entry?.snapshot?.items || [])
+  return summarizeFleet(entry?.snapshot?.vehicles || [], historyItems).status
 }
 
 function vehicleBadge(summary) {
@@ -33,6 +43,7 @@ export default function UlpConditionReport({
   const [month, setMonth] = useState(initialMonth?.slice(0, 7) || currentConditionMonth())
   const [bundle, setBundle] = useState(null)
   const [items, setItems] = useState([])
+  const [baselineItems, setBaselineItems] = useState([])
   const [plates, setPlates] = useState({})
   const [overview, setOverview] = useState([])
   const [loading, setLoading] = useState(true)
@@ -55,7 +66,7 @@ export default function UlpConditionReport({
   const isOverview = canPickUlp && !ulpId
   const future = month > currentConditionMonth()
   const editable = canManage && !future && !historical
-  const shownItems = historical?.snapshot.items || items
+  const shownItems = historical?.snapshot.items ? applyMonthlyConditionDefaults(historical.snapshot.items) : items
   const shownVehicles = historical?.snapshot.vehicles || bundle?.vehicles || []
   const grouped = groupVehicleConditions(shownVehicles, shownItems)
   const summary = summarizeFleet(shownVehicles, shownItems)
@@ -68,16 +79,20 @@ export default function UlpConditionReport({
   const selectedCondition = selectedVehicleItems.find((item) => item.kind === 'vehicle') || null
   const selectedSummary = selectedVehicle ? summarizeVehicle(selectedVehicle, shownItems) : null
   const savedVehicle = bundle?.vehicles.find((vehicle) => vehicle.id === selectedVehicleId) || null
-  const savedVehicleItems = (bundle?.items || []).filter((item) => item.vehicle_id === selectedVehicleId)
+  const baselineVehicleItems = baselineItems.filter((item) => item.vehicle_id === selectedVehicleId)
+  const defaults = defaultVehicleIds(bundle?.items || [])
+  const selectedIsDefault = Boolean(!historical && selectedVehicleId && defaults.has(selectedVehicleId))
   const vehicleItemsDirty = Boolean(editable && selectedVehicle
-    && conditionSnapshot(selectedVehicleItems) !== conditionSnapshot(savedVehicleItems))
+    && conditionSnapshot(selectedVehicleItems) !== conditionSnapshot(baselineVehicleItems))
   const plateDirty = Boolean(editable && selectedVehicle
     && (plates[selectedVehicle.id] || '').trim() !== (savedVehicle?.plate_display || ''))
   const dirty = vehicleItemsDirty || plateDirty
 
   const applyBundle = (data) => {
+    const displayItems = applyMonthlyConditionDefaults(data.items || [])
     setBundle(data)
-    setItems(data.items || [])
+    setItems(displayItems)
+    setBaselineItems(displayItems)
     setPlates(Object.fromEntries((data.vehicles || []).map((vehicle) => [vehicle.id, vehicle.plate_display || ''])))
   }
 
@@ -93,6 +108,7 @@ export default function UlpConditionReport({
     setMessage('')
     setBundle(null)
     setItems([])
+    setBaselineItems([])
     setPlates({})
     setHistorical(null)
     setSelectedVehicleId(null)
@@ -195,7 +211,7 @@ export default function UlpConditionReport({
   }
   const resetVehicleEdits = () => {
     if (!selectedVehicle) return
-    setItems(bundle?.items || [])
+    setItems(baselineItems)
     setPlates((prev) => ({ ...prev, [selectedVehicle.id]: savedVehicle?.plate_display || '' }))
     setModalError('')
     setModalMessage('')
@@ -280,9 +296,7 @@ export default function UlpConditionReport({
       setSelectedVehicleId(null)
       setDiscardPrompt(false)
       setFillPrompt(false)
-      setMessage(saved.report.status === 'draft'
-        ? 'Kondisi kendaraan tersimpan. Laporan ULP masih Belum Lengkap sampai semua kendaraan diisi.'
-        : 'Kondisi kendaraan tersimpan dan seluruh kendaraan telah diperiksa.')
+      setMessage('Kondisi kendaraan tersimpan.')
     } catch (saveError) {
       if (token === request.current) setModalError(saveError.message)
     } finally {
@@ -299,11 +313,11 @@ export default function UlpConditionReport({
     if (vehicleSummary.unfilled) reasons.push(`${vehicleSummary.unfilled} isian kosong`)
     if (vehicleSummary.invalid) reasons.push(`${vehicleSummary.invalid} isian belum valid`)
     if (vehicleSummary.missingPlate) reasons.push('Nopol belum diisi')
-    return { vehicle, summary: vehicleSummary, missing, reasons }
+    return { vehicle, summary: vehicleSummary, missing, reasons, isDefault: !historical && defaults.has(vehicle.id) }
   })
   const q = vehicleSearch.trim().toLowerCase()
   const filteredCards = cards.filter(({ vehicle, summary: vehicleSummary, missing }) => {
-    if (q && !`${vehicle.label} ${vehicle.plate_display || ''} ${vehicle.vehicle_type_name || ''} ${vehicle.assignment_name || ''}`.toLowerCase().includes(q)) return false
+    if (q && !`${vehicle.label} ${vehicle.plate_display || ''} ${vehicle.vehicle_type_name || ''} ${vehicle.assignment_name || ''} ${vehicleLocationLabel(vehicle)}`.toLowerCase().includes(q)) return false
     if (vehicleFilter === 'attention') return vehicleSummary.hasAttention
     if (vehicleFilter === 'incomplete') return missing > 0 || vehicleSummary.missingPlate
     if (vehicleFilter === 'compliant') return !vehicleSummary.hasAttention && missing === 0 && !vehicleSummary.missingPlate
@@ -325,9 +339,9 @@ export default function UlpConditionReport({
       <div className="uc-scroll"><table className="uc-table"><thead><tr><th>ULP</th><th>Kendaraan Ditetapkan</th><th>Nopol Belum Diisi</th><th>Pemeriksaan</th><th>Hasil</th><th /></tr></thead><tbody>{overview.map((row) => <tr key={row.ulp_id}><td><strong>{ulps.find((unit) => unit.uuid === row.ulp_id)?.displayName || 'ULP'}</strong></td><td>{row.vehicle_count} kendaraan</td><td>{row.missing_plates}</td><td>{row.filled_count} / {row.items_count} diisi</td><td><Status value={row.report_status} /></td><td><button type="button" className="sla-btn" onClick={() => changeUlp(row.ulp_id)}>Lihat Laporan</button></td></tr>)}{!overview.length && <tr><td colSpan={6}>Belum ada ULP pada scope ini.</td></tr>}</tbody></table></div>
       <p className="uc-footnote">Hasil hanya menunjukkan kesesuaian kendaraan dan alat terhadap template. Tidak mengubah nilai atau indikator SLA.</p>
     </div> : bundle && !bundle.vehicles.length ? <div className="uc-empty"><h3>Kendaraan belum ditetapkan</h3><p>Belum ada kendaraan untuk {unitName} pada {conditionMonthLabel(month)}. Admin UP3 perlu menetapkan kendaraan beserta penugasan dan template alatnya terlebih dahulu.</p></div> : bundle ? <>
-      <div className="uc-reference"><div><span>Unit Layanan</span><strong>{unitName}</strong></div><div><span>Periode</span><strong>{conditionMonthLabel(month)}</strong></div><div><span>{historical ? `Riwayat revisi ${historical.revision}` : 'Hasil Pemeriksaan'}</span><Status value={historical?.snapshot.status || (!bundle.report && !dirty ? 'unfilled' : summary.status)} /></div></div>
-      <div className="uc-summary" aria-live="polite"><div><strong>{summary.vehicleCount}</strong><span>Kendaraan Ditetapkan</span></div><div><strong>{summary.filled}<small>/{summary.total}</small></strong><span>Pemeriksaan Terisi</span></div><div className={summary.failed ? 'uc-summary--danger' : ''}><strong>{summary.failed}</strong><span>Item Perlu Perhatian</span></div><div><strong>{summary.missingPlates}</strong><span>Nopol Belum Dilengkapi</span></div></div>
-      <p className="uc-instruction">Buka satu kendaraan untuk mengisi nopol dan kondisi alat. Kondisi baik di kendaraan lain tidak menutupi kekurangan atau kerusakan kendaraan ini.</p>
+      <div className="uc-reference"><div><span>Unit Layanan</span><strong>{unitName}</strong></div><div><span>Periode</span><strong>{conditionMonthLabel(month)}</strong></div><div><span>{historical ? `Riwayat revisi ${historical.revision}` : 'Hasil Pemeriksaan'}</span><Status value={summary.status} /></div></div>
+      <div className="uc-summary" aria-live="polite"><div><strong>{summary.vehicleCount}</strong><span>Kendaraan Ditetapkan</span></div><div><strong>{summary.filled}<small>/{summary.total}</small></strong><span>Kondisi Terisi</span></div><div className={summary.failed ? 'uc-summary--danger' : ''}><strong>{summary.failed}</strong><span>Item Perlu Perhatian</span></div><div><strong>{summary.missingPlates}</strong><span>Nopol Belum Dilengkapi</span></div></div>
+      <p className="uc-instruction">Kondisi awal setiap bulan otomatis 100%. Buka kendaraan hanya jika ada nopol yang perlu dilengkapi atau kondisi yang perlu diubah.</p>
       {future && <p className="uc-alert">Periode mendatang hanya untuk melihat penetapan. Nopol dan kondisi belum dapat disimpan dari periode ini.</p>}
       {historical && <p className="uc-alert">Melihat riwayat {timestamp(historical.created_at)}. <button type="button" className="sla-btn" onClick={() => setHistorical(null)}>Kembali ke Laporan Terkini</button></p>}
       <div className="uc-vehicle-toolbar">
@@ -341,14 +355,14 @@ export default function UlpConditionReport({
         <span>{filteredCards.length} dari {cards.length} kendaraan</span>
       </div>
       <div className="uc-vehicle-list">
-        {filteredCards.map(({ vehicle, summary: vehicleSummary, missing, reasons }) => {
+        {filteredCards.map(({ vehicle, summary: vehicleSummary, missing, reasons, isDefault }) => {
           const badge = vehicleBadge(vehicleSummary)
           const percentage = vehicleSummary.total ? Math.round(vehicleSummary.filled / vehicleSummary.total * 100) : 0
           return <button type="button" key={vehicle.id} className={`uc-vehicle-card is-${badge.tone}`} onClick={() => openVehicle(vehicle.id)}>
             <span className="uc-vehicle-card-main">
               <span className="uc-vehicle-card-label">{vehicle.label}</span>
               <strong>{vehicle.plate_display || 'Nopol belum diisi'}</strong>
-              <span className="uc-vehicle-card-meta">{vehicle.vehicle_type_name} / {vehicle.assignment_name}</span>
+              <span className="uc-vehicle-card-meta">{vehicle.vehicle_type_name} / {vehicle.assignment_name}{vehicleLocationLabel(vehicle) ? ` · ${vehicleLocationLabel(vehicle)}` : ''}</span>
             </span>
             <span className="uc-vehicle-card-status">
               {vehicleSummary.hasAttention && <span className="uc-status uc-status--non_compliant">Perlu Perhatian</span>}
@@ -358,10 +372,11 @@ export default function UlpConditionReport({
               {!vehicleSummary.hasAttention && missing === 0 && !vehicleSummary.missingPlate && (
                 <span className="uc-status uc-status--compliant">Memenuhi</span>
               )}
+              {isDefault && <span className="uc-status uc-status--default">Default 100%</span>}
               {reasons.length > 0 && <span className="uc-vehicle-card-reasons">{reasons.join(' · ')}</span>}
             </span>
             <span className="uc-vehicle-card-progress">
-              <span><strong>{vehicleSummary.filled}/{vehicleSummary.total}</strong> pemeriksaan</span>
+              <span><strong>{vehicleSummary.filled}/{vehicleSummary.total}</strong> kondisi</span>
               <span className="uc-progress-track"><span className="uc-progress-bar" style={{ width: `${percentage}%` }} /></span>
             </span>
             <span className="uc-vehicle-card-action">{editable ? 'Isi Kondisi' : 'Lihat Detail'} <span aria-hidden="true">›</span></span>
@@ -369,7 +384,7 @@ export default function UlpConditionReport({
         })}
         {!filteredCards.length && <div className="uc-empty"><h3>{cards.length ? 'Tidak ada kendaraan yang cocok' : 'Belum ada kendaraan'}</h3><p>{cards.length ? 'Ubah pencarian atau filter kondisi.' : 'Admin UP3 belum menetapkan kendaraan untuk ULP dan periode ini.'}</p></div>}
       </div>
-      <details className="uc-history"><summary>Riwayat laporan{bundle.history.length ? ` (${bundle.history.length} revisi terbaru)` : ''}</summary>{bundle.history.length ? <div className="uc-history-list">{bundle.history.map((entry) => <div key={entry.revision}><div><strong>Revisi {entry.revision}</strong><span>{timestamp(entry.created_at)} / {entry.actor_role === 'SUPER_ADMIN' ? 'Super Admin' : entry.actor_role === 'ADMIN_UP3' ? 'Admin UP3' : 'Admin ULP'}</span></div><Status value={entry.snapshot.status} /><button type="button" className="sla-btn" disabled={saving} onClick={() => { if (canChangeContext()) { setHistorical(entry); setSelectedVehicleId(null) } }}>Lihat</button></div>)}</div> : <p>Riwayat tersedia setelah laporan disimpan.</p>}</details>
+      <details className="uc-history"><summary>Riwayat laporan{bundle.history.length ? ` (${bundle.history.length} revisi terbaru)` : ''}</summary>{bundle.history.length ? <div className="uc-history-list">{bundle.history.map((entry) => <div key={entry.revision}><div><strong>Revisi {entry.revision}</strong><span>{timestamp(entry.created_at)} / {entry.actor_role === 'SUPER_ADMIN' ? 'Super Admin' : entry.actor_role === 'ADMIN_UP3' ? 'Admin UP3' : 'Admin ULP'}</span></div><Status value={historyStatus(entry)} /><button type="button" className="sla-btn" disabled={saving} onClick={() => { if (canChangeContext()) { setHistorical(entry); setSelectedVehicleId(null) } }}>Lihat</button></div>)}</div> : <p>Riwayat tersedia setelah laporan disimpan.</p>}</details>
       <p className="uc-footnote">Pemenuhan baik dihitung per alat. Kerusakan tetap membuat status Tidak Memenuhi. Tidak ada sinkronisasi indikator atau denda SLA.</p>
     </> : null}
 
@@ -379,13 +394,13 @@ export default function UlpConditionReport({
         onClose={() => closeVehicle()}
         eyebrow="PEMERIKSAAN KENDARAAN"
         title={selectedVehicle.plate_display || selectedVehicle.label}
-        subtitle={`${selectedVehicle.label} · ${selectedVehicle.vehicle_type_name} / ${selectedVehicle.assignment_name}`}
+        subtitle={`${selectedVehicle.label} · ${selectedVehicle.vehicle_type_name} / ${selectedVehicle.assignment_name}${vehicleLocationLabel(selectedVehicle) ? ` · ${vehicleLocationLabel(selectedVehicle)}` : ''}`}
         size="wide"
         dismissDisabled={saving}
         meta={<Status value={selectedSummary.hasAttention ? 'non_compliant' : selectedSummary.isComplete ? 'compliant' : 'draft'} />}
         footer={(
           <div className="uc-modal-footer">
-            <span>{saving ? 'Menyimpan...' : !editable ? (historical ? 'Mode riwayat baca saja' : 'Hanya baca') : !selectedVehicle.plate_display ? 'Lengkapi nopol kendaraan terlebih dahulu' : dirty ? 'Ada perubahan belum disimpan' : 'Tidak ada perubahan'}</span>
+            <span>{saving ? 'Menyimpan...' : !editable ? (historical ? 'Mode riwayat baca saja' : 'Hanya baca') : !selectedVehicle.plate_display ? 'Lengkapi nopol kendaraan terlebih dahulu' : dirty ? 'Ada perubahan belum disimpan' : selectedIsDefault ? 'Default bulan ini 100%' : 'Tidak ada perubahan'}</span>
             <div className="alkes-modal-actions">
               <button type="button" className="sla-btn" disabled={saving} onClick={() => closeVehicle()}>{editable ? 'Batal' : 'Tutup'}</button>
               {editable && <button type="button" className="sla-btn sla-btn-primary" disabled={saving || !dirty || !selectedVehicle.plate_display} onClick={saveVehicle}>{saving ? 'Menyimpan...' : 'Simpan Kondisi'}</button>}
@@ -396,6 +411,9 @@ export default function UlpConditionReport({
         <div className="alkes-modal-form">
           {modalError && <p className="alkes-modal-alert" role="alert">{modalError}</p>}
           {modalMessage && <p className="uc-alert" role="status">{modalMessage}</p>}
+          {selectedIsDefault && !dirty && (
+            <p className="uc-alert" role="status">Kondisi awal bulan ini otomatis 100%. Simpan hanya jika ada kondisi yang perlu diubah.</p>
+          )}
           <section className="alkes-modal-section">
             <div className="alkes-modal-section-head">
               <div>
@@ -406,6 +424,7 @@ export default function UlpConditionReport({
             <div className="uc-assignment-summary-grid">
               <div><span>Jenis Kendaraan</span><strong>{selectedVehicle.vehicle_type_name || '-'}</strong></div>
               <div><span>Penugasan</span><strong>{selectedVehicle.assignment_name || '-'}</strong></div>
+              <div><span>Lokasi Tujuan</span><strong>{vehicleLocationLabel(selectedVehicle) || 'Belum ditetapkan'}</strong></div>
               <div><span>Template</span><strong>{selectedVehicle.template_name || '-'}</strong></div>
               <div><span>Versi</span><strong>Versi {selectedVehicle.template_version}</strong></div>
             </div>
@@ -461,7 +480,7 @@ export default function UlpConditionReport({
                 <p>Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Mengubah salah satu akan melengkapi kolom lainnya.</p>
               </div>
               <div className="uc-tool-section-actions">
-                <span className="sla-table-hint">{selectedToolSummary.filled}/{selectedToolSummary.total} alat diperiksa · {selectedToolSummary.failed} perlu perhatian</span>
+                <span className="sla-table-hint">{selectedToolSummary.filled}/{selectedToolSummary.total} alat terisi · {selectedToolSummary.failed} perlu perhatian</span>
                 {editable && <button type="button" className="sla-btn" disabled={saving} onClick={() => setFillPrompt(true)}>Isi Semua 100%</button>}
               </div>
             </div>
