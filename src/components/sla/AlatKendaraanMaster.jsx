@@ -1,10 +1,9 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import PrescribedFleetAdmin from './PrescribedFleetAdmin.jsx'
 import EquipmentImportPanel from './EquipmentImportPanel.jsx'
 import AlkesModal from './AlkesModal.jsx'
 import CatalogPicker from './CatalogPicker.jsx'
 import TemplateDetailModal from './TemplateDetailModal.jsx'
-import KendaraanUlp from './KendaraanUlp.jsx'
 import {
   archiveOpsTemplate,
   duplicateOpsTemplate,
@@ -22,14 +21,21 @@ import {
 const TABS = [
   { id: 'template', label: 'Template Kebutuhan' },
   { id: 'penetapan', label: 'Penetapan Kendaraan' },
+  { id: 'katalog', label: 'Katalog & Data Pendukung' },
 ]
 const CATALOG_TABS = [
   { id: 'peralatan', label: 'Daftar Peralatan' },
   { id: 'kategori', label: 'Kategori Peralatan' },
   { id: 'jenis', label: 'Jenis Kendaraan' },
   { id: 'penugasan', label: 'Penugasan Kendaraan' },
-  { id: 'registrasi-kendaraan', label: 'Registrasi Kendaraan Lama' },
 ]
+const CATALOG_TAB_IDS = new Set(CATALOG_TABS.map((item) => item.id))
+const CATALOG_NOTES = {
+  peralatan: 'Kelola nama, kategori, satuan, dan umur peralatan yang dipakai di dalam template.',
+  kategori: 'Atur kelompok peralatan agar penyusunan template lebih cepat dan konsisten.',
+  jenis: 'Jenis kendaraan menjadi bagian pertama nama template otomatis.',
+  penugasan: 'Penugasan kendaraan menjadi bagian kedua nama template otomatis.',
+}
 
 const KIND_OF_TAB = { jenis: 'vehicle_type', penugasan: 'assignment', kategori: 'category' }
 const KIND_TITLE = { vehicle_type: 'Jenis Kendaraan', assignment: 'Penugasan Kendaraan', category: 'Kategori Peralatan' }
@@ -1367,7 +1373,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   )
 }
 
-export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, canManageVehicles = false, units = [], onEditorStateChange }) {
+export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, units = [], onEditorStateChange }) {
   const [tab, setTab] = useState('template')
   const [tabDirty, setTabDirty] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -1384,7 +1390,7 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, 
   const [templateItems, setTemplateItems] = useState({})
   const mutationPending = useRef(false)
   const loadRequest = useRef(0)
-  const handleSupportingState = useCallback((state) => { setTabDirty(state.dirty); setSupportingBusy(state.busy) }, [])
+  const lastCatalogTab = useRef('peralatan')
 
   useEffect(() => {
     onEditorStateChange?.({ dirty: tabDirty, busy: busy || supportingBusy })
@@ -1517,11 +1523,19 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, 
       return
     }
     if (tabDirty && !window.confirm('Perubahan pada tab ini belum disimpan. Pindah tab?')) return
+    if (CATALOG_TAB_IDS.has(nextTab)) lastCatalogTab.current = nextTab
     setTab(nextTab)
     setTabDirty(false)
     setSearch('')
     setNotice('')
   }
+
+  const switchPrimaryTab = (nextTab) => {
+    switchTab(nextTab === 'katalog' ? lastCatalogTab.current : nextTab)
+  }
+
+  const catalogActive = CATALOG_TAB_IDS.has(tab)
+  const activeCatalogTab = catalogActive ? CATALOG_TABS.find((item) => item.id === tab) : null
 
   if (!scopeReady) {
     return (
@@ -1548,22 +1562,48 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, 
         <p className="sla-blocked-note">{loadError} <button type="button" className="sla-btn" onClick={() => reload()}>Coba lagi</button></p>
       ) : (
         <>
-          <div className="uc-admin-navigation"><div className="sla-detail-tabs">
-            {TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                disabled={busy || supportingBusy}
-                className={`sla-detail-tab ${tab === item.id ? 'sla-detail-tab-active' : ''}`}
-                onClick={() => switchTab(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div><details className="uc-catalog-menu"><summary>Katalog & Data Pendukung</summary><div>{CATALOG_TABS.filter((item) => item.id !== 'registrasi-kendaraan' || canManage).map((item) => <button key={item.id} type="button" className={`sla-btn ${tab === item.id ? 'sla-btn-primary' : ''}`} disabled={busy || supportingBusy} onClick={() => switchTab(item.id)}>{item.label}</button>)}</div></details></div>
+          <nav className="alkes-primary-nav" aria-label="Bagian master data">
+            <div className="alkes-primary-tabs">
+              {TABS.map((item) => {
+                const active = item.id === 'katalog' ? catalogActive : tab === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    disabled={busy || supportingBusy}
+                    className={`alkes-primary-tab${active ? ' is-active' : ''}`}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => switchPrimaryTab(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+          </nav>
+          {catalogActive && (
+            <nav className="alkes-catalog-nav" aria-label="Katalog dan data pendukung">
+              <div className="alkes-catalog-tabs">
+                {CATALOG_TABS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    disabled={busy || supportingBusy}
+                    className={`alkes-catalog-tab${tab === item.id ? ' is-active' : ''}`}
+                    aria-current={tab === item.id ? 'page' : undefined}
+                    onClick={() => switchTab(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <p className="alkes-catalog-note">
+                <strong>{activeCatalogTab?.label}</strong> {CATALOG_NOTES[tab]}
+              </p>
+            </nav>
+          )}
           {notice && <p className="sla-export-note">{notice}</p>}
           {tab === 'penetapan' && <PrescribedFleetAdmin contractUuid={contractUuid} up3Uuid={up3Uuid} templates={templates} types={types} assignments={assignments} units={units} canManage={canManage} onDirtyChange={setTabDirty} onBusyChange={setSupportingBusy} />}
-          {tab === 'registrasi-kendaraan' && canManage && <KendaraanUlp contractUuid={contractUuid} up3Uuid={up3Uuid} canManage={canManageVehicles} canPickUlp units={units} onEditorStateChange={handleSupportingState} />}
           {['jenis', 'penugasan', 'kategori'].includes(tab) && (
             <MasterSection
               key={tab}

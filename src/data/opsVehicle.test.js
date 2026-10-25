@@ -155,7 +155,9 @@ assert(page.includes("disabled={VEHICLE_TAB_DISABLED && module.id === 'kendaraan
 assert(page.includes("VEHICLE_TAB_DISABLED && routeRequest.module === 'kendaraan-ulp'"), 'Rute langsung kendaraan harus diblokir')
 assert(page.includes("moduleId === 'kendaraan-ulp' && VEHICLE_TAB_DISABLED"), 'Modul kendaraan tidak boleh dirender saat dinonaktifkan')
 assert(page.includes('units={orgMap.units}'), 'Daftar unit harus memakai scope organisasi')
-assert(masterComponent.includes('canManage={canManageVehicles}'), 'Data pendukung kendaraan harus tetap menjaga hak pengelolaan')
+assert(!masterComponent.includes('KendaraanUlp'), 'Registrasi kendaraan lama harus dihapus dari master')
+assert(!masterComponent.includes('registrasi-kendaraan'), 'Submenu registrasi kendaraan lama harus dihapus')
+assert(!masterComponent.includes('Registrasi Kendaraan Lama'), 'Label registrasi kendaraan lama harus dihapus')
 assert(!masterComponent.includes("id: 'kendaraan'"), 'Subtab kendaraan lama harus dihapus dari master')
 
 console.log(`Ops vehicle tests passed: ${passed}`)

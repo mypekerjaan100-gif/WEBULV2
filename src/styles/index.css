@@ -10848,11 +10848,120 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .uc-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .uc-form-grid--single { grid-template-columns: minmax(0, 1fr); }
 .uc-field input, .uc-field select { width: 100%; }
-.uc-admin-navigation { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 20px; }
-.uc-admin-navigation .sla-detail-tabs { margin: 0; }
-.uc-catalog-menu { max-width: 100%; }
-.uc-catalog-menu > summary { padding: 10px 0; color: var(--color-text-muted); cursor: pointer; font-size: 12px; font-weight: 600; }
-.uc-catalog-menu > div { display: flex; flex-wrap: wrap; gap: 7px; max-width: 620px; padding: 10px 0; }
+.alkes-primary-nav {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.alkes-primary-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: max-content;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.alkes-primary-tab {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.alkes-primary-tab:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.alkes-primary-tab.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.alkes-primary-tab:focus-visible,
+.alkes-catalog-tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.alkes-primary-tab:disabled,
+.alkes-catalog-tab:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.alkes-catalog-nav {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.alkes-catalog-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.alkes-catalog-tab {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.alkes-catalog-tab:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.alkes-catalog-tab.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.alkes-catalog-note {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.alkes-catalog-note strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
 .uc-fleet-report { display: grid; gap: 22px; }
 .uc-vehicle { min-width: 0; padding: 18px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); }
 .uc-vehicle-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -11330,7 +11439,11 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   .uc-vehicle-heading h3 { font-size: 18px; }
   .uc-plate-entry { grid-template-columns: minmax(0, 1fr); }
   .uc-condition-options label { min-height: 26px; padding: 8px 16px; }
-  .uc-admin-navigation { flex-direction: column; align-items: stretch; }
+  .alkes-primary-nav { padding-bottom: 12px; }
+  .alkes-primary-tab { min-height: 38px; padding: 0 13px; }
+  .alkes-catalog-nav { padding: 12px; }
+  .alkes-catalog-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .alkes-catalog-tab { width: 100%; min-height: 40px; padding: 7px 10px; white-space: normal; }
   .uc-form-grid { grid-template-columns: minmax(0, 1fr); }
   .uc-catalog { flex-direction: column; }
   .uc-catalog input, .uc-catalog select { flex: 0 0 auto; width: 100%; }
