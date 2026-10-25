@@ -67,6 +67,12 @@ export default function TemplateDetailModal({
   const typeName = typeById.get(template.vehicleTypeId)?.name || '—'
   const assignmentName = assignmentById.get(template.assignmentId)?.name || '—'
   const hasLegacy = safeItems.some((item) => item.legacyMetadata)
+  const editable = canManage && template.status !== 'Diarsipkan'
+  const footerText = template.status === 'Draft'
+    ? (canManage ? 'Draft masih dapat diubah.' : 'Draft ini belum diterbitkan.')
+    : template.status === 'Aktif'
+      ? (canManage ? 'Perubahan akan memperbarui template ini; laporan yang sudah tersimpan tetap utuh.' : 'Template aktif ini bersifat baca saja.')
+      : 'Template arsip bersifat baca saja.'
 
   return (
     <AlkesModal
@@ -86,11 +92,13 @@ export default function TemplateDetailModal({
       )}
       footer={(
         <div className="alkes-detail-footer">
-          <span>{template.status === 'Draft' ? (canManage ? 'Draft masih dapat diubah.' : 'Draft ini belum diterbitkan.') : 'Template terbit bersifat baca saja.'}</span>
+          <span>{footerText}</span>
           <div className="alkes-modal-actions">
             <button type="button" className="sla-btn" disabled={busy} onClick={onClose}>Tutup</button>
-            {canManage && template.status === 'Draft' && (
-              <button type="button" className="sla-btn sla-btn-primary" disabled={busy || loading} onClick={onEdit}>Edit Draft</button>
+            {editable && (
+              <button type="button" className="sla-btn sla-btn-primary" disabled={busy || loading} onClick={onEdit}>
+                {template.status === 'Draft' ? 'Edit Draft' : 'Edit Template'}
+              </button>
             )}
           </div>
         </div>

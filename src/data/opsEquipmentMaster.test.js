@@ -49,12 +49,22 @@ const fixUrl = new URL(
 const fixSql = readFileSync(fileURLToPath(fixUrl), 'utf8')
 assert(fixSql.includes('v_row jsonb'), 'Perbaikan return draft hilang')
 
+const activeEditSql = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20261025031131_ops_active_template_edit.sql',
+  import.meta.url,
+)), 'utf8')
+assert(activeEditSql.includes('ops_update_active_template'), 'RPC edit template aktif hilang')
+assert(activeEditSql.includes("set_config('ops.allow_active_template_edit', 'on', true)"), 'Kunci edit template aktif hilang')
+assert(activeEditSql.includes("errcode = '40001'"), 'Perlindungan revisi template aktif hilang')
+assert(!activeEditSql.includes('ops_vehicle_monthly_reports'), 'Edit template tidak boleh menulis laporan tersimpan')
+assert(!activeEditSql.includes('ops_prescribed_vehicles'), 'Edit template tidak boleh mengubah penetapan kendaraan')
+
 const repoUrl = new URL('./opsEquipmentRepository.js', import.meta.url)
 const repo = readFileSync(fileURLToPath(repoUrl), 'utf8')
 for (const fn of [
   'listOpsMasters', 'saveOpsMaster', 'listOpsEquipment', 'saveOpsEquipment',
   'listOpsTemplates', 'listOpsTemplateItems', 'saveOpsTemplateDraft',
-  'publishOpsTemplate', 'archiveOpsTemplate', 'duplicateOpsTemplate',
+  'updateOpsActiveTemplate', 'publishOpsTemplate', 'archiveOpsTemplate', 'duplicateOpsTemplate',
 ]) {
   assert(repo.includes(fn), `Repo ${fn} hilang`)
 }
@@ -75,6 +85,9 @@ assert(component.includes('read-only'), 'Penanda read-only ULP hilang')
 assert(component.includes('untuk scope organisasi yang dipilih'), 'Keterangan scope dinamis hilang')
 assert(!component.includes('Sei Duri, Bengkayang'), 'Daftar ULP tidak boleh hardcode')
 assert(component.includes('Simpan Draft'), 'Aksi draft hilang')
+assert(component.includes('Simpan Perubahan'), 'Aksi simpan template aktif hilang')
+assert(component.includes("templateMeta?.status === 'Aktif'"), 'Mode edit template aktif hilang')
+assert(component.includes('Edit Template Aktif'), 'Judul edit template aktif hilang')
 assert(component.includes('Terbitkan'), 'Aksi publikasi hilang')
 assert(component.includes('Duplikasi'), 'Aksi duplikasi hilang')
 assert(component.includes('Arsipkan'), 'Aksi arsip hilang')

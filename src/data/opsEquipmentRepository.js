@@ -41,6 +41,7 @@ export function mapTemplate(row) {
     assignmentId: row.assignment_id,
     vehicleVariant: row.vehicle_variant ?? '',
     versionNumber: row.version_number ?? 1,
+    revision: Number(row.revision ?? 1),
     effectiveFrom: row.effective_from ?? '',
     status: row.status ?? 'Draft',
     description: row.description ?? '',
@@ -189,6 +190,27 @@ export async function saveOpsTemplateDraft({ id = null, contractId, up3Id, templ
     })),
   })
   if (error) throw new Error(error.message || 'Template gagal disimpan.')
+  return mapTemplate(data)
+}
+
+export async function updateOpsActiveTemplate({ id, contractId, up3Id, expectedRevision, description = '', items = [] }) {
+  const { data, error } = await supabase.rpc('ops_update_active_template', {
+    p_id: id,
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_expected_revision: expectedRevision,
+    p_description: description,
+    p_items: items.map((item) => ({
+      equipment_id: item.equipmentId,
+      required_qty: item.requiredQty,
+      note: item.note ?? '',
+    })),
+  })
+  if (error) {
+    const failure = new Error(error.message || 'Template gagal diperbarui.')
+    failure.code = error.code
+    throw failure
+  }
   return mapTemplate(data)
 }
 

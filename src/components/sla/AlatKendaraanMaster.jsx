@@ -16,6 +16,7 @@ import {
   saveOpsEquipment,
   saveOpsMaster,
   saveOpsTemplateDraft,
+  updateOpsActiveTemplate,
 } from '../../data/opsEquipmentRepository.js'
 
 const TABS = [
@@ -567,7 +568,7 @@ function templateSnapshot(form) {
   })
 }
 
-function TemplateSection({ templates, templateItems, types, assignments, equipment, categories, search, onSearch, canManage, busy, onSaveDraft, onPublish, onArchive, onDuplicate, onExpand, onDirtyChange }) {
+function TemplateSection({ templates, templateItems, types, assignments, equipment, categories, search, onSearch, canManage, busy, onSaveDraft, onSaveActive, onPublish, onArchive, onDuplicate, onExpand, onDirtyChange }) {
   const [form, setForm] = useState(null)
   const [baseline, setBaseline] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
@@ -672,6 +673,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
   }, [baseline])
 
   const dirty = Boolean(form && baseline && templateSnapshot(form) !== baseline)
+  const activeEdit = templateMeta?.status === 'Aktif'
 
   useEffect(() => {
     onDirtyChange?.(dirty || editLoading)
@@ -706,7 +708,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
     : dirty
       ? 'Ada perubahan belum disimpan'
       : saveStatus === 'saved'
-        ? 'Tersimpan'
+        ? (activeEdit ? 'Perubahan tersimpan' : 'Tersimpan')
         : 'Belum ada perubahan'
 
   const isRowChanged = (row) => {
@@ -800,7 +802,9 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           note: item.note ?? '',
         })),
       }
-      next.templateName = autoTemplateName(next, types, assignments) || template.templateName
+      if (template.status !== 'Aktif') {
+        next.templateName = autoTemplateName(next, types, assignments) || template.templateName
+      }
       setForm(next)
       setBaseline(templateSnapshot(next))
       setOpenNotes(new Set(items.map((item, index) => (item.note ? `r${index}` : null)).filter(Boolean)))
@@ -808,6 +812,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
         templateCode: template.templateCode,
         versionNumber: template.versionNumber,
         status: template.status,
+        revision: template.revision,
       })
       setSaveStatus('idle')
     } catch (loadError) {
@@ -903,6 +908,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
       const raw = String(row.requiredQty ?? '').trim()
       if (raw === '') nextRowErrors[row.key] = 'Jumlah wajib diisi.'
       else if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) > 2147483647) nextRowErrors[row.key] = 'Gunakan bilangan bulat 0 sampai 2147483647.'
+      else if (activeEdit && Number(raw) <= 0) nextRowErrors[row.key] = 'Jumlah Kebutuhan harus lebih dari 0.'
     }
     setFieldErrors(nextFieldErrors)
     setRowErrors(nextRowErrors)
@@ -928,26 +934,35 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
 
     setSaveStatus('saving')
     try {
-      const saved = await onSaveDraft({
-        id: form.id,
-        templateName: form.templateName.trim(),
-        vehicleTypeId: form.vehicleTypeId,
-        assignmentId: form.assignmentId,
-        vehicleVariant: form.vehicleVariant.trim(),
-        effectiveFrom: form.effectiveFrom || null,
-        description: form.description.trim(),
-        items: orderedRows.map((row) => ({
-          equipmentId: row.equipmentId,
-          requiredQty: Number(row.requiredQty),
-          note: row.note.trim(),
-        })),
-      })
+      const description = form.description.trim()
+      const items = orderedRows.map((row) => ({
+        equipmentId: row.equipmentId,
+        requiredQty: Number(row.requiredQty),
+        note: row.note.trim(),
+      }))
+      const saved = activeEdit
+        ? await onSaveActive({
+            id: form.id,
+            expectedRevision: templateMeta.revision,
+            description,
+            items,
+          })
+        : await onSaveDraft({
+            id: form.id,
+            templateName: form.templateName.trim(),
+            vehicleTypeId: form.vehicleTypeId,
+            assignmentId: form.assignmentId,
+            vehicleVariant: form.vehicleVariant.trim(),
+            effectiveFrom: form.effectiveFrom || null,
+            description,
+            items,
+          })
       const nextForm = {
         ...form,
         id: saved.id,
         templateName: form.templateName.trim(),
         vehicleVariant: form.vehicleVariant.trim(),
-        description: form.description.trim(),
+        description,
         rows: orderedRows.map((row) => ({
           key: row.key,
           equipmentId: row.equipmentId,
@@ -961,13 +976,17 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
         templateCode: saved.templateCode,
         versionNumber: saved.versionNumber,
         status: saved.status,
+        revision: saved.revision,
       })
       setSaveStatus('saved')
       setFieldErrors({})
       setRowErrors({})
       setItemsError('')
     } catch (saveError) {
-      setFormError(saveError.message || 'Template gagal disimpan.')
+      const message = saveError.code === '40001'
+        ? 'Template telah diubah pengguna lain. Tutup form lalu buka kembali untuk memuat data terbaru.'
+        : saveError.message || (activeEdit ? 'Template gagal diperbarui.' : 'Template gagal disimpan.')
+      setFormError(message)
       setSaveStatus('dirty')
     }
   }
@@ -1093,16 +1112,18 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           )}
         </div>
       </div>
-      <p className="sla-flat-note">Buat satu daftar alat untuk setiap jenis kendaraan dan penugasan. Template yang sudah diterbitkan dipakai kembali saat menetapkan kendaraan ke ULP.</p>
-      {editLoading && <p className="sla-table-hint" role="status">Memuat draft template...</p>}
+      <p className="sla-flat-note">Buat satu daftar alat untuk setiap jenis kendaraan dan penugasan. Template Aktif dapat diperbarui tanpa mengubah laporan yang sudah tersimpan.</p>
+      {editLoading && <p className="sla-table-hint" role="status">Memuat isi template...</p>}
       {actionError && <p className="sla-blocked-note">{actionError}</p>}
       {form && canManage && (
         <AlkesModal
           open
           onClose={() => closeForm()}
-          eyebrow={form.id ? 'EDIT DRAFT TEMPLATE' : 'TEMPLATE KEBUTUHAN BARU'}
-          title={form.id ? 'Edit Draft Template' : 'Buat Template Kebutuhan'}
-          subtitle="Tentukan konteks kendaraan, lalu isi jumlah kebutuhan alat langsung pada tabel."
+          eyebrow={form.id ? (activeEdit ? 'EDIT TEMPLATE AKTIF' : 'EDIT DRAFT TEMPLATE') : 'TEMPLATE KEBUTUHAN BARU'}
+          title={form.id ? (activeEdit ? 'Edit Template Aktif' : 'Edit Draft Template') : 'Buat Template Kebutuhan'}
+          subtitle={activeEdit
+            ? 'Perbarui kebutuhan alat. Laporan yang sudah tersimpan tetap memakai data saat laporan dibuat.'
+            : 'Tentukan konteks kendaraan, lalu isi jumlah kebutuhan alat langsung pada tabel.'}
           meta={templateMeta && (
             <>
               <span>{templateMeta.templateCode}</span>
@@ -1119,13 +1140,13 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             <div className="alkes-modal-section-head">
               <div>
                 <h3>Informasi Template</h3>
-                <p>Standar ini berlaku untuk satu jenis kendaraan dan penugasan.</p>
+                <p>{activeEdit ? 'Isi kebutuhan dapat diperbarui; identitas kendaraan tetap.' : 'Standar ini berlaku untuk satu jenis kendaraan dan penugasan.'}</p>
               </div>
             </div>
           <div className="sla-sign-group-head">
             <div className="sla-context-field">
               <label htmlFor="template-type" className="sla-context-label">Jenis Kendaraan *</label>
-              <select id="template-type" data-autofocus ref={typeRef} className="sla-context-select" value={form.vehicleTypeId} disabled={busy} onChange={(event) => updateTemplateContext({ vehicleTypeId: event.target.value })} aria-invalid={Boolean(fieldErrors.vehicleTypeId)}>
+              <select id="template-type" data-autofocus={activeEdit ? undefined : ''} ref={typeRef} className="sla-context-select" value={form.vehicleTypeId} disabled={busy || activeEdit} onChange={(event) => updateTemplateContext({ vehicleTypeId: event.target.value })} aria-invalid={Boolean(fieldErrors.vehicleTypeId)}>
                 <option value="">Pilih jenis</option>
                 {types.filter((item) => item.isActive || item.id === form.vehicleTypeId).map((item) => (
                   <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
@@ -1135,7 +1156,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             </div>
             <div className="sla-context-field">
               <label htmlFor="template-assignment" className="sla-context-label">Penugasan *</label>
-              <select id="template-assignment" ref={assignmentRef} className="sla-context-select" value={form.assignmentId} disabled={busy} onChange={(event) => updateTemplateContext({ assignmentId: event.target.value })} aria-invalid={Boolean(fieldErrors.assignmentId)}>
+              <select id="template-assignment" ref={assignmentRef} className="sla-context-select" value={form.assignmentId} disabled={busy || activeEdit} onChange={(event) => updateTemplateContext({ assignmentId: event.target.value })} aria-invalid={Boolean(fieldErrors.assignmentId)}>
                 <option value="">Pilih penugasan</option>
                 {assignments.filter((item) => item.isActive || item.id === form.assignmentId).map((item) => (
                   <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
@@ -1145,7 +1166,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             </div>
             <div className="sla-context-field">
               <label htmlFor="template-variant" className="sla-context-label">Varian/Model (opsional)</label>
-              <input id="template-variant" className="sla-input sla-input-text" value={form.vehicleVariant} disabled={busy} onChange={(event) => updateTemplateContext({ vehicleVariant: event.target.value })} placeholder="cth: Terios (kosongkan bila umum)" />
+              <input id="template-variant" className="sla-input sla-input-text" value={form.vehicleVariant} disabled={busy || activeEdit} onChange={(event) => updateTemplateContext({ vehicleVariant: event.target.value })} placeholder="cth: Terios (kosongkan bila umum)" />
             </div>
             <div className="sla-context-field alkes-field-wide">
               <label htmlFor="template-name" className="sla-context-label">Nama Template (otomatis)</label>
@@ -1156,9 +1177,14 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             </div>
             <div className="sla-context-field">
               <label htmlFor="template-effective" className="sla-context-label">Tanggal Berlaku</label>
-              <input id="template-effective" type="date" className="sla-context-select" value={form.effectiveFrom} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))} />
+              <input id="template-effective" type="date" className="sla-context-select" value={form.effectiveFrom} disabled={busy || activeEdit} onChange={(event) => setForm((prev) => ({ ...prev, effectiveFrom: event.target.value }))} />
             </div>
           </div>
+          {activeEdit && (
+            <p className="sla-table-hint">
+              Jenis kendaraan, penugasan, varian, dan tanggal berlaku dikunci agar acuan kendaraan dan laporan yang sudah tersimpan tetap konsisten.
+            </p>
+          )}
           <details className="alkes-advanced">
             <summary>Informasi tambahan</summary>
             <div className="sla-sign-group-head">
@@ -1236,6 +1262,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                                 else qtyRefs.current.delete(row.key)
                               }}
                               className={`sla-input alkes-qty-input ${rowErrors[row.key] ? 'is-invalid' : ''}`}
+                              data-autofocus={activeEdit && rowNumbers.get(row.key) === 1 ? '' : undefined}
                               inputMode="numeric"
                               value={row.requiredQty}
                               disabled={busy}
@@ -1279,7 +1306,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           {discardPrompt && (
             <div ref={discardRef} className="alkes-modal-discard" role="alert">
               <div>
-                <strong>Draft belum disimpan</strong>
+                <strong>{activeEdit ? 'Perubahan belum disimpan' : 'Draft belum disimpan'}</strong>
                 <span>Perubahan terbaru akan hilang jika modal ditutup sekarang.</span>
               </div>
               <div className="alkes-modal-actions">
@@ -1291,10 +1318,10 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           <div className="alkes-savebar">
             <span className={`alkes-save-status ${dirty ? 'is-dirty' : saveStatus === 'saved' ? 'is-saved' : ''}`}>{statusText}</span>
             <div className="alkes-save-actions">
-              <button type="button" className="sla-btn sla-btn-primary" disabled={busy || saveStatus === 'saving'} onClick={submitDraft}>
-                {busy || saveStatus === 'saving' ? 'Menyimpan...' : 'Simpan Draft'}
+              <button type="button" className="sla-btn sla-btn-primary" disabled={busy || saveStatus === 'saving' || (activeEdit && !dirty)} onClick={submitDraft}>
+                {busy || saveStatus === 'saving' ? 'Menyimpan...' : activeEdit ? 'Simpan Perubahan' : 'Simpan Draft'}
               </button>
-              {form.id && <button type="button" className="sla-btn" disabled={busy || dirty || saveStatus === 'saving'} onClick={publishCurrentDraft}>Terbitkan Template</button>}
+              {form.id && !activeEdit && <button type="button" className="sla-btn" disabled={busy || dirty || saveStatus === 'saving'} onClick={publishCurrentDraft}>Terbitkan Template</button>}
               <button type="button" className="sla-btn" disabled={busy} onClick={() => closeForm()}>Batal</button>
             </div>
           </div>
@@ -1333,6 +1360,9 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                   <td>
                     <div className="sla-master-actions">
                       <button type="button" className="sla-btn" disabled={busy} onClick={() => openDetail(template)}>Lihat</button>
+                      {canManage && template.status === 'Aktif' && (
+                        <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(template)}>Edit</button>
+                      )}
                       {canManage && template.status === 'Draft' && (
                         <>
                           <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(template)}>Edit</button>
@@ -1649,6 +1679,15 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, 
                 setNotice('Draft template tersimpan.')
                 return saved
               }))}
+              onSaveActive={(payload) => mutate(() => updateOpsActiveTemplate({ contractId: contractUuid, up3Id: up3Uuid, ...payload })
+                .then((saved) => {
+                  setNotice('Perubahan template aktif tersimpan.')
+                  return saved
+                })
+                .catch(async (error) => {
+                  await reload({ silent: true })
+                  throw error
+                }))}
               onPublish={handlePublish}
               onArchive={handleArchive}
               onDuplicate={handleDuplicate}
