@@ -269,6 +269,8 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
   const [fieldErrors, setFieldErrors] = useState({})
   const [error, setError] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  const [discardPrompt, setDiscardPrompt] = useState(false)
+  const discardRef = useRef(null)
   const advancedRef = useRef(null)
   const nameRef = useRef(null)
   const categoryRef = useRef(null)
@@ -305,11 +307,20 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
     setPage(0)
   }, [search, categoryFilter])
 
+  useEffect(() => {
+    if (!discardPrompt) return
+    window.requestAnimationFrame(() => {
+      discardRef.current?.scrollIntoView({ block: 'nearest' })
+      discardRef.current?.querySelector('button')?.focus()
+    })
+  }, [discardPrompt])
+
   const resetForm = () => {
     setForm(null)
     setBaseline('')
     setFieldErrors({})
     setError('')
+    setDiscardPrompt(false)
   }
 
   const startAdd = () => {
@@ -317,6 +328,7 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
     setImportOpen(false)
     setFieldErrors({})
     setError('')
+    setDiscardPrompt(false)
     setForm(next)
     setBaseline(equipmentSnapshot(next))
   }
@@ -339,13 +351,21 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
     setImportOpen(false)
     setFieldErrors({})
     setError('')
+    setDiscardPrompt(false)
     setForm(next)
     setBaseline(equipmentSnapshot(next))
   }
 
-  const closeForm = () => {
+  const closeForm = (force = false) => {
     if (busy) return
-    if (dirty && !window.confirm('Perubahan alat belum disimpan. Tutup form?')) return
+    if (force) {
+      resetForm()
+      return
+    }
+    if (dirty) {
+      setDiscardPrompt(true)
+      return
+    }
     resetForm()
   }
 
@@ -421,8 +441,8 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
             </button>
           )}
           {canManage && (
-            <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => (form ? closeForm() : startAdd())}>
-              {form ? 'Batal' : 'Tambah Alat'}
+            <button type="button" className="sla-btn sla-btn-primary" disabled={busy || Boolean(form)} onClick={startAdd}>
+              Tambah Alat
             </button>
           )}
         </div>
@@ -437,95 +457,147 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
         />
       )}
       {form && canManage && (
-        <div className="sla-sign-group alkes-form-surface">
-          <div className="alkes-form-heading">
-            <div>
-              <strong>{form.id ? 'Edit Alat' : 'Tambah Alat'}</strong>
-              <p className="sla-table-hint">Isi identitas alat, masa manfaat, serta nilai BPP dan biaya bulanan bila tersedia. Kode alat otomatis bila dikosongkan.</p>
-            </div>
-            <span className="alkes-form-count">{filtered.length} alat</span>
-          </div>
-          <div className="sla-sign-group-head">
-            <div className="sla-context-field alkes-field-wide">
-              <label htmlFor="equipment-name" className="sla-context-label">Nama Alat *</label>
-              <input id="equipment-name" ref={nameRef} className="sla-input sla-input-text" value={form.name} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} aria-invalid={Boolean(fieldErrors.name)} />
-              {fieldErrors.name && <p className="alkes-field-error">{fieldErrors.name}</p>}
-            </div>
-            <div className="sla-context-field">
-              <label htmlFor="equipment-category" className="sla-context-label">Kategori *</label>
-              <select id="equipment-category" ref={categoryRef} className="sla-context-select" value={form.categoryId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, categoryId: event.target.value }))} aria-invalid={Boolean(fieldErrors.categoryId)}>
-                <option value="">Pilih kategori</option>
-                {categories.filter((item) => item.isActive || item.id === form.categoryId).map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
-                ))}
-              </select>
-              {fieldErrors.categoryId && <p className="alkes-field-error">{fieldErrors.categoryId}</p>}
-            </div>
-            <div className="sla-context-field">
-              <label htmlFor="equipment-unit" className="sla-context-label">Satuan *</label>
-              <input id="equipment-unit" ref={unitRef} className="sla-input sla-input-text" value={form.unit} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} placeholder="unit/buah/set/pasang" aria-invalid={Boolean(fieldErrors.unit)} />
-              {fieldErrors.unit && <p className="alkes-field-error">{fieldErrors.unit}</p>}
-            </div>
-            <div className="sla-context-field">
-              <label htmlFor="equipment-age" className="sla-context-label">Masa Manfaat (Bulan)</label>
-              <input id="equipment-age" ref={ageRef} className="sla-input sla-input-text" inputMode="numeric" value={form.ageMonths} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, ageMonths: event.target.value }))} placeholder="cth: 24" aria-invalid={Boolean(fieldErrors.ageMonths)} />
-              {fieldErrors.ageMonths && <p className="alkes-field-error">{fieldErrors.ageMonths}</p>}
-            </div>
-            <div className="sla-context-field">
-              <label htmlFor="equipment-bpp" className="sla-context-label">BPP (Rp/Unit)</label>
-              <input id="equipment-bpp" ref={bppRef} className="sla-input sla-input-text" inputMode="decimal" value={form.bppAmount} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, bppAmount: event.target.value }))} placeholder="cth: 2.100.000" aria-invalid={Boolean(fieldErrors.bppAmount)} />
-              {fieldErrors.bppAmount && <p className="alkes-field-error">{fieldErrors.bppAmount}</p>}
-            </div>
-            <div className="sla-context-field">
-              <label htmlFor="equipment-monthly" className="sla-context-label">Cost/Bulan (Rp/Unit)</label>
-              <input id="equipment-monthly" ref={monthlyRef} className="sla-input sla-input-text" inputMode="decimal" value={form.monthlyCost} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, monthlyCost: event.target.value }))} placeholder="Kosongkan untuk menghitung BPP ÷ masa manfaat" aria-invalid={Boolean(fieldErrors.monthlyCost)} />
-              {fieldErrors.monthlyCost && <p className="alkes-field-error">{fieldErrors.monthlyCost}</p>}
-            </div>
-          </div>
-          {calculatedMonthly != null && (
-            <p className={`alkes-price-note${formPriceMismatch ? ' is-warning' : ''}`}>
-              BPP ÷ masa manfaat = {formatRupiah(calculatedMonthly)} per unit per bulan.
-              {formPriceMismatch ? ` Cost/Bulan yang diisi ${formatRupiah(formMonthly.value)} berbeda.` : ''}
-            </p>
+        <AlkesModal
+          open
+          onClose={() => closeForm()}
+          eyebrow="KATALOG PERALATAN"
+          title={form.id ? 'Edit Alat' : 'Tambah Alat'}
+          subtitle={form.id
+            ? 'Perbarui identitas dan nilai biaya alat. Kode alat yang sudah ada dipertahankan.'
+            : 'Tambahkan alat baru ke katalog. Kode alat dibuat otomatis bila dikosongkan.'}
+          meta={form.id ? <span>{form.code}</span> : <span>Kode otomatis</span>}
+          size="wide"
+          className="alkes-equipment-form-modal"
+          dismissDisabled={busy}
+          footer={(
+            <>
+              <span className={`alkes-save-status ${dirty ? 'is-dirty' : ''}`}>
+                {busy ? 'Menyimpan...' : dirty ? 'Ada perubahan belum disimpan' : 'Belum ada perubahan'}
+              </span>
+              <div className="alkes-modal-actions">
+                <button type="button" className="sla-btn" disabled={busy} onClick={() => closeForm()}>Batal</button>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={submit}>
+                  {busy ? 'Menyimpan...' : form.id ? 'Simpan Perubahan' : 'Simpan Alat'}
+                </button>
+              </div>
+            </>
           )}
-          <details ref={advancedRef} className="alkes-advanced">
-            <summary>Informasi tambahan (Kode Alat otomatis bila kosong)</summary>
-            <div className="sla-sign-group-head">
-              <div className="sla-context-field">
-                <label htmlFor="equipment-code" className="sla-context-label">Kode Alat</label>
-                <input id="equipment-code" ref={codeRef} className="sla-input sla-input-text" value={form.code} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="Kosongkan untuk dibuat otomatis" />
+        >
+          <div className="alkes-modal-form alkes-equipment-form">
+            {error && <p className="alkes-modal-alert" role="alert">{error}</p>}
+            <section className="alkes-modal-section">
+              <div className="alkes-modal-section-head">
+                <div>
+                  <h3>Identitas Alat</h3>
+                  <p>Nama alat, kategori katalog, dan satuan yang digunakan.</p>
+                </div>
               </div>
-              <div className="sla-context-field">
-                <span className="sla-context-label">Status</span>
-                <select className="sla-context-select" value={form.isActive ? 'Aktif' : 'Nonaktif'} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.value === 'Aktif' }))}>
-                  <option value="Aktif">Aktif</option>
-                  <option value="Nonaktif">Nonaktif</option>
-                </select>
+              <div className="sla-sign-group-head">
+                <div className="sla-context-field alkes-field-wide">
+                  <label htmlFor="equipment-name" className="sla-context-label">Nama Alat *</label>
+                  <input id="equipment-name" data-autofocus ref={nameRef} className="sla-input sla-input-text" value={form.name} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} aria-invalid={Boolean(fieldErrors.name)} />
+                  {fieldErrors.name && <p className="alkes-field-error">{fieldErrors.name}</p>}
+                </div>
+                <div className="sla-context-field">
+                  <label htmlFor="equipment-category" className="sla-context-label">Kategori *</label>
+                  <select id="equipment-category" ref={categoryRef} className="sla-context-select" value={form.categoryId} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, categoryId: event.target.value }))} aria-invalid={Boolean(fieldErrors.categoryId)}>
+                    <option value="">Pilih kategori</option>
+                    {categories.filter((item) => item.isActive || item.id === form.categoryId).map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}{!item.isActive ? ' (Nonaktif)' : ''}</option>
+                    ))}
+                  </select>
+                  {fieldErrors.categoryId && <p className="alkes-field-error">{fieldErrors.categoryId}</p>}
+                </div>
+                <div className="sla-context-field">
+                  <label htmlFor="equipment-unit" className="sla-context-label">Satuan *</label>
+                  <input id="equipment-unit" ref={unitRef} className="sla-input sla-input-text" value={form.unit} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} placeholder="unit/buah/set/pasang" aria-invalid={Boolean(fieldErrors.unit)} />
+                  {fieldErrors.unit && <p className="alkes-field-error">{fieldErrors.unit}</p>}
+                </div>
               </div>
-              <div className="sla-context-field alkes-field-wide">
-                <span className="sla-context-label">Spesifikasi</span>
-                <input className="sla-input sla-input-text" value={form.specification} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, specification: event.target.value }))} />
+            </section>
+
+            <section className="alkes-modal-section">
+              <div className="alkes-modal-section-head">
+                <div>
+                  <h3>Biaya dan Masa Manfaat</h3>
+                  <p>Isi BPP dan masa manfaat. Cost/Bulan dapat dikosongkan agar dihitung otomatis.</p>
+                </div>
               </div>
-              <div className="sla-context-field alkes-field-wide">
-                <span className="sla-context-label">Keterangan</span>
-                <input className="sla-input sla-input-text" value={form.description} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
+              <div className="sla-sign-group-head">
+                <div className="sla-context-field">
+                  <label htmlFor="equipment-bpp" className="sla-context-label">BPP (Rp/Unit)</label>
+                  <input id="equipment-bpp" ref={bppRef} className="sla-input sla-input-text" inputMode="decimal" value={form.bppAmount} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, bppAmount: event.target.value }))} placeholder="cth: 2.100.000" aria-invalid={Boolean(fieldErrors.bppAmount)} />
+                  {fieldErrors.bppAmount && <p className="alkes-field-error">{fieldErrors.bppAmount}</p>}
+                </div>
+                <div className="sla-context-field">
+                  <label htmlFor="equipment-age" className="sla-context-label">Masa Manfaat (Bulan)</label>
+                  <input id="equipment-age" ref={ageRef} className="sla-input sla-input-text" inputMode="numeric" value={form.ageMonths} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, ageMonths: event.target.value }))} placeholder="cth: 24" aria-invalid={Boolean(fieldErrors.ageMonths)} />
+                  {fieldErrors.ageMonths && <p className="alkes-field-error">{fieldErrors.ageMonths}</p>}
+                </div>
+                <div className="sla-context-field">
+                  <label htmlFor="equipment-monthly" className="sla-context-label">Cost/Bulan (Rp/Unit)</label>
+                  <input id="equipment-monthly" ref={monthlyRef} className="sla-input sla-input-text" inputMode="decimal" value={form.monthlyCost} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, monthlyCost: event.target.value }))} placeholder="Kosongkan untuk otomatis" aria-invalid={Boolean(fieldErrors.monthlyCost)} />
+                  {fieldErrors.monthlyCost && <p className="alkes-field-error">{fieldErrors.monthlyCost}</p>}
+                </div>
               </div>
-            </div>
-          </details>
-          <div className="alkes-savebar">
-            <span className={`alkes-save-status ${dirty ? 'is-dirty' : ''}`}>
-              {busy ? 'Menyimpan...' : dirty ? 'Ada perubahan belum disimpan' : 'Belum ada perubahan'}
-            </span>
-            <div className="alkes-save-actions">
-              <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={submit}>
-                {busy ? 'Menyimpan...' : form.id ? 'Simpan Perubahan' : 'Simpan Alat'}
-              </button>
-              <button type="button" className="sla-btn" disabled={busy} onClick={closeForm}>Batal</button>
-            </div>
+              {calculatedMonthly != null && (
+                <p className={`alkes-price-note${formPriceMismatch ? ' is-warning' : ''}`}>
+                  BPP ÷ masa manfaat = {formatRupiah(calculatedMonthly)} per unit per bulan.
+                  {formPriceMismatch ? ` Cost/Bulan yang diisi ${formatRupiah(formMonthly.value)} berbeda.` : ''}
+                </p>
+              )}
+            </section>
+
+            <section className="alkes-modal-section">
+              <div className="alkes-modal-section-head">
+                <div>
+                  <h3>Informasi Tambahan</h3>
+                  <p>Kode alat, status, spesifikasi, dan keterangan.</p>
+                </div>
+                <span className="alkes-meta-pill">Opsional</span>
+              </div>
+              <details ref={advancedRef} className="alkes-advanced">
+                <summary>Buka informasi tambahan</summary>
+                <div className="sla-sign-group-head">
+                  <div className="sla-context-field">
+                    <label htmlFor="equipment-code" className="sla-context-label">Kode Alat</label>
+                    <input id="equipment-code" ref={codeRef} className="sla-input sla-input-text" value={form.code} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="Kosongkan untuk dibuat otomatis" />
+                  </div>
+                  <div className="sla-context-field">
+                    <label htmlFor="equipment-status" className="sla-context-label">Status</label>
+                    <select id="equipment-status" className="sla-context-select" value={form.isActive ? 'Aktif' : 'Nonaktif'} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.value === 'Aktif' }))}>
+                      <option value="Aktif">Aktif</option>
+                      <option value="Nonaktif">Nonaktif</option>
+                    </select>
+                  </div>
+                  <div className="sla-context-field alkes-field-wide">
+                    <label htmlFor="equipment-specification" className="sla-context-label">Spesifikasi</label>
+                    <input id="equipment-specification" className="sla-input sla-input-text" value={form.specification} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, specification: event.target.value }))} />
+                  </div>
+                  <div className="sla-context-field alkes-field-wide">
+                    <label htmlFor="equipment-description" className="sla-context-label">Keterangan</label>
+                    <input id="equipment-description" className="sla-input sla-input-text" value={form.description} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
+                  </div>
+                </div>
+              </details>
+            </section>
+
+            {discardPrompt && (
+              <div ref={discardRef} className="alkes-modal-discard" role="alert">
+                <div>
+                  <strong>Perubahan belum disimpan</strong>
+                  <span>Perubahan terbaru akan hilang jika modal ditutup sekarang.</span>
+                </div>
+                <div className="alkes-modal-actions">
+                  <button type="button" className="sla-btn" disabled={busy} onClick={() => setDiscardPrompt(false)}>Tetap Mengedit</button>
+                  <button type="button" className="sla-btn sla-btn-primary" disabled={busy} onClick={() => closeForm(true)}>Tutup Tanpa Menyimpan</button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        </AlkesModal>
       )}
-      {error && <p className="sla-blocked-note" role="alert">{error}</p>}
+      {error && !form && <p className="sla-blocked-note" role="alert">{error}</p>}
       <div className="sla-preview-scroll">
         <table className="sla-preview-table alkes-table alkes-table--wide alkes-equipment-table">
           <thead>

@@ -121,6 +121,8 @@ assert(component.includes('Informasi tambahan'), 'Bagian informasi tambahan hila
 assert(component.includes('alkes-worksheet-table'), 'Tabel worksheet kebutuhan hilang')
 assert(component.includes('BPP (Rp/Unit)'), 'Field BPP katalog hilang')
 assert(component.includes('Cost/Bulan (Rp/Unit)'), 'Field Cost/Bulan katalog hilang')
+assert(component.includes('alkes-equipment-form-modal'), 'Form alat harus memakai modal modern')
+assert(component.includes('Simpan Alat'), 'Aksi simpan alat baru hilang')
 assert(component.includes('Total/Bln'), 'Kolom total biaya template hilang')
 assert(component.includes('Biaya/Bulan'), 'Ringkasan biaya pada daftar template hilang')
 assert(component.includes('alkes-catalog-toolbar'), 'Pemilih katalog alat hilang')

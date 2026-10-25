@@ -12415,6 +12415,10 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   width: min(100%, 1040px);
 }
 
+.alkes-equipment-form-modal {
+  width: min(100%, 860px);
+}
+
 .alkes-modal--detail {
   width: min(100%, 940px);
 }
