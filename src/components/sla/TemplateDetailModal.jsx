@@ -1,5 +1,6 @@
 import { Fragment, useMemo } from 'react'
 import AlkesModal from './AlkesModal.jsx'
+import { effectiveMonthlyCost, formatRupiah, priceMismatch, templateCostSummary } from '../../data/equipmentPricing.js'
 
 const STATUS_CLASS = {
   Draft: 'sla-status-draft',
@@ -40,17 +41,29 @@ function groupItems(items, equipmentById, categoryById) {
         items: [],
       })
     }
-    groups.get(key).items.push({ ...item, equipment })
+    const unitMonthlyCost = effectiveMonthlyCost(item)
+    groups.get(key).items.push({
+      ...item,
+      equipment,
+      unitMonthlyCost,
+      totalMonthlyCost: unitMonthlyCost == null ? null : unitMonthlyCost * Number(item.requiredQty ?? 0),
+      monthlyCostMismatch: priceMismatch(item),
+    })
   }
   return [...groups.values()]
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
-    .map((group) => ({
-      ...group,
-      items: group.items.sort((a, b) => (
+    .map((group) => {
+      const items = group.items.sort((a, b) => (
         (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
         || String(a.equipmentName ?? '').localeCompare(String(b.equipmentName ?? ''))
-      )),
-    }))
+      ))
+      return {
+        ...group,
+        items,
+        monthlyCostTotal: items.reduce((total, item) => total + (item.totalMonthlyCost ?? 0), 0),
+        incompletePrice: items.filter((item) => item.unitMonthlyCost == null).length,
+      }
+    })
 }
 
 export default function TemplateDetailModal({
@@ -63,6 +76,7 @@ export default function TemplateDetailModal({
     () => groupItems(safeItems, equipmentById, categoryById),
     [safeItems, equipmentById, categoryById],
   )
+  const costSummary = useMemo(() => templateCostSummary(safeItems), [safeItems])
   if (!template) return null
   const typeName = typeById.get(template.vehicleTypeId)?.name || '—'
   const assignmentName = assignmentById.get(template.assignmentId)?.name || '—'
@@ -113,6 +127,14 @@ export default function TemplateDetailModal({
         <div><span>Penugasan</span><strong>{assignmentName}</strong></div>
         <div><span>Jumlah Alat</span><strong>{loading ? '…' : `${safeItems.length} jenis`}</strong></div>
         <div><span>Kategori</span><strong>{loading ? '…' : `${groups.length} kategori`}</strong></div>
+        <div>
+          <span>Biaya Standar/Bulan</span>
+          <strong>
+            {loading ? '…' : costSummary.incomplete
+              ? `${formatRupiah(costSummary.total)} · ${costSummary.incomplete} harga belum lengkap`
+              : formatRupiah(costSummary.total)}
+          </strong>
+        </div>
       </div>
 
       <div className="alkes-detail-grid">
@@ -136,13 +158,18 @@ export default function TemplateDetailModal({
         <div className="alkes-detail-section-head">
           <div>
             <h3>Daftar Kebutuhan Alat</h3>
-            <p>Jumlah kuantitas tidak dijumlahkan lintas satuan yang berbeda.</p>
+            <p>Total/Bln = Jumlah Kebutuhan × Cost/Bulan per unit. Nilai ini adalah biaya standar, bukan realisasi pembayaran.</p>
           </div>
           {!loading && !error && <span>{safeItems.length} jenis · {groups.length} kategori</span>}
         </div>
         {hasLegacy && (
           <p className="alkes-detail-warning">
             Template lama: nama dan satuan alat mengikuti katalog saat ini sampai versi baru diterbitkan.
+          </p>
+        )}
+        {!loading && !error && costSummary.incomplete > 0 && (
+          <p className="alkes-detail-warning">
+            {costSummary.incomplete} alat belum memiliki BPP, masa manfaat, atau Cost/Bulan. Total biaya belum lengkap.
           </p>
         )}
         {loading ? (
@@ -166,6 +193,8 @@ export default function TemplateDetailModal({
                   <th>Peralatan</th>
                   <th>Satuan</th>
                   <th>Jumlah Kebutuhan</th>
+                  <th>Biaya/Unit/Bln</th>
+                  <th>Total/Bln</th>
                   <th>Catatan</th>
                 </tr>
               </thead>
@@ -173,9 +202,13 @@ export default function TemplateDetailModal({
                 {groups.map((group) => (
                   <Fragment key={group.key}>
                     <tr className="alkes-group-row">
-                      <td colSpan={5}>
+                      <td colSpan={7}>
                         {group.name}
-                        <span className="alkes-group-count">{group.items.length} jenis</span>
+                        <span className="alkes-group-count">
+                          {group.items.length} jenis · {group.incompletePrice
+                            ? `${group.incompletePrice} harga belum lengkap`
+                            : `${formatRupiah(group.monthlyCostTotal)}/bln`}
+                        </span>
                       </td>
                     </tr>
                     {group.items.map((item, index) => (
@@ -187,6 +220,13 @@ export default function TemplateDetailModal({
                         </td>
                         <td>{item.unit || 'unit'}</td>
                         <td className="alkes-detail-qty">{item.requiredQty}</td>
+                        <td className="alkes-cost-cell">
+                          {formatRupiah(item.unitMonthlyCost)}
+                          {item.monthlyCostMismatch && (
+                            <div className="sla-table-sub alkes-price-warning">BPP ÷ masa manfaat: {formatRupiah(item.monthlyCostMismatch.expected)}</div>
+                          )}
+                        </td>
+                        <td className="alkes-cost-cell">{formatRupiah(item.totalMonthlyCost)}</td>
                         <td>{item.note || '—'}</td>
                       </tr>
                     ))}

@@ -1,8 +1,13 @@
+import { formatRupiah, parseRupiahAmount, priceMismatch } from './equipmentPricing.js'
+
 const HEADERS = {
   name: ['nama alat', 'nama', 'nama peralatan', 'peralatan'],
-  age: ['umur peralatan', 'umur peralatan bulan', 'umur bulan', 'umur'],
+  age: ['umur peralatan', 'umur peralatan bulan', 'umur bulan', 'umur', 'masa manfaat', 'masa manfaat bulan'],
   unit: ['satuan', 'unit'],
-  category: ['kategori', 'kategory', 'category'],
+  category: ['kategori', 'kategory', 'katagori', 'category'],
+  bpp: ['bpp', 'harga', 'harga perolehan', 'nilai perolehan', 'nilai'],
+  total: ['total'],
+  monthly: ['cost month', 'cost per month', 'biaya bulanan', 'biaya per bulan', 'biaya bulan', 'monthly cost'],
 }
 
 function normalizeToken(value) {
@@ -51,11 +56,12 @@ export async function openEquipmentFile(file) {
     })
     const missing = [
       ['name', 'Nama Alat'],
-      ['age', 'Umur Peralatan'],
+      ['age', 'Masa Manfaat'],
       ['unit', 'Satuan'],
       ['category', 'Kategori'],
     ].filter(([key]) => columns[key] == null).map(([, label]) => label)
     if (missing.length) throw new Error(`Kolom berikut tidak ditemukan: ${missing.join(', ')}.`)
+    const bppColumn = columns.bpp ?? columns.total
     const rows = []
     for (let index = 1; index < matrix.length; index += 1) {
       const cells = matrix[index]
@@ -66,6 +72,8 @@ export async function openEquipmentFile(file) {
         age: String(cells[columns.age] ?? '').trim(),
         unit: String(cells[columns.unit] ?? '').trim(),
         category: String(cells[columns.category] ?? '').trim(),
+        bpp: bppColumn == null ? '' : String(cells[bppColumn] ?? '').trim(),
+        monthly: columns.monthly == null ? '' : String(cells[columns.monthly] ?? '').trim(),
       })
     }
     if (!rows.length) throw new Error('Tidak ada baris data di bawah header.')
@@ -102,9 +110,9 @@ export function autoCategoryMapping(labels, categories) {
 function parseAge(value) {
   const raw = String(value ?? '').trim()
   if (!raw) return { value: null, error: '' }
-  if (!/^\d+$/.test(raw)) return { value: null, error: 'Umur harus bilangan bulat bulan atau dikosongkan.' }
+  if (!/^\d+$/.test(raw)) return { value: null, error: 'Masa manfaat harus bilangan bulat bulan atau dikosongkan.' }
   const number = Number(raw)
-  if (!Number.isSafeInteger(number) || number > 2147483647) return { value: null, error: 'Umur terlalu besar.' }
+  if (!Number.isSafeInteger(number) || number > 2147483647) return { value: null, error: 'Masa manfaat terlalu besar.' }
   return { value: number, error: '' }
 }
 
@@ -123,6 +131,8 @@ export function buildEquipmentPreview({ rows, categories, mapping, existingRows,
     const categoryId = mapping[categoryKey] || ''
     const category = categoryById.get(categoryId)
     const age = parseAge(row.age)
+    const bpp = parseRupiahAmount(row.bpp)
+    const monthly = parseRupiahAmount(row.monthly)
     const errors = []
     if (!row.name) errors.push('Nama alat wajib diisi.')
     if (row.name.length > 200) errors.push('Nama alat maksimal 200 karakter.')
@@ -131,29 +141,41 @@ export function buildEquipmentPreview({ rows, categories, mapping, existingRows,
     if (!row.category) errors.push('Kategori wajib diisi.')
     else if (!category) errors.push('Kategori belum dipetakan ke kategori aktif.')
     if (age.error) errors.push(age.error)
+    if (bpp.error) errors.push(`BPP: ${bpp.error}`)
+    if (monthly.error) errors.push(`Biaya bulanan: ${monthly.error}`)
     const identity = `${normalizeToken(row.name)}|${categoryId}|${normalizeToken(row.unit)}`
     if (!errors.length && seen.has(identity)) errors.push('Baris duplikat di dalam file.')
     if (!errors.length) seen.add(identity)
     const matches = errors.length ? [] : (existingByKey.get(identity) || [])
     if (matches.length > 1) errors.push('Lebih dari satu alat lama cocok. Periksa nama, kategori, dan satuan.')
+    const mismatch = priceMismatch({ monthlyCost: monthly.value, bppAmount: bpp.value, ageMonths: age.value })
+    const priceWarning = mismatch
+      ? `Cost/Bulan ${formatRupiah(monthly.value)} berbeda dari BPP ÷ masa manfaat (${formatRupiah(mismatch.expected)}).`
+      : ''
     let status = 'new'
-    let note = ''
+    let note = priceWarning
     if (errors.length) status = 'invalid'
     else if (matches.length === 1) {
+      const existing = matches[0]
+      const changes = []
+      if (age.value != null && age.value !== existing.ageMonths) changes.push(`masa manfaat ${existing.ageMonths ?? '—'} → ${age.value} bulan`)
+      if (bpp.value != null && bpp.value !== existing.bppAmount) changes.push(`BPP ${formatRupiah(existing.bppAmount)} → ${formatRupiah(bpp.value)}`)
+      if (monthly.value != null && monthly.value !== existing.monthlyCost) changes.push(`Cost/Bulan ${formatRupiah(existing.monthlyCost)} → ${formatRupiah(monthly.value)}`)
       if (!updateExisting) {
         status = 'skip'
-        note = 'Alat sudah ada; umur tidak diubah.'
-      } else if (age.value == null) {
+        note = ['Alat sudah ada; data tidak diubah.', priceWarning].filter(Boolean).join(' ')
+      } else if (!changes.length) {
         status = 'skip'
-        note = 'Umur kosong; data lama tidak diubah.'
+        note = ['Tidak ada nilai umur atau harga baru untuk diperbarui.', priceWarning].filter(Boolean).join(' ')
       } else {
         status = 'update'
-        note = `Perbarui umur ${matches[0].ageMonths ?? '—'} menjadi ${age.value} bulan.`
+        note = [changes.join('; '), priceWarning].filter(Boolean).join(' ')
       }
     }
     return {
-      ...row, ageMonths: age.value, categoryId, categoryName: category?.name || '',
-      existingId: matches.length === 1 ? matches[0].id : null, status, note, errors,
+      ...row, ageMonths: age.value, bppAmount: bpp.value, monthlyCost: monthly.value,
+      categoryId, categoryName: category?.name || '',
+      existingId: matches.length === 1 ? matches[0].id : null, status, note, errors, priceWarning,
     }
   })
   const counts = preview.reduce((result, row) => {
@@ -174,5 +196,7 @@ export function toEquipmentImportPayload(rows) {
     unit: row.unit,
     category_id: row.categoryId,
     age_months: row.ageMonths,
+    bpp_amount: row.bppAmount,
+    monthly_cost: row.monthlyCost,
   }))
 }

@@ -23,6 +23,8 @@ function mapEquipment(row) {
     categoryId: row.category_id,
     unit: row.unit ?? 'unit',
     ageMonths: row.age_months == null ? null : Number(row.age_months),
+    bppAmount: row.bpp_amount == null ? null : Number(row.bpp_amount),
+    monthlyCost: row.monthly_cost == null ? null : Number(row.monthly_cost),
     specification: row.specification ?? '',
     description: row.description ?? '',
     isActive: row.is_active !== false,
@@ -54,6 +56,9 @@ export function mapTemplate(row) {
 
 function mapTemplateItem(row, equipmentById = new Map(), published = false) {
   const equipment = equipmentById.get(row.equipment_id) ?? null
+  const snapshotAmount = (snapshotValue, currentValue) => (
+    snapshotValue == null ? (published ? null : currentValue ?? null) : Number(snapshotValue)
+  )
   return {
     id: row.id,
     templateId: row.template_id,
@@ -65,6 +70,9 @@ function mapTemplateItem(row, equipmentById = new Map(), published = false) {
     unit: (published ? row.equipment_unit : null) ?? equipment?.unit ?? 'unit',
     legacyMetadata: published && row.equipment_name == null,
     requiredQty: Number(row.required_qty ?? 0),
+    bppAmount: snapshotAmount(row.bpp_amount, equipment?.bppAmount),
+    monthlyCost: snapshotAmount(row.monthly_cost, equipment?.monthlyCost),
+    usefulLifeMonths: snapshotAmount(row.useful_life_months, equipment?.ageMonths),
     note: row.note ?? '',
     sortOrder: row.sort_order ?? 0,
   }
@@ -117,8 +125,8 @@ export async function listOpsEquipment({ contractId, up3Id }) {
   return (data ?? []).map(mapEquipment)
 }
 
-export async function saveOpsEquipment({ id = null, contractId, up3Id, code, name, categoryId, unit = 'unit', specification = '', description = '', isActive = true, ageMonths = null }) {
-  const { data, error } = await supabase.rpc('ops_save_equipment_v2', {
+export async function saveOpsEquipment({ id = null, contractId, up3Id, code, name, categoryId, unit = 'unit', specification = '', description = '', isActive = true, ageMonths = null, bppAmount = null, monthlyCost = null }) {
+  const { data, error } = await supabase.rpc('ops_save_equipment_v3', {
     p_id: id,
     p_contract_id: contractId,
     p_up3_id: up3Id,
@@ -130,13 +138,15 @@ export async function saveOpsEquipment({ id = null, contractId, up3Id, code, nam
     p_description: description,
     p_is_active: isActive,
     p_age_months: ageMonths,
+    p_bpp_amount: bppAmount,
+    p_monthly_cost: monthlyCost,
   })
   if (error) throw new Error(error.message || 'Peralatan gagal disimpan.')
   return mapEquipment(data)
 }
 
 export async function importOpsEquipment({ contractId, up3Id, rows }) {
-  const { data, error } = await supabase.rpc('ops_import_equipment', {
+  const { data, error } = await supabase.rpc('ops_import_equipment_v2', {
     p_contract_id: contractId,
     p_up3_id: up3Id,
     p_items: rows,
@@ -159,6 +169,19 @@ export async function listOpsTemplates({ contractId, up3Id }) {
     .order('version_number', { ascending: false })
   if (error) throw new Error(error.message || 'Template gagal dimuat.')
   return (data ?? []).map(mapTemplate)
+}
+
+export async function listOpsTemplateCosts({ contractId, up3Id }) {
+  const { data, error } = await supabase.rpc('ops_list_template_costs', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+  })
+  if (error) throw new Error(error.message || 'Ringkasan biaya template gagal dimuat.')
+  return (data ?? []).map((row) => ({
+    templateId: row.template_id,
+    totalMonthlyCost: Number(row.total_monthly_cost ?? 0),
+    incompleteItems: Number(row.incomplete_items ?? 0),
+  }))
 }
 
 export async function listOpsTemplateItems(templateId, equipmentList = [], published = false) {

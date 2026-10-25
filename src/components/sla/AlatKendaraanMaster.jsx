@@ -5,11 +5,16 @@ import AlkesModal from './AlkesModal.jsx'
 import CatalogPicker from './CatalogPicker.jsx'
 import TemplateDetailModal from './TemplateDetailModal.jsx'
 import {
+  effectiveMonthlyCost, expectedMonthlyCost, formatRupiah, parseRupiahAmount,
+  priceMismatch, templateCostSummary,
+} from '../../data/equipmentPricing.js'
+import {
   archiveOpsTemplate,
   duplicateOpsTemplate,
   importOpsEquipment,
   listOpsEquipment,
   listOpsMasters,
+  listOpsTemplateCosts,
   listOpsTemplateItems,
   listOpsTemplates,
   publishOpsTemplate,
@@ -237,15 +242,18 @@ function MasterSection({ kind, title, rows, search, onSearch, canManage, busy, o
 }
 
 function emptyEquipmentForm() {
-  return { id: null, code: '', name: '', categoryId: '', unit: 'unit', ageMonths: '', specification: '', description: '', isActive: true }
+  return {
+    id: null, code: '', name: '', categoryId: '', unit: 'unit', ageMonths: '',
+    bppAmount: '', monthlyCost: '', specification: '', description: '', isActive: true,
+  }
 }
 
 function parseEquipmentAge(value) {
   const raw = String(value ?? '').trim()
   if (!raw) return { value: null, error: '' }
-  if (!/^\d+$/.test(raw)) return { value: null, error: 'Umur harus bilangan bulat bulan atau dikosongkan.' }
+  if (!/^\d+$/.test(raw)) return { value: null, error: 'Masa manfaat harus bilangan bulat bulan atau dikosongkan.' }
   const number = Number(raw)
-  if (!Number.isSafeInteger(number) || number > 2147483647) return { value: null, error: 'Umur terlalu besar.' }
+  if (!Number.isSafeInteger(number) || number > 2147483647) return { value: null, error: 'Masa manfaat terlalu besar.' }
   return { value: number, error: '' }
 }
 
@@ -266,6 +274,8 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
   const categoryRef = useRef(null)
   const unitRef = useRef(null)
   const ageRef = useRef(null)
+  const bppRef = useRef(null)
+  const monthlyRef = useRef(null)
   const codeRef = useRef(null)
   const categoryById = useMemo(() => new Map(categories.map((item) => [item.id, item])), [categories])
   const filtered = useMemo(() => {
@@ -279,6 +289,13 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
   const safePage = Math.min(page, Math.max(0, Math.ceil(filtered.length / LIST_PAGE_SIZE) - 1))
   const pageRows = filtered.slice(safePage * LIST_PAGE_SIZE, (safePage + 1) * LIST_PAGE_SIZE)
   const dirty = Boolean(form && baseline && equipmentSnapshot(form) !== baseline)
+  const formBpp = parseRupiahAmount(form?.bppAmount ?? '')
+  const formMonthly = parseRupiahAmount(form?.monthlyCost ?? '')
+  const formAge = parseEquipmentAge(form?.ageMonths ?? '')
+  const calculatedMonthly = expectedMonthlyCost(formBpp.value, formAge.value)
+  const formPriceMismatch = priceMismatch({
+    monthlyCost: formMonthly.value, bppAmount: formBpp.value, ageMonths: formAge.value,
+  })
 
   useEffect(() => {
     onDirtyChange?.(dirty)
@@ -313,6 +330,8 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
       categoryId: row.categoryId,
       unit: row.unit,
       ageMonths: row.ageMonths == null ? '' : String(row.ageMonths),
+      bppAmount: row.bppAmount == null ? '' : String(row.bppAmount),
+      monthlyCost: row.monthlyCost == null ? '' : String(row.monthlyCost),
       specification: row.specification ?? '',
       description: row.description ?? '',
       isActive: row.isActive,
@@ -334,10 +353,14 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
     if (!form || busy) return
     const next = {}
     const age = parseEquipmentAge(form.ageMonths)
+    const bpp = parseRupiahAmount(form.bppAmount)
+    const monthly = parseRupiahAmount(form.monthlyCost)
     if (!form.name.trim()) next.name = 'Nama alat wajib diisi.'
     if (!form.categoryId) next.categoryId = 'Kategori wajib dipilih.'
     if (!form.unit.trim()) next.unit = 'Satuan wajib diisi.'
     if (age.error) next.ageMonths = age.error
+    if (bpp.error) next.bppAmount = bpp.error
+    if (monthly.error) next.monthlyCost = monthly.error
     setFieldErrors(next)
     setError('')
     if (Object.keys(next).length) {
@@ -346,6 +369,8 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
         else if (next.categoryId) categoryRef.current?.focus()
         else if (next.unit) unitRef.current?.focus()
         else if (next.ageMonths) ageRef.current?.focus()
+        else if (next.bppAmount) bppRef.current?.focus()
+        else if (next.monthlyCost) monthlyRef.current?.focus()
       })
       return
     }
@@ -416,7 +441,7 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
           <div className="alkes-form-heading">
             <div>
               <strong>{form.id ? 'Edit Alat' : 'Tambah Alat'}</strong>
-              <p className="sla-table-hint">Isi nama, kategori, satuan, dan umur dalam bulan. Kode alat otomatis bila dikosongkan.</p>
+              <p className="sla-table-hint">Isi identitas alat, masa manfaat, serta nilai BPP dan biaya bulanan bila tersedia. Kode alat otomatis bila dikosongkan.</p>
             </div>
             <span className="alkes-form-count">{filtered.length} alat</span>
           </div>
@@ -442,11 +467,27 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
               {fieldErrors.unit && <p className="alkes-field-error">{fieldErrors.unit}</p>}
             </div>
             <div className="sla-context-field">
-              <label htmlFor="equipment-age" className="sla-context-label">Umur (Bulan)</label>
+              <label htmlFor="equipment-age" className="sla-context-label">Masa Manfaat (Bulan)</label>
               <input id="equipment-age" ref={ageRef} className="sla-input sla-input-text" inputMode="numeric" value={form.ageMonths} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, ageMonths: event.target.value }))} placeholder="cth: 24" aria-invalid={Boolean(fieldErrors.ageMonths)} />
               {fieldErrors.ageMonths && <p className="alkes-field-error">{fieldErrors.ageMonths}</p>}
             </div>
+            <div className="sla-context-field">
+              <label htmlFor="equipment-bpp" className="sla-context-label">BPP (Rp/Unit)</label>
+              <input id="equipment-bpp" ref={bppRef} className="sla-input sla-input-text" inputMode="decimal" value={form.bppAmount} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, bppAmount: event.target.value }))} placeholder="cth: 2.100.000" aria-invalid={Boolean(fieldErrors.bppAmount)} />
+              {fieldErrors.bppAmount && <p className="alkes-field-error">{fieldErrors.bppAmount}</p>}
+            </div>
+            <div className="sla-context-field">
+              <label htmlFor="equipment-monthly" className="sla-context-label">Cost/Bulan (Rp/Unit)</label>
+              <input id="equipment-monthly" ref={monthlyRef} className="sla-input sla-input-text" inputMode="decimal" value={form.monthlyCost} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, monthlyCost: event.target.value }))} placeholder="Kosongkan untuk menghitung BPP ÷ masa manfaat" aria-invalid={Boolean(fieldErrors.monthlyCost)} />
+              {fieldErrors.monthlyCost && <p className="alkes-field-error">{fieldErrors.monthlyCost}</p>}
+            </div>
           </div>
+          {calculatedMonthly != null && (
+            <p className={`alkes-price-note${formPriceMismatch ? ' is-warning' : ''}`}>
+              BPP ÷ masa manfaat = {formatRupiah(calculatedMonthly)} per unit per bulan.
+              {formPriceMismatch ? ` Cost/Bulan yang diisi ${formatRupiah(formMonthly.value)} berbeda.` : ''}
+            </p>
+          )}
           <details ref={advancedRef} className="alkes-advanced">
             <summary>Informasi tambahan (Kode Alat otomatis bila kosong)</summary>
             <div className="sla-sign-group-head">
@@ -486,47 +527,58 @@ function EquipmentSection({ rows, categories, search, onSearch, canManage, busy,
       )}
       {error && <p className="sla-blocked-note" role="alert">{error}</p>}
       <div className="sla-preview-scroll">
-        <table className="sla-preview-table alkes-table">
+        <table className="sla-preview-table alkes-table alkes-table--wide alkes-equipment-table">
           <thead>
             <tr>
               <th>Nama Alat</th>
               <th>Kategori</th>
               <th>Satuan</th>
-              <th>Umur</th>
+              <th>Masa Manfaat</th>
+              <th>BPP</th>
+              <th>Cost/Bulan</th>
               <th>Status</th>
               {canManage && <th>Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {!filtered.length && (
-              <tr><td colSpan={canManage ? 6 : 5}>{emptyMessage}</td></tr>
+              <tr><td colSpan={canManage ? 8 : 7}>{emptyMessage}</td></tr>
             )}
-            {pageRows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <strong>{row.name}</strong>
-                  <div className="sla-table-sub">Kode {row.code}{row.specification ? ` · ${row.specification}` : ''}</div>
-                </td>
-                <td>{categoryById.get(row.categoryId)?.name ?? '—'}</td>
-                <td>{row.unit}</td>
-                <td>{row.ageMonths == null ? <span className="sla-table-sub">Belum diisi</span> : `${row.ageMonths} bln`}</td>
-                <td>
-                  <span className={`sla-status-badge ${row.isActive ? 'sla-status-active' : 'sla-status-archive'}`}>
-                    {row.isActive ? 'Aktif' : 'Nonaktif'}
-                  </span>
-                </td>
-                {canManage && (
+            {pageRows.map((row) => {
+              const monthly = effectiveMonthlyCost(row)
+              const mismatch = priceMismatch(row)
+              return (
+                <tr key={row.id}>
                   <td>
-                    <div className="sla-master-actions">
-                      <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(row)}>Edit</button>
-                      <button type="button" className="sla-btn" disabled={busy || form?.id === row.id} onClick={() => toggleStatus(row)}>
-                        {row.isActive ? 'Nonaktifkan' : 'Aktifkan'}
-                      </button>
-                    </div>
+                    <strong>{row.name}</strong>
+                    <div className="sla-table-sub">Kode {row.code}{row.specification ? ` · ${row.specification}` : ''}</div>
                   </td>
-                )}
-              </tr>
-            ))}
+                  <td>{categoryById.get(row.categoryId)?.name ?? '—'}</td>
+                  <td>{row.unit}</td>
+                  <td>{row.ageMonths == null ? <span className="sla-table-sub">Belum diisi</span> : `${row.ageMonths} bln`}</td>
+                  <td className="alkes-cost-cell">{formatRupiah(row.bppAmount)}</td>
+                  <td className="alkes-cost-cell">
+                    {formatRupiah(monthly)}
+                    {mismatch && <div className="sla-table-sub alkes-price-warning">BPP ÷ masa manfaat: {formatRupiah(mismatch.expected)}</div>}
+                  </td>
+                  <td>
+                    <span className={`sla-status-badge ${row.isActive ? 'sla-status-active' : 'sla-status-archive'}`}>
+                      {row.isActive ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                  </td>
+                  {canManage && (
+                    <td>
+                      <div className="sla-master-actions">
+                        <button type="button" className="sla-btn" disabled={busy} onClick={() => startEdit(row)}>Edit</button>
+                        <button type="button" className="sla-btn" disabled={busy || form?.id === row.id} onClick={() => toggleStatus(row)}>
+                          {row.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -662,6 +714,18 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
 
   const orderedRows = useMemo(() => worksheetGroups.flatMap((group) => group.rows), [worksheetGroups])
   const rowNumbers = useMemo(() => new Map(orderedRows.map((row, index) => [row.key, index + 1])), [orderedRows])
+  const formCost = useMemo(() => templateCostSummary(orderedRows.map((row) => ({
+    monthlyCost: row.equipment?.monthlyCost,
+    bppAmount: row.equipment?.bppAmount,
+    ageMonths: row.equipment?.ageMonths,
+    requiredQty: row.requiredQty,
+  }))), [orderedRows])
+  const rowMonthlyCost = (row) => effectiveMonthlyCost(row.equipment)
+  const rowMonthlyMismatch = (row) => priceMismatch(row.equipment)
+  const rowMonthlyTotal = (row) => {
+    const unitCost = rowMonthlyCost(row)
+    return unitCost == null ? null : unitCost * Number(row.requiredQty || 0)
+  }
 
   const baselineRows = useMemo(() => {
     try {
@@ -1199,9 +1263,13 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           <div className="alkes-modal-section-head">
             <div>
               <h3>Daftar Kebutuhan</h3>
-              <p>Pilih alat dari katalog untuk langsung menambah baris. Nama, kategori, dan satuan terisi otomatis.</p>
+              <p>Biaya per baris dihitung dari Cost/Bulan per unit × Jumlah Kebutuhan.</p>
             </div>
-            <span className="sla-table-hint">{allRowCount} jenis · {categoryCount} kategori</span>
+            <span className="sla-table-hint">
+              {allRowCount} jenis · {categoryCount} kategori · {formCost.incomplete
+                ? `${formCost.incomplete} harga belum lengkap`
+                : `${formatRupiah(formCost.total)}/bulan`}
+            </span>
           </div>
             <div className="alkes-catalog-toolbar alkes-catalog-toolbar--single">
               <CatalogPicker
@@ -1223,81 +1291,100 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                   <th>Nama Peralatan</th>
                   <th>Satuan</th>
                   <th>Jumlah Kebutuhan</th>
+                  <th>Biaya/Unit/Bln</th>
+                  <th>Total/Bln</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {!orderedRows.length && (
                   <tr>
-                    <td colSpan={5} className="alkes-empty-state">
+                    <td colSpan={7} className="alkes-empty-state">
                       Belum ada alat. Pilih alat dari katalog di atas untuk memulai.
                     </td>
                   </tr>
                 )}
-                {worksheetGroups.map((group) => (
-                  <Fragment key={group.key}>
-                    <tr className="alkes-group-row">
-                      <td colSpan={5}>
-                        {group.name}
-                        <span className="alkes-group-count">{group.rows.length} jenis</span>
-                      </td>
-                    </tr>
-                    {group.rows.map((row) => (
-                      <Fragment key={row.key}>
-                        <tr className={`${highlightKey === row.key ? 'alkes-row-highlight' : ''} ${isRowChanged(row) ? 'alkes-row-changed' : ''}`}>
-                          <td className="alkes-row-number">
-                            {rowNumbers.get(row.key)}
-                            {isRowChanged(row) && <span className="alkes-row-badge">Diubah</span>}
-                          </td>
-                          <td>
-                            <strong>{row.equipment?.name ?? 'Alat tidak ditemukan'}</strong>
-                            {row.equipment?.code && <div className="sla-table-sub">Kode {row.equipment.code}</div>}
-                            {row.equipment && !row.equipment.isActive && <span className="alkes-inactive-badge">Nonaktif</span>}
-                          </td>
-                          <td>{row.equipment?.unit ?? '—'}</td>
-                          <td className="alkes-qty-cell">
-                            <input
-                              ref={(node) => {
-                                if (node) qtyRefs.current.set(row.key, node)
-                                else qtyRefs.current.delete(row.key)
-                              }}
-                              className={`sla-input alkes-qty-input ${rowErrors[row.key] ? 'is-invalid' : ''}`}
-                              data-autofocus={activeEdit && rowNumbers.get(row.key) === 1 ? '' : undefined}
-                              inputMode="numeric"
-                              value={row.requiredQty}
-                              disabled={busy}
-                              onChange={(event) => updateRow(row.key, { requiredQty: event.target.value })}
-                              onKeyDown={(event) => handleQtyKeyDown(event, row.key)}
-                              aria-invalid={Boolean(rowErrors[row.key])}
-                              aria-describedby={rowErrors[row.key] ? `qty-error-${row.key}` : undefined}
-                              aria-label={`Jumlah Kebutuhan ${row.equipment?.name ?? ''}`}
-                            />
-                            {rowErrors[row.key] && <p className="alkes-field-error">{rowErrors[row.key]}</p>}
-                          </td>
-                          <td>
-                            <div className="alkes-row-actions">
-                              <button type="button" className="sla-btn alkes-compact-btn" disabled={busy} onClick={() => toggleNote(row.key)} aria-expanded={openNotes.has(row.key)}>
-                                {row.note ? 'Catatan •' : 'Catatan'}
-                              </button>
-                              <button type="button" className="sla-btn alkes-compact-btn" disabled={busy} onClick={() => removeRow(row.key)}>Hapus</button>
-                            </div>
-                          </td>
-                        </tr>
-                        {openNotes.has(row.key) && (
-                          <tr className="alkes-note-row">
-                            <td />
-                            <td colSpan={4}>
-                              <label className="sla-context-field">
-                                <span className="sla-context-label">Catatan untuk {row.equipment?.name ?? 'alat ini'} (opsional)</span>
-                                <input className="sla-input sla-input-text alkes-note-input" value={row.note} disabled={busy} onChange={(event) => updateRow(row.key, { note: event.target.value })} />
-                              </label>
+                {worksheetGroups.map((group) => {
+                  const groupCost = templateCostSummary(group.rows.map((row) => ({
+                    monthlyCost: row.equipment?.monthlyCost,
+                    bppAmount: row.equipment?.bppAmount,
+                    ageMonths: row.equipment?.ageMonths,
+                    requiredQty: row.requiredQty,
+                  })))
+                  return (
+                    <Fragment key={group.key}>
+                      <tr className="alkes-group-row">
+                        <td colSpan={7}>
+                          {group.name}
+                          <span className="alkes-group-count">
+                            {group.rows.length} jenis · {groupCost.incomplete ? 'harga belum lengkap' : `${formatRupiah(groupCost.total)}/bln`}
+                          </span>
+                        </td>
+                      </tr>
+                      {group.rows.map((row) => (
+                        <Fragment key={row.key}>
+                          <tr className={`${highlightKey === row.key ? 'alkes-row-highlight' : ''} ${isRowChanged(row) ? 'alkes-row-changed' : ''}`}>
+                            <td className="alkes-row-number">
+                              {rowNumbers.get(row.key)}
+                              {isRowChanged(row) && <span className="alkes-row-badge">Diubah</span>}
+                            </td>
+                            <td>
+                              <strong>{row.equipment?.name ?? 'Alat tidak ditemukan'}</strong>
+                              {row.equipment?.code && <div className="sla-table-sub">Kode {row.equipment.code}</div>}
+                              {row.equipment && !row.equipment.isActive && <span className="alkes-inactive-badge">Nonaktif</span>}
+                            </td>
+                            <td>{row.equipment?.unit ?? '—'}</td>
+                            <td className="alkes-qty-cell">
+                              <input
+                                ref={(node) => {
+                                  if (node) qtyRefs.current.set(row.key, node)
+                                  else qtyRefs.current.delete(row.key)
+                                }}
+                                className={`sla-input alkes-qty-input ${rowErrors[row.key] ? 'is-invalid' : ''}`}
+                                data-autofocus={activeEdit && rowNumbers.get(row.key) === 1 ? '' : undefined}
+                                inputMode="numeric"
+                                value={row.requiredQty}
+                                disabled={busy}
+                                onChange={(event) => updateRow(row.key, { requiredQty: event.target.value })}
+                                onKeyDown={(event) => handleQtyKeyDown(event, row.key)}
+                                aria-invalid={Boolean(rowErrors[row.key])}
+                                aria-describedby={rowErrors[row.key] ? `qty-error-${row.key}` : undefined}
+                                aria-label={`Jumlah Kebutuhan ${row.equipment?.name ?? ''}`}
+                              />
+                              {rowErrors[row.key] && <p className="alkes-field-error">{rowErrors[row.key]}</p>}
+                            </td>
+                            <td className="alkes-cost-cell">
+                              {formatRupiah(rowMonthlyCost(row))}
+                              {rowMonthlyMismatch(row) && (
+                                <div className="sla-table-sub alkes-price-warning">BPP ÷ masa manfaat: {formatRupiah(rowMonthlyMismatch(row).expected)}</div>
+                              )}
+                            </td>
+                            <td className="alkes-cost-cell">{formatRupiah(rowMonthlyTotal(row))}</td>
+                            <td>
+                              <div className="alkes-row-actions">
+                                <button type="button" className="sla-btn alkes-compact-btn" disabled={busy} onClick={() => toggleNote(row.key)} aria-expanded={openNotes.has(row.key)}>
+                                  {row.note ? 'Catatan •' : 'Catatan'}
+                                </button>
+                                <button type="button" className="sla-btn alkes-compact-btn" disabled={busy} onClick={() => removeRow(row.key)}>Hapus</button>
+                              </div>
                             </td>
                           </tr>
-                        )}
-                      </Fragment>
-                    ))}
-                  </Fragment>
-                ))}
+                          {openNotes.has(row.key) && (
+                            <tr className="alkes-note-row">
+                              <td />
+                              <td colSpan={6}>
+                                <label className="sla-context-field">
+                                  <span className="sla-context-label">Catatan untuk {row.equipment?.name ?? 'alat ini'} (opsional)</span>
+                                  <input className="sla-input sla-input-text alkes-note-input" value={row.note} disabled={busy} onChange={(event) => updateRow(row.key, { note: event.target.value })} />
+                                </label>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -1334,13 +1421,14 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
             <tr>
               <th>Template</th>
               <th>Jenis / Penugasan</th>
+              <th title="Biaya standar dari snapshot harga saat template disimpan atau diterbitkan">Biaya/Bulan</th>
               <th>Status</th>
               <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
             {!filtered.length && (
-              <tr><td colSpan={4}>{emptyMessage}</td></tr>
+              <tr><td colSpan={5}>{emptyMessage}</td></tr>
             )}
             {pageRows.map((template) => (
                 <tr key={template.id}>
@@ -1352,6 +1440,12 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
                     </div>
                   </td>
                   <td>{typeById.get(template.vehicleTypeId)?.name ?? '—'} / {assignmentById.get(template.assignmentId)?.name ?? '—'}</td>
+                  <td className="alkes-cost-cell">
+                    {template.costSummary ? `${formatRupiah(template.costSummary.totalMonthlyCost)}/bln` : '—'}
+                    {template.costSummary?.incompleteItems > 0 && (
+                      <div className="sla-table-sub alkes-price-warning">{template.costSummary.incompleteItems} harga belum lengkap</div>
+                    )}
+                  </td>
                   <td>
                     <span className={`sla-status-badge ${STATUS_BADGE[template.status] ?? 'sla-status-draft'}`}>
                       {template.status}
@@ -1440,19 +1534,24 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, 
       setLoadError('')
     }
     try {
-      const [typeRows, assignmentRows, categoryRows, equipmentRows, templateRows] = await Promise.all([
+      const [typeRows, assignmentRows, categoryRows, equipmentRows, templateRows, costRows] = await Promise.all([
         listOpsMasters('vehicle_type', { contractId: contractUuid, up3Id: up3Uuid }),
         listOpsMasters('assignment', { contractId: contractUuid, up3Id: up3Uuid }),
         listOpsMasters('category', { contractId: contractUuid, up3Id: up3Uuid }),
         listOpsEquipment({ contractId: contractUuid, up3Id: up3Uuid }),
         listOpsTemplates({ contractId: contractUuid, up3Id: up3Uuid }),
+        listOpsTemplateCosts({ contractId: contractUuid, up3Id: up3Uuid }),
       ])
       if (request !== loadRequest.current) return
+      const costByTemplate = new Map(costRows.map((row) => [row.templateId, row]))
       setTypes(typeRows)
       setAssignments(assignmentRows)
       setCategories(categoryRows)
       setEquipment(equipmentRows)
-      setTemplates(templateRows)
+      setTemplates(templateRows.map((template) => ({
+        ...template,
+        costSummary: costByTemplate.get(template.id) ?? null,
+      })))
       setTemplateItems({})
     } catch (error) {
       if (request !== loadRequest.current) return
@@ -1507,6 +1606,8 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, 
     id: form.id, contractId: contractUuid, up3Id: up3Uuid,
     code: form.code, name: form.name, categoryId: form.categoryId, unit: form.unit,
     ageMonths: parseEquipmentAge(form.ageMonths).value,
+    bppAmount: parseRupiahAmount(form.bppAmount).value,
+    monthlyCost: parseRupiahAmount(form.monthlyCost).value,
     specification: form.specification, description: form.description, isActive: form.isActive,
   }).then(() => setNotice('Peralatan tersimpan.')))
 
@@ -1514,6 +1615,8 @@ export default function AlatKendaraanMaster({ contractUuid, up3Uuid, canManage, 
     id: row.id, contractId: contractUuid, up3Id: up3Uuid,
     code: row.code, name: row.name, categoryId: row.categoryId, unit: row.unit,
     ageMonths: row.ageMonths,
+    bppAmount: row.bppAmount,
+    monthlyCost: row.monthlyCost,
     specification: row.specification ?? '', description: row.description ?? '', isActive: !row.isActive,
   }).then(() => setNotice(`"${row.name}" ${row.isActive ? 'dinonaktifkan' : 'diaktifkan'}.`)))
 

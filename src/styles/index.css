@@ -4870,6 +4870,10 @@ summary:focus-visible {
   min-width: 760px;
 }
 
+.alkes-master table.alkes-equipment-table {
+  min-width: 980px;
+}
+
 .alkes-master .alkes-table .sla-table-sub {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -11609,6 +11613,10 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   border-radius: 8px;
 }
 
+.alkes-import-preview table {
+  min-width: 900px;
+}
+
 .alkes-import-row-invalid td {
   background: rgba(193, 68, 74, 0.05);
 }
@@ -12022,7 +12030,7 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .alkes-worksheet-table {
   width: 100%;
-  min-width: 700px;
+  min-width: 980px;
   border-collapse: collapse;
   font-size: 13px;
   line-height: 18px;
@@ -12066,8 +12074,40 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   text-align: right;
 }
 
-.alkes-worksheet-table th:nth-child(5) {
+.alkes-worksheet-table th:nth-child(5),
+.alkes-worksheet-table th:nth-child(6) {
+  width: 130px;
+  text-align: right;
+}
+
+.alkes-worksheet-table th:nth-child(7) {
   width: 170px;
+}
+
+.alkes-cost-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alkes-cost-cell .sla-table-sub {
+  max-width: 190px;
+  margin-left: auto;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.alkes-price-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.alkes-price-note.is-warning,
+.alkes-price-warning,
+.alkes-import-price-warning {
+  color: var(--tone-warning-text);
 }
 
 .alkes-group-row td {
@@ -12617,7 +12657,7 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .alkes-detail-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -12722,7 +12762,7 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 }
 
 .alkes-detail-table {
-  min-width: 680px;
+  min-width: 900px;
 }
 
 .alkes-detail-table td:nth-child(1) {
@@ -12735,14 +12775,18 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 }
 
 .alkes-detail-table td:nth-child(4),
-.alkes-detail-table th:nth-child(4) {
-  width: 155px;
+.alkes-detail-table th:nth-child(4),
+.alkes-detail-table td:nth-child(5),
+.alkes-detail-table th:nth-child(5),
+.alkes-detail-table td:nth-child(6),
+.alkes-detail-table th:nth-child(6) {
+  width: 135px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.alkes-detail-table td:nth-child(5) {
-  width: 30%;
+.alkes-detail-table td:nth-child(7) {
+  width: 24%;
 }
 
 .alkes-detail-number {

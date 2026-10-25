@@ -59,15 +59,40 @@ assert(activeEditSql.includes("errcode = '40001'"), 'Perlindungan revisi templat
 assert(!activeEditSql.includes('ops_vehicle_monthly_reports'), 'Edit template tidak boleh menulis laporan tersimpan')
 assert(!activeEditSql.includes('ops_prescribed_vehicles'), 'Edit template tidak boleh mengubah penetapan kendaraan')
 
+const equipmentPricingSql = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20261025054509_ops_equipment_pricing.sql',
+  import.meta.url,
+)), 'utf8')
+assert(equipmentPricingSql.includes('bpp_amount'), 'Kolom BPP katalog hilang')
+assert(equipmentPricingSql.includes('monthly_cost'), 'Kolom Cost/Bulan katalog hilang')
+assert(equipmentPricingSql.includes('ops_save_equipment_v3'), 'RPC simpan harga alat hilang')
+assert(equipmentPricingSql.includes('ops_import_equipment_v2'), 'RPC impor harga alat hilang')
+
+const templatePricingSql = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20261025054532_ops_template_pricing_snapshots.sql',
+  import.meta.url,
+)), 'utf8')
+assert(templatePricingSql.includes('useful_life_months'), 'Snapshot masa manfaat template hilang')
+assert(templatePricingSql.includes('ops_snapshot_template_item_prices'), 'Trigger snapshot harga template hilang')
+
+const templateCostSql = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20261025055622_ops_template_cost_summary.sql',
+  import.meta.url,
+)), 'utf8')
+assert(templateCostSql.includes('ops_list_template_costs'), 'Ringkasan biaya template hilang')
+assert(templateCostSql.includes('ops_can_read_master'), 'Scope baca ringkasan biaya hilang')
+
 const repoUrl = new URL('./opsEquipmentRepository.js', import.meta.url)
 const repo = readFileSync(fileURLToPath(repoUrl), 'utf8')
 for (const fn of [
   'listOpsMasters', 'saveOpsMaster', 'listOpsEquipment', 'saveOpsEquipment',
-  'listOpsTemplates', 'listOpsTemplateItems', 'saveOpsTemplateDraft',
+  'listOpsTemplates', 'listOpsTemplateCosts', 'listOpsTemplateItems', 'saveOpsTemplateDraft',
   'updateOpsActiveTemplate', 'publishOpsTemplate', 'archiveOpsTemplate', 'duplicateOpsTemplate',
 ]) {
   assert(repo.includes(fn), `Repo ${fn} hilang`)
 }
+assert(repo.includes("rpc('ops_save_equipment_v3'"), 'Repo harga alat belum memakai RPC v3')
+assert(repo.includes("rpc('ops_import_equipment_v2'"), 'Repo impor harga belum memakai RPC v2')
 assert(!repo.includes('.delete('), 'Repo tidak boleh hapus destruktif')
 assert(!repo.includes('Jumlah SLA'), 'Istilah Jumlah SLA dilarang, pakai Jumlah Kebutuhan')
 
@@ -94,6 +119,10 @@ assert(component.includes('Arsipkan'), 'Aksi arsip hilang')
 assert(component.includes('Varian/Model'), 'Field varian hilang')
 assert(component.includes('Informasi tambahan'), 'Bagian informasi tambahan hilang')
 assert(component.includes('alkes-worksheet-table'), 'Tabel worksheet kebutuhan hilang')
+assert(component.includes('BPP (Rp/Unit)'), 'Field BPP katalog hilang')
+assert(component.includes('Cost/Bulan (Rp/Unit)'), 'Field Cost/Bulan katalog hilang')
+assert(component.includes('Total/Bln'), 'Kolom total biaya template hilang')
+assert(component.includes('Biaya/Bulan'), 'Ringkasan biaya pada daftar template hilang')
 assert(component.includes('alkes-catalog-toolbar'), 'Pemilih katalog alat hilang')
 assert(component.includes('onDirtyChange'), 'Perlindungan perubahan belum tersimpan hilang')
 assert(component.includes('switchTab'), 'Konfirmasi pindah tab hilang')
