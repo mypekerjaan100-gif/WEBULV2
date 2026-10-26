@@ -24,6 +24,7 @@ import {
   REPLACEMENT_TYPES,
 } from '../../data/overtimeReplacementL2.js'
 import { splitOvertimeExportTimes } from '../../data/overtimeExport.js'
+import { overtimeTimeCorrectionPreview } from '../../data/overtimeTimeCorrection.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 import EvidenceUploadCard from './EvidenceUploadCard.jsx'
@@ -214,7 +215,7 @@ function historyEventText(h) {
     case 'REVISION_SAVED':
       return { title: 'Revisi Disimpan', desc: 'Perubahan disimpan, belum diajukan ulang.' }
     case 'CORRECTED':
-      return { title: 'Koreksi Data Disetujui', desc: null }
+      return { title: 'Koreksi Data Lembur', desc: null }
     case 'UPDATED':
       return { title: 'Draft Diperbarui', desc: 'Perubahan draft disimpan.' }
     case 'APPROVED':
@@ -417,6 +418,14 @@ export default function SLALembur({
   const [correctReason, setCorrectReason] = useState('')
   const [correctError, setCorrectError] = useState('')
   const [correctBusy, setCorrectBusy] = useState(false)
+  const [timeCorrectTarget, setTimeCorrectTarget] = useState(null)
+  const [timeCorrectTimes, setTimeCorrectTimes] = useState({ startTime: '', endTime: '' })
+  const [timeCorrectReason, setTimeCorrectReason] = useState('')
+  const [timeCorrectFinancial, setTimeCorrectFinancial] = useState(null)
+  const [timeCorrectLoading, setTimeCorrectLoading] = useState(false)
+  const [timeCorrectError, setTimeCorrectError] = useState('')
+  const [timeCorrectBusy, setTimeCorrectBusy] = useState(false)
+  const timeCorrectRequest = useRef(0)
   const [toast, setToast] = useState(null)
   const showToast = (message, tone = 'success') => setToast(message ? { message, tone } : null)
   const [submitProcess, setSubmitProcess] = useState(null)
@@ -1883,6 +1892,108 @@ export default function SLALembur({
     }
   }
 
+  const canCorrectTimeRecord = (record) => Boolean(
+    isSuperAdmin && record?.entryId && record?.startedAt && record?.endedAt,
+  )
+
+  const closeTimeCorrection = () => {
+    if (timeCorrectBusy) return
+    timeCorrectRequest.current += 1
+    setTimeCorrectTarget(null)
+    setTimeCorrectTimes({ startTime: '', endTime: '' })
+    setTimeCorrectReason('')
+    setTimeCorrectFinancial(null)
+    setTimeCorrectLoading(false)
+    setTimeCorrectError('')
+  }
+
+  const openTimeCorrection = async (record) => {
+    if (!canCorrectTimeRecord(record)) return
+    const request = ++timeCorrectRequest.current
+    const time = pontianakFormValues(record.startedAt, record.endedAt)
+    setTimeCorrectTarget(record)
+    setTimeCorrectTimes({ startTime: time.startTime, endTime: time.endTime })
+    setTimeCorrectReason('')
+    setTimeCorrectFinancial(null)
+    setTimeCorrectError('')
+    setTimeCorrectLoading(true)
+    try {
+      const { listOvertimeEntryFinancial } = await import('../../data/overtimeReplacementRepository.js')
+      const rows = await listOvertimeEntryFinancial(record.id)
+      if (request !== timeCorrectRequest.current) return
+      const financial = rows.find((row) => row.entryId === record.entryId)
+      if (!financial) throw new Error('Data tarif historis peserta tidak ditemukan.')
+      setTimeCorrectFinancial(financial)
+    } catch (error) {
+      if (request === timeCorrectRequest.current) {
+        setTimeCorrectError(error?.message || 'Data tarif historis gagal dimuat.')
+      }
+    } finally {
+      if (request === timeCorrectRequest.current) setTimeCorrectLoading(false)
+    }
+  }
+
+  const handleTimeCorrection = async () => {
+    if (!timeCorrectTarget || !timeCorrectFinancial || timeCorrectBusy) return
+    const reason = timeCorrectReason.trim()
+    if (!reason) { setTimeCorrectError('Alasan koreksi wajib diisi.'); return }
+    const preview = overtimeTimeCorrectionPreview({
+      hourlyRate: timeCorrectFinancial.hourlyRate,
+      date: timeCorrectTarget.date,
+      startTime: timeCorrectTimes.startTime,
+      endTime: timeCorrectTimes.endTime,
+    })
+    if (!preview) {
+      setTimeCorrectError('Jam mulai dan jam selesai belum valid. Durasi minimal satu menit dan kurang dari 24 jam.')
+      return
+    }
+    const original = pontianakFormValues(timeCorrectTarget.startedAt, timeCorrectTarget.endedAt)
+    if (original.startTime === timeCorrectTimes.startTime && original.endTime === timeCorrectTimes.endTime) {
+      setTimeCorrectError('Jam mulai dan jam selesai belum berubah.')
+      return
+    }
+    setTimeCorrectBusy(true)
+    setTimeCorrectError('')
+    try {
+      const { correctOvertimeEntryTimes } = await import('../../data/overtimeReplacementRepository.js')
+      const result = await correctOvertimeEntryTimes({
+        activityId: timeCorrectTarget.id,
+        entryId: timeCorrectTarget.entryId,
+        startedAt: preview.startedAt,
+        endedAt: preview.endedAt,
+        reason,
+        expectedUpdatedAt: timeCorrectTarget.updatedAt,
+      })
+      const oldAmount = Number(timeCorrectFinancial.total ?? timeCorrectTarget.total ?? 0)
+      const newAmount = Number(result?.amount ?? preview.amount)
+      const statusLabel = displayStatus(timeCorrectTarget)
+      setTimeCorrectTarget(null)
+      setTimeCorrectTimes({ startTime: '', endTime: '' })
+      setTimeCorrectReason('')
+      setTimeCorrectFinancial(null)
+      showToast(
+        `Jam ${timeCorrectTarget.participantName} dikoreksi. Total Rp ${formatRp(oldAmount)} → Rp ${formatRp(newAmount)}; status ${statusLabel} tetap.`,
+        'success',
+      )
+      await onRefresh?.()
+    } catch (error) {
+      const message = error?.message || 'Koreksi jam gagal disimpan.'
+      if (/Data sudah berubah|Muat ulang daftar Lembur/i.test(message)) {
+        timeCorrectRequest.current += 1
+        setTimeCorrectTarget(null)
+        setTimeCorrectTimes({ startTime: '', endTime: '' })
+        setTimeCorrectReason('')
+        setTimeCorrectFinancial(null)
+        showToast('Data Lembur berubah di sesi lain. Daftar dimuat ulang; buka kembali koreksi jam.', 'danger')
+        await onRefresh?.()
+      } else {
+        setTimeCorrectError(message)
+      }
+    } finally {
+      setTimeCorrectBusy(false)
+    }
+  }
+
   const sorted = [...records].sort((a,b)=> String(b.startedAt).localeCompare(String(a.startedAt)))
   const jenisLabel = (record) => record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
   const uniquePeriods = [...new Set(sorted.map(r=> r.periodMonth || String(r.date||'').slice(0,7)))].filter(Boolean).sort()
@@ -1944,6 +2055,25 @@ export default function SLALembur({
   }
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const paginated = filtered.slice((currentPage-1)*rowsPerPage, currentPage*rowsPerPage)
+  const timeCorrectOriginal = timeCorrectTarget
+    ? pontianakFormValues(timeCorrectTarget.startedAt, timeCorrectTarget.endedAt)
+    : null
+  const timeCorrectPreview = timeCorrectTarget && timeCorrectFinancial
+    ? overtimeTimeCorrectionPreview({
+        hourlyRate: timeCorrectFinancial.hourlyRate,
+        date: timeCorrectTarget.date,
+        startTime: timeCorrectTimes.startTime,
+        endTime: timeCorrectTimes.endTime,
+      })
+    : null
+  const timeCorrectOldAmount = Number(timeCorrectFinancial?.total ?? timeCorrectTarget?.total ?? 0)
+  const timeCorrectNewAmount = Number(timeCorrectPreview?.amount ?? timeCorrectOldAmount)
+  const timeCorrectDifference = timeCorrectPreview ? timeCorrectNewAmount - timeCorrectOldAmount : 0
+  const timeCorrectChanged = Boolean(
+    timeCorrectOriginal
+    && (timeCorrectOriginal.startTime !== timeCorrectTimes.startTime
+      || timeCorrectOriginal.endTime !== timeCorrectTimes.endTime),
+  )
   useEffect(()=>{ setCurrentPage(1) }, [filters, rowsPerPage, records.length])
   const loadDetailData = async (activityId, entryIdForDetail) => {
     const evidenceModule = await import('../../data/overtimeEvidenceRepository.js')
@@ -2680,9 +2810,10 @@ export default function SLALembur({
                       <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(record)} tone={statusTone(record)}>{display}</StatusBadge>{status==='CORRECTION_REQUIRED' && record.revisionDeadlineAt && <div className="lembur-revision-meta"><small>Batas: {new Date(record.revisionDeadlineAt).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</small>{record.rejectionCount===2 && <strong>REVISI TERAKHIR</strong>}</div>}</td>
                       <td className="lembur-table-actions-cell">
                         <div className="lembur-table-actions">
-                          {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>{recordReviewStatus(record) === 'CORRECTION_REQUIRED' ? 'Revisi Pengajuan' : 'Lanjutkan Draft'}</Button>}
-                           {canCorrectRecord(record) && paginated.findIndex((row) => row.id === record.id) === recordIndex && <Button variant="secondary" size="small" onClick={()=>openCorrection(record)}>Koreksi</Button>}
-                           <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
+                           {canMutate && canEdit && !isExpired && <Button variant="secondary" size="small" disabled={isSubmitting} onClick={()=>editDraft(record)}>{recordReviewStatus(record) === 'CORRECTION_REQUIRED' ? 'Revisi Pengajuan' : 'Lanjutkan Draft'}</Button>}
+                            {canCorrectRecord(record) && paginated.findIndex((row) => row.id === record.id) === recordIndex && <Button variant="secondary" size="small" onClick={()=>openCorrection(record)}>Koreksi Batch</Button>}
+                            {canCorrectTimeRecord(record) && <Button variant="secondary" size="small" disabled={timeCorrectBusy} onClick={()=>openTimeCorrection(record)}>Koreksi Jam</Button>}
+                            <Button variant="secondary" size="small" onClick={()=>openDetail(record)}>Lihat Detail</Button>
                             {canDeleteRecord(record) && <Button variant="danger" size="small" disabled={deleteBusy} onClick={()=>{setDeleteTarget(record);setDeleteReason('');setDeleteError('')}}>Hapus Peserta</Button>}
                         </div>
                       </td>
@@ -2730,6 +2861,58 @@ export default function SLALembur({
                 <label className="sla-context-field"><span className="sla-context-label">Alasan Koreksi *</span><textarea className="sla-context-select" rows={3} value={correctReason} disabled={correctBusy} onChange={event=>{setCorrectReason(event.target.value);setCorrectError('')}} placeholder="Jelaskan alasan koreksi tanggal/jam" /></label>
                 {correctError && <Alert tone="danger">{correctError}</Alert>}
                 <div className="lembur-delete-actions"><Button variant="ghost" disabled={correctBusy} onClick={closeCorrection}>Batal</Button><Button variant="primary" disabled={correctBusy||!correctReason.trim()} onClick={handleCorrection}>{correctBusy?'Menyimpan...':'Simpan Koreksi'}</Button></div>
+              </div>
+            </div>
+          )}
+          {isSuperAdmin && timeCorrectTarget && (
+            <div className="rekap-detail-overlay" onClick={closeTimeCorrection}>
+              <div className="rekap-detail-modal lembur-correct-modal lembur-time-correct-modal" role="dialog" aria-modal="true" aria-labelledby="lembur-time-correct-title" onClick={event=>event.stopPropagation()}>
+                <div className="lembur-delete-header">
+                  <div>
+                    <span className="lembur-kicker">SUPER ADMIN · KOREKSI JAM & NOMINAL</span>
+                    <h2 id="lembur-time-correct-title">Koreksi Jam & Nominal</h2>
+                  </div>
+                  <IconButton label="Tutup" className="lembur-icon-button" disabled={timeCorrectBusy} onClick={closeTimeCorrection}><Icon name="close" size={17} /></IconButton>
+                </div>
+                <Alert tone="warning" title="Hanya peserta ini yang dikoreksi">
+                  Tanggal, status pengajuan, evidence, dan peserta lain tidak berubah. Nominal dihitung ulang dari tarif historis yang tersimpan pada pengajuan.
+                </Alert>
+                <dl className="lembur-delete-summary">
+                  <div><dt>Jenis</dt><dd>{jenisLabel(timeCorrectTarget)}</dd></div>
+                  <div><dt>Tanggal</dt><dd>{timeCorrectTarget.date}</dd></div>
+                  <div><dt>Peserta</dt><dd>{timeCorrectTarget.participantName}</dd></div>
+                  <div><dt>Status</dt><dd>{displayStatus(timeCorrectTarget)}</dd></div>
+                  <div><dt>Total saat ini</dt><dd>Rp {formatRp(timeCorrectOldAmount)}</dd></div>
+                </dl>
+                <div className="lembur-correct-row">
+                  <strong>Jam peserta</strong>
+                  <div className="lembur-correct-times">
+                    <label className="sla-context-field"><span className="sla-context-label">Jam Mulai *</span><input type="time" className="sla-context-select" value={timeCorrectTimes.startTime} disabled={timeCorrectBusy} onChange={event=>{setTimeCorrectTimes((prev)=>({...prev,startTime:event.target.value}));setTimeCorrectError('')}} /></label>
+                    <label className="sla-context-field"><span className="sla-context-label">Jam Selesai *</span><input type="time" className="sla-context-select" value={timeCorrectTimes.endTime} disabled={timeCorrectBusy} onChange={event=>{setTimeCorrectTimes((prev)=>({...prev,endTime:event.target.value}));setTimeCorrectError('')}} /></label>
+                    <div className="lembur-duration-compact">
+                      <span>Durasi baru</span>
+                      <strong>{timeCorrectPreview ? formatDurationMinutes(timeCorrectPreview.minutes) : '–'}</strong>
+                      {timeCorrectTimes.endTime <= timeCorrectTimes.startTime && timeCorrectTimes.startTime && timeCorrectTimes.endTime && <small>+1 hari</small>}
+                    </div>
+                  </div>
+                </div>
+                {timeCorrectLoading ? (
+                  <p className="sla-table-hint" role="status">Memuat tarif historis peserta...</p>
+                ) : timeCorrectFinancial && timeCorrectPreview ? (
+                  <dl className="lembur-delete-summary lembur-time-correct-preview">
+                    <div><dt>Tarif historis</dt><dd>Rp {formatRp(timeCorrectFinancial.hourlyRate)}/jam</dd></div>
+                    <div><dt>Nominal baru</dt><dd>Rp {formatRp(timeCorrectNewAmount)}</dd></div>
+                    <div><dt>Selisih</dt><dd className={timeCorrectDifference > 0 ? 'is-increase' : timeCorrectDifference < 0 ? 'is-decrease' : ''}>{timeCorrectDifference >= 0 ? '+' : '−'}Rp {formatRp(Math.abs(timeCorrectDifference))}</dd></div>
+                  </dl>
+                ) : timeCorrectFinancial ? (
+                  <p className="sla-table-hint">Isi jam mulai dan jam selesai yang valid untuk melihat nominal baru.</p>
+                ) : null}
+                <label className="sla-context-field"><span className="sla-context-label">Alasan Koreksi *</span><textarea className="sla-context-select" rows={3} value={timeCorrectReason} disabled={timeCorrectBusy} onChange={event=>{setTimeCorrectReason(event.target.value);setTimeCorrectError('')}} placeholder="Jelaskan alasan perubahan jam dan nominal" /></label>
+                {timeCorrectError && <Alert tone="danger">{timeCorrectError}</Alert>}
+                <div className="lembur-delete-actions">
+                  <Button variant="ghost" disabled={timeCorrectBusy} onClick={closeTimeCorrection}>Batal</Button>
+                  <Button variant="primary" disabled={timeCorrectBusy || timeCorrectLoading || !timeCorrectFinancial || !timeCorrectPreview || !timeCorrectChanged || !timeCorrectReason.trim()} onClick={handleTimeCorrection}>{timeCorrectBusy?'Menyimpan...':'Simpan Koreksi'}</Button>
+                </div>
               </div>
             </div>
           )}

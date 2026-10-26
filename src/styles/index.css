@@ -6504,6 +6504,16 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .lembur-correct-row { padding: 12px; border: 1px solid #dfe6ea; border-radius: 9px; background: #f8fafb; }
 .lembur-correct-row > strong { display: block; margin-bottom: 8px; color: var(--pln-navy); }
 .lembur-correct-times { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+.lembur-time-correct-modal { width: min(calc(100vw - 32px), 640px); }
+.lembur-time-correct-preview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lembur-time-correct-preview > div:last-child { grid-column: auto; }
+.lembur-time-correct-preview dd.is-increase { color: #176b49; font-weight: 700; }
+.lembur-time-correct-preview dd.is-decrease { color: #a12c33; font-weight: 700; }
+@media (max-width: 560px) {
+  .lembur-correct-times,
+  .lembur-time-correct-preview { grid-template-columns: minmax(0, 1fr); }
+  .lembur-time-correct-preview > div:last-child { grid-column: auto; }
+}
 .lembur-delete-header, .lembur-delete-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lembur-delete-header { margin-bottom: 12px; }
 .lembur-delete-header h2 { margin: 2px 0 0; color: var(--pln-navy); font-size: 20px; }

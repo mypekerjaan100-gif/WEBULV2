@@ -49,7 +49,7 @@ assert(component.includes('Koreksi Tanggal & Jam'), 'Judul modal koreksi hilang'
 assert(component.includes('Simpan Koreksi'), 'Tombol simpan koreksi hilang')
 assert(component.includes('Alasan Koreksi'), 'Alasan koreksi hilang')
 assert(component.includes('STATUS TETAP DISETUJUI'), 'Penegas status hilang')
-assert(component.includes('Koreksi Data Disetujui'), 'Label riwayat koreksi hilang')
+assert(component.includes('Koreksi Data Lembur'), 'Label riwayat koreksi hilang')
 assert(component.includes('Tanggal pindah periode'), 'Pesan pindah periode hilang')
 
 const pageUrl = new URL('../pages/sla/SLAPelayananTeknikPage.jsx', import.meta.url)

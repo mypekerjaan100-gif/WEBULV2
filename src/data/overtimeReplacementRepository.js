@@ -301,6 +301,17 @@ export async function correctApprovedOvertimeWork({ activityId, overtimeDate, pa
     p_expected_updated_at: expectedUpdatedAt,
   })
 }
+
+export async function correctOvertimeEntryTimes({ activityId, entryId, startedAt, endedAt, reason, expectedUpdatedAt }) {
+  return rpc('correct_overtime_entry_times_super_admin_l6', {
+    p_activity_id: activityId,
+    p_entry_id: entryId,
+    p_started_at: startedAt,
+    p_ended_at: endedAt,
+    p_reason: reason,
+    p_expected_updated_at: expectedUpdatedAt,
+  })
+}
 export async function listOvertimeHistory(activityId) {
   return rpc('list_overtime_history_l5', { p_activity_id: activityId })
 }
