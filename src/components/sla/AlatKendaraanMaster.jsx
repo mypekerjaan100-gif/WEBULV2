@@ -667,8 +667,8 @@ function emptyTemplateForm() {
 }
 
 function autoTemplateName(form, types, assignments) {
-  const typeName = types.find((item) => item.id === form?.vehicleTypeId)?.name || ''
-  const assignmentName = assignments.find((item) => item.id === form?.assignmentId)?.name || ''
+  const typeName = (types.find((item) => item.id === form?.vehicleTypeId)?.name || '').trim()
+  const assignmentName = (assignments.find((item) => item.id === form?.assignmentId)?.name || '').trim()
   const variant = String(form?.vehicleVariant || '').trim()
   if (!typeName || !assignmentName) return ''
   return [typeName, assignmentName, variant].filter(Boolean).join(' - ')
@@ -938,11 +938,10 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
           note: item.note ?? '',
         })),
       }
-      if (template.status !== 'Aktif') {
-        next.templateName = autoTemplateName(next, types, assignments) || template.templateName
-      }
+      const savedBaseline = templateSnapshot(next)
+      next.templateName = autoTemplateName(next, types, assignments) || template.templateName
       setForm(next)
-      setBaseline(templateSnapshot(next))
+      setBaseline(savedBaseline)
       setOpenNotes(new Set(items.map((item, index) => (item.note ? `r${index}` : null)).filter(Boolean)))
       setTemplateMeta({
         templateCode: template.templateCode,
@@ -1096,7 +1095,7 @@ function TemplateSection({ templates, templateItems, types, assignments, equipme
       const nextForm = {
         ...form,
         id: saved.id,
-        templateName: form.templateName.trim(),
+        templateName: saved.templateName,
         vehicleVariant: form.vehicleVariant.trim(),
         description,
         rows: orderedRows.map((row) => ({

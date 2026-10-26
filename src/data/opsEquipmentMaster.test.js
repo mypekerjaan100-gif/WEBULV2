@@ -59,6 +59,18 @@ assert(activeEditSql.includes("errcode = '40001'"), 'Perlindungan revisi templat
 assert(!activeEditSql.includes('ops_vehicle_monthly_reports'), 'Edit template tidak boleh menulis laporan tersimpan')
 assert(!activeEditSql.includes('ops_prescribed_vehicles'), 'Edit template tidak boleh mengubah penetapan kendaraan')
 
+const automaticNameSql = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20261026051506_ops_template_automatic_names.sql',
+  import.meta.url,
+)), 'utf8')
+assert(automaticNameSql.includes("new.template_name := concat_ws(' - '"), 'Nama template harus dibentuk otomatis di database')
+assert(automaticNameSql.includes("old.status = 'Draft' or (old.status = 'Aktif' and v_active_edit)"), 'Nama otomatis harus berlaku pada draft dan penyimpanan aktif')
+assert(automaticNameSql.includes('if not v_items_unchanged then'), 'Perubahan nama saja harus mempertahankan snapshot alat')
+assert(automaticNameSql.includes('v_items_after is distinct from v_items_before'), 'Koreksi nama lama harus memverifikasi isi dan harga tetap utuh')
+assert(!/disable\s+trigger/i.test(automaticNameSql), 'Koreksi nama tidak boleh mematikan guard database')
+assert(!automaticNameSql.includes('ops_vehicle_monthly_reports'), 'Koreksi nama tidak boleh mengubah laporan bulanan')
+assert(!automaticNameSql.includes('ops_prescribed_vehicles'), 'Koreksi nama tidak boleh mengubah penetapan kendaraan')
+
 const equipmentPricingSql = readFileSync(fileURLToPath(new URL(
   '../../supabase/migrations/20261025054509_ops_equipment_pricing.sql',
   import.meta.url,
@@ -113,6 +125,9 @@ assert(component.includes('Simpan Draft'), 'Aksi draft hilang')
 assert(component.includes('Simpan Perubahan'), 'Aksi simpan template aktif hilang')
 assert(component.includes("templateMeta?.status === 'Aktif'"), 'Mode edit template aktif hilang')
 assert(component.includes('Edit Template Aktif'), 'Judul edit template aktif hilang')
+assert(!component.includes("if (template.status !== 'Aktif')"), 'Template aktif tidak boleh mempertahankan nama manual lama')
+assert(component.includes('const savedBaseline = templateSnapshot(next)'), 'Koreksi nama otomatis harus tetap terdeteksi sebagai perubahan')
+assert(component.includes('templateName: saved.templateName'), 'Form harus memakai nama resmi yang dikembalikan server')
 assert(component.includes('Terbitkan'), 'Aksi publikasi hilang')
 assert(component.includes('Duplikasi'), 'Aksi duplikasi hilang')
 assert(component.includes('Arsipkan'), 'Aksi arsip hilang')
