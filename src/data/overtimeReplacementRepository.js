@@ -292,25 +292,75 @@ export async function softDeleteOvertimeActivity(activityId, reason) {
 export async function softDeleteOvertimeEntry(entryId, reason) {
   return rpc('soft_delete_overtime_entry_l5', { p_entry_id: entryId, p_reason: reason })
 }
-export async function correctApprovedOvertimeWork({ activityId, overtimeDate, participants, reason, expectedUpdatedAt }) {
-  return rpc('correct_approved_overtime_work_l6', {
-    p_activity_id: activityId,
-    p_overtime_date: overtimeDate,
-    p_participants: participants,
-    p_reason: reason,
-    p_expected_updated_at: expectedUpdatedAt,
-  })
+function mapCorrectionParticipant(row) {
+  return {
+    entryId: row.entry_id,
+    employeeId: row.employee_id,
+    participantName: row.participant_name,
+    previousStatus: row.previous_status,
+    status: row.status,
+    previousDate: row.previous_date,
+    date: row.date,
+    previousStartedAt: row.previous_started_at,
+    startedAt: row.started_at,
+    previousEndedAt: row.previous_ended_at,
+    endedAt: row.ended_at,
+    previousRate: Number(row.previous_rate ?? 0),
+    rate: Number(row.rate ?? 0),
+    previousDurationHours: Number(row.previous_duration_hours ?? 0),
+    durationHours: Number(row.duration_hours ?? 0),
+    previousMultiplierHours: Number(row.previous_multiplier_hours ?? 0),
+    multiplierHours: Number(row.multiplier_hours ?? 0),
+    previousAmount: Number(row.previous_amount ?? 0),
+    amount: Number(row.amount ?? 0),
+    isTarget: Boolean(row.is_target),
+  }
 }
 
-export async function correctOvertimeEntryTimes({ activityId, entryId, startedAt, endedAt, reason, expectedUpdatedAt }) {
-  return rpc('correct_overtime_entry_times_super_admin_l6', {
+function mapCorrectionPlan(data) {
+  if (!data) return null
+  return {
+    activityId: data.activity_id,
+    activityType: data.activity_type,
+    activityStatus: data.activity_status,
+    entryId: data.entry_id,
+    previousDate: data.previous_date,
+    date: data.date,
+    dateChanged: Boolean(data.date_changed),
+    targetChanged: Boolean(data.target_changed),
+    applied: Boolean(data.applied),
+    periodMonth: data.period_month ?? null,
+    participants: (data.participants ?? []).map(mapCorrectionParticipant),
+    target: data.target ? mapCorrectionParticipant(data.target) : null,
+  }
+}
+
+export async function previewOvertimeEntryCorrection({ activityId, entryId, overtimeDate, startedAt, endedAt, expectedUpdatedAt }) {
+  const data = await rpc('correct_overtime_entry_super_admin_l7', {
     p_activity_id: activityId,
     p_entry_id: entryId,
+    p_overtime_date: overtimeDate,
+    p_started_at: startedAt,
+    p_ended_at: endedAt,
+    p_reason: '',
+    p_expected_updated_at: expectedUpdatedAt,
+    p_apply: false,
+  })
+  return mapCorrectionPlan(data)
+}
+
+export async function correctOvertimeEntrySuperAdmin({ activityId, entryId, overtimeDate, startedAt, endedAt, reason, expectedUpdatedAt }) {
+  const data = await rpc('correct_overtime_entry_super_admin_l7', {
+    p_activity_id: activityId,
+    p_entry_id: entryId,
+    p_overtime_date: overtimeDate,
     p_started_at: startedAt,
     p_ended_at: endedAt,
     p_reason: reason,
     p_expected_updated_at: expectedUpdatedAt,
+    p_apply: true,
   })
+  return mapCorrectionPlan(data)
 }
 export async function listOvertimeHistory(activityId) {
   return rpc('list_overtime_history_l5', { p_activity_id: activityId })

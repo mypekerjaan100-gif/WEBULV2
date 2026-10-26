@@ -73,12 +73,13 @@ for (const name of [
   assert(guardPos >= 0 && reviewPos > guardPos, `Tambalan ${name} harus sebelum pemeriksaan review`)
 }
 
-// E) Koreksi lembur disetujui: unit kantor UP3 hanya Super Admin.
-const corrStart = sql.indexOf('CREATE OR REPLACE FUNCTION public.correct_approved_overtime_work_l6(')
-assert(corrStart >= 0, 'RPC koreksi tidak ditemukan')
-const corrBody = fnBodyAt(sql, corrStart)
-assert(corrBody.includes('Koreksi lembur kantor UP3 hanya dapat dilakukan oleh Super Admin'), 'Tambalan koreksi kantor UP3 hilang')
-assert(corrBody.includes('Hanya Super Admin atau Admin UP3 pada scope ini'), 'Guard lama koreksi harus tetap ada')
+// E) Koreksi batch lama dicabut; koreksi per peserta baru khusus Super Admin.
+const unifiedCorrection = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20261026083508_overtime_unified_entry_correction.sql',
+  import.meta.url,
+)), 'utf8')
+assert(unifiedCorrection.includes('revoke all on function public.correct_approved_overtime_work_l6'), 'Endpoint koreksi batch lama harus dicabut')
+assert(unifiedCorrection.includes('public.auth_is_super_admin()'), 'Koreksi per peserta harus khusus Super Admin')
 
 // ---------------------------------------------------------------------------
 // Halaman: Admin UP3 exact mendapat hak input, diteruskan sebagai prop eksak
@@ -87,7 +88,7 @@ const pageUrl = new URL('../pages/sla/SLAPelayananTeknikPage.jsx', import.meta.u
 const page = readFileSync(fileURLToPath(pageUrl), 'utf8')
 assert(page.includes("canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3}"), 'canMutate harus mencakup Admin UP3 exact')
 assert(page.includes('isExactAdminUp3={isAdminUp3}'), 'Prop eksak Admin UP3 harus diteruskan')
-assert(page.includes('canCorrectApprovedWork={isSuperAdmin || isAdminUp3}'), 'Prop koreksi harus tetap eksak')
+assert(!page.includes('canCorrectApprovedWork'), 'Prop koreksi batch lama harus dihapus')
 
 // ---------------------------------------------------------------------------
 // Komponen: gerbang input kantor UP3 + pembatasan per record
@@ -100,7 +101,7 @@ assert(component.includes('const officeRecordGuard = (record) => !isExactAdminUp
 assert(component.includes('rows.filter((row) => row.unitId === up3Id)'), 'Daftar pegawai harus dibatasi unit UP3 kantor untuk Admin UP3')
 assert(component.includes('if (!officeRecordGuard(record)) return false'), 'Hapus harus dibatasi unit kantor UP3')
 assert(component.includes("'Lembur ini bukan untuk pegawai kantor UP3 Anda.'"), 'Edit harus dibatasi unit kantor UP3')
-assert(component.includes('if (!isSuperAdmin && record.unitId === up3Id) return false'), 'Koreksi record kantor UP3 harus diblokir untuk Admin UP3')
+assert(component.includes('isSuperAdmin && record?.entryId'), 'Koreksi per peserta harus khusus Super Admin')
 assert(component.includes('const detailOfficeBlocked = Boolean(detailActivity && up3Id && detailActivity.unitId === up3Id && !isSuperAdmin)'), 'Detail kantor UP3 harus dibedakan')
 assert(component.includes('(isAdminUp3||isSuperAdmin) && detailCanApprove && !detailOfficeBlocked'), 'Tombol approval harus disembunyikan untuk lembur kantor UP3')
 assert(component.includes('Lembur kantor UP3 hanya dapat disetujui atau ditolak oleh Super Admin'), 'Keterangan approval kantor UP3 hilang')
