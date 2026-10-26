@@ -23,6 +23,7 @@ import {
   pontianakFormValues,
   REPLACEMENT_TYPES,
 } from '../../data/overtimeReplacementL2.js'
+import { splitOvertimeExportTimes } from '../../data/overtimeExport.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 import EvidenceUploadCard from './EvidenceUploadCard.jsx'
@@ -1910,7 +1911,8 @@ export default function SLALembur({
       { label: 'Tanggal', width: 14 },
       { label: 'Jenis Lembur', width: 24 },
       { label: 'Pegawai', width: 28 },
-      { label: 'Waktu/Jam', width: 22 },
+      { label: 'Jam Mulai', width: 14 },
+      { label: 'Jam Selesai', width: 22 },
       { label: 'Durasi', width: 14 },
       { label: 'Total Rp', width: 18 },
       { label: 'Keterangan', width: 42 },
@@ -1918,13 +1920,14 @@ export default function SLALembur({
       { label: 'Unit/ULP', width: 28 },
     ]
     const rows = filtered.map((record, index) => {
-      const time = pontianakFormValues(record.startedAt, record.endedAt)
+      const time = splitOvertimeExportTimes(record.startedAt, record.endedAt)
       return [
         { value: String(index + 1) },
         { value: record.date ?? '', type: 'date' },
         { value: jenisLabel(record) },
         { value: record.participantName ?? '' },
-        { value: `${time.startTime}-${time.endTime}${time.endTime <= time.startTime ? ' (+1 hari)' : ''}` },
+        { value: time.startTime },
+        { value: time.endTime },
         { value: formatDurationMinutes(Number(record.durationHours ?? 0) * 60) },
         { value: `Rp ${formatRp(record.total)}` },
         { value: record.description ?? '' },
