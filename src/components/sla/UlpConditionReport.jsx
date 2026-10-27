@@ -527,6 +527,8 @@ export default function UlpConditionReport({
                       className="sla-btn"
                       onClick={() => {
                         setHighlightIssueId(issue.id)
+                        setModalError('')
+                        setModalMessage('')
                         if (inReport) {
                           setFocusedToolVehicleId(null)
                           setSelectedVehicleId(issue.vehicle_id)
