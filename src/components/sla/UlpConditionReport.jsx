@@ -488,25 +488,46 @@ export default function UlpConditionReport({
               <div><span>Lokasi Tujuan</span><strong>{vehicleLocationLabel(selectedVehicle) || 'Belum ditetapkan'}</strong></div>
               <div><span>Template</span><strong>{selectedVehicle.template_name || '-'}</strong></div>
               <div><span>Versi</span><strong>Versi {selectedVehicle.template_version}</strong></div>
+              <div className="uc-assignment-plate">
+                <span>Nomor Polisi</span>
+                {selectedVehicle.plate_display
+                  ? (
+                    <div className="uc-plate-inline">
+                      <strong>{selectedVehicle.plate_display}</strong>
+                      {editable && !plateEdit && (
+                        <button
+                          type="button"
+                          className="sla-btn uc-plate-edit"
+                          disabled={saving || vehicleItemsDirty}
+                          title={vehicleItemsDirty ? 'Simpan kondisi yang sedang diisi terlebih dahulu.' : 'Koreksi nopol yang salah ketik'}
+                          onClick={openPlateEdit}
+                        >
+                          Edit Nopol
+                        </button>
+                      )}
+                    </div>
+                  )
+                  : <strong className="uc-plate-unset">Belum diisi</strong>}
+              </div>
             </div>
             {selectedVehicle.plate_display && editable && !plateEdit && (
-              <div className="uc-plate-entry uc-plate-entry--filled">
-                <div className="uc-plate-current"><span>Nomor Polisi</span><strong>{selectedVehicle.plate_display}</strong></div>
-                <button type="button" className="sla-btn" disabled={saving || vehicleItemsDirty} title={vehicleItemsDirty ? 'Simpan kondisi yang sedang diisi terlebih dahulu.' : undefined} onClick={openPlateEdit}>Edit Nopol</button>
-                <p>Nopol salah ketik dapat dikoreksi di sini. Nopol pada laporan bulanan tersimpan juga akan diperbarui oleh sistem.</p>
-              </div>
+              <p className="uc-assignment-note">Nopol yang salah ketik dapat dikoreksi; laporan bulanan tersimpan ikut diperbarui.</p>
             )}
             {selectedVehicle.plate_display && editable && plateEdit && (
-              <div className="uc-plate-entry uc-plate-entry--edit">
-                <label htmlFor={`plate-edit-${selectedVehicle.id}`}>Nomor Polisi *<input id={`plate-edit-${selectedVehicle.id}`} maxLength={30} autoComplete="off" data-autofocus value={plateEdit.plate} placeholder="Contoh: KB 1234 XX" onChange={(event) => updatePlateEdit({ plate: event.target.value })} /></label>
-                <div className="uc-plate-reason">
-                  <label htmlFor={`plate-reason-${selectedVehicle.id}`}>Alasan Koreksi *<textarea id={`plate-reason-${selectedVehicle.id}`} maxLength={500} rows={2} placeholder="Contoh: salah ketik huruf akhir" value={plateEdit.reason} onChange={(event) => updatePlateEdit({ reason: event.target.value })} /></label>
+              <div className="uc-plate-correction">
+                <h4>Koreksi Nomor Polisi</h4>
+                <p className="uc-plate-correction-note">Hanya nopol yang berubah. Lokasi, template, kondisi, dan status tetap; laporan tersimpan yang memuat nopol lama ikut direvisi.</p>
+                <div className="uc-plate-correction-fields">
+                  <label className="uc-plate-correction-plate" htmlFor={`plate-edit-${selectedVehicle.id}`}>Nomor Polisi Baru *<input id={`plate-edit-${selectedVehicle.id}`} maxLength={30} autoComplete="off" data-autofocus value={plateEdit.plate} placeholder="Contoh: KB 1234 XX" onChange={(event) => updatePlateEdit({ plate: event.target.value })} /></label>
+                  <label className="uc-plate-correction-reason" htmlFor={`plate-reason-${selectedVehicle.id}`}>Alasan Koreksi *<textarea id={`plate-reason-${selectedVehicle.id}`} maxLength={500} rows={2} placeholder="Contoh: salah ketik huruf akhir" value={plateEdit.reason} onChange={(event) => updatePlateEdit({ reason: event.target.value })} /></label>
+                </div>
+                <div className="uc-plate-correction-actions">
+                  <span>Nopol saat ini: <strong>{savedVehicle?.plate_display || selectedVehicle.plate_display}</strong></span>
                   <div className="alkes-modal-actions">
                     <button type="button" className="sla-btn" disabled={saving} onClick={() => setPlateEdit(null)}>Batal</button>
                     <button type="button" className="sla-btn sla-btn-primary" disabled={saving || !plateEdit.plate.trim() || !plateEdit.reason.trim()} onClick={savePlateCorrection}>{saving ? 'Menyimpan...' : 'Simpan Koreksi'}</button>
                   </div>
                 </div>
-                <p>Nopol baru menggantikan nopol pada penetapan ini; laporan tersimpan yang memuat nopol lama ikut diperbarui. Lokasi, template, kondisi, dan status tidak berubah.</p>
               </div>
             )}
             {!selectedVehicle.plate_display && editable && (
