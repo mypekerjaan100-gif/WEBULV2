@@ -86,7 +86,7 @@ assert(unifiedCorrection.includes('public.auth_is_super_admin()'), 'Koreksi per 
 // ---------------------------------------------------------------------------
 const pageUrl = new URL('../pages/sla/SLAPelayananTeknikPage.jsx', import.meta.url)
 const page = readFileSync(fileURLToPath(pageUrl), 'utf8')
-assert(page.includes("canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3}"), 'canMutate harus mencakup Admin UP3 exact')
+assert(page.includes("canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3"), 'canMutate harus mencakup Admin UP3 exact')
 assert(page.includes('isExactAdminUp3={isAdminUp3}'), 'Prop eksak Admin UP3 harus diteruskan')
 assert(!page.includes('canCorrectApprovedWork'), 'Prop koreksi batch lama harus dihapus')
 

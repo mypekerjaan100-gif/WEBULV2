@@ -150,7 +150,7 @@ assert(
   modules.indexOf("id: 'lembur'") < modules.indexOf("id: 'kendaraan-ulp'"),
   'Tab Alat & Kendaraan harus tepat setelah Lembur',
 )
-assert(page.includes("import UlpToolInspection from '../../components/sla/UlpToolInspection.jsx'"), 'Halaman utama harus membuka inspeksi alat per unit')
+assert(page.includes("import UlpConditionReport from '../../components/sla/UlpConditionReport.jsx'"), 'Halaman utama harus membuka rekap kondisi ULP')
 assert(page.includes("moduleId === 'kendaraan-ulp' ? ("), 'Cabang modul kendaraan-ulp hilang')
 assert(page.includes("const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp || isManagement || customCanRead('alat_kendaraan')"), 'Visibilitas kendaraan harus dibatasi peran')
 assert(page.includes("if (module.id === 'kendaraan-ulp') return canViewVehicles"), 'Filter modul kendaraan-ulp hilang')
@@ -158,8 +158,10 @@ assert(app.includes("SLA_PRIMARY_MODULE_IDS = ['sla', 'variable-cost', 'lembur',
 assert(sidebar.includes('slaPrimaryModules') && sidebar.includes('slaConfigurationModules'), 'Submenu sidebar Pelayanan Teknik hilang')
 assert(!page.includes('sla-module-navigation'), 'Navigasi tab horizontal lama harus dihapus')
 assert(page.includes('ownUlpUuid={adminUlpAccess?.operational_unit_id ?? (isCustomRole ? selectedUnitUuid : null)}'), 'ULP Admin ULP harus eksak')
+assert(page.includes("canManage={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}"), 'Isian rekap harus untuk K3/custom edit')
 assert(page.includes('canManagePlate={isSuperAdmin || isAdminUlp}'), 'Nopol hanya untuk Super Admin/Admin ULP')
 assert(page.includes("canInspect={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}"), 'Inspeksi alat harus untuk K3/custom edit')
+assert(page.includes('initialUlpId={isManagement && !isSuperAdmin && !isAdminUp3 ? selectedUnitUuid : null}'), 'Manajemen harus mulai dari ULP terpetakan')
 assert(page.includes('canPickUlp={isSuperAdmin || isAdminUp3 || isManagement}'), 'Pemantauan lintas ULP harus mencakup manajemen terkait')
 assert(page.includes('const VEHICLE_TAB_DISABLED = false'), 'Tab Alat & Kendaraan harus aktif')
 assert(sidebar.includes('slaActiveModule === module.id'), 'Submenu aktif harus mengikuti modul terpilih')

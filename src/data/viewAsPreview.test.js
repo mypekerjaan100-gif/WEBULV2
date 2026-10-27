@@ -38,6 +38,7 @@ for (const name of [
   'ops_end_prescribed_vehicle',
   'ops_set_prescribed_vehicle_plate',
   'ops_save_vehicle_condition_report',
+  'ops_save_vehicle_condition_subset',
   'ops_submit_tool_inspection',
   'ops_resolve_tool_issue',
   'deactivate_feeder',

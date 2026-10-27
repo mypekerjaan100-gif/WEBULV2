@@ -27,7 +27,7 @@ import SLAMasterOrganisasi from '../../components/sla/SLAMasterOrganisasi.jsx'
 import SLAMasterLokasi from '../../components/sla/SLAMasterLokasi.jsx'
 import SLAMasterJabatan from '../../components/sla/SLAMasterJabatan.jsx'
 import AlatKendaraanMaster from '../../components/sla/AlatKendaraanMaster.jsx'
-import UlpToolInspection from '../../components/sla/UlpToolInspection.jsx'
+import UlpConditionReport from '../../components/sla/UlpConditionReport.jsx'
 import SLADatabasePegawai from '../../components/sla/SLADatabasePegawai.jsx'
 import SLAMasterPenandatangan from '../../components/sla/SLAMasterPenandatangan.jsx'
 import SLAPengaturanSLA from '../../components/sla/SLAPengaturanSLA.jsx'
@@ -1457,16 +1457,21 @@ export default function SLAPelayananTeknikPage({
           {orgMapError || 'Organisasi tidak tersedia.'}
         </StatePanel>
       ) : moduleId === 'kendaraan-ulp' ? (
-        <UlpToolInspection
-          key={`${orgMap.contractUuid}:${orgMap.up3Uuid}:${effectiveUnitId || 'all'}:${viewAsRoleCode ?? 'full'}`}
+        <UlpConditionReport
+          key={`${orgMap.contractUuid}:${orgMap.up3Uuid}:${periodMonth}:${effectiveUnitId || 'all'}:${viewAsRoleCode ?? 'full'}`}
           contractUuid={orgMap.contractUuid}
           up3Uuid={orgMap.up3Uuid}
           ownUlpUuid={adminUlpAccess?.operational_unit_id ?? (isCustomRole ? selectedUnitUuid : null)}
+          initialUlpId={isManagement && !isSuperAdmin && !isAdminUp3 ? selectedUnitUuid : null}
+          overviewEnabled={isSuperAdmin || isAdminUp3 || !isManagement}
           canPickUlp={isSuperAdmin || isAdminUp3 || isManagement}
+          canManage={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
           canManagePlate={isSuperAdmin || isAdminUlp}
           canInspect={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
           canResolveIssue={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
           units={orgMap.units}
+          initialMonth={periodMonth}
+          onMonthChange={(month) => setPeriod(periodLabelFromMonth(month))}
           issueTarget={toolIssueTarget}
           onEditorStateChange={handleEditorStateChange}
           onOpenStandards={isSuperAdmin || isAdminUp3 ? () => selectModule('alat-kendaraan') : undefined}
