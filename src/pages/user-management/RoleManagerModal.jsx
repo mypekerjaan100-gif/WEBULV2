@@ -16,6 +16,14 @@ const ACCESS_OPTIONS = [
 
 const emptyMenuAccess = () => Object.fromEntries(MENU_OPTIONS.map((menu) => [menu.key, 'none']))
 
+const roleCodeFromName = (value) => String(value ?? '')
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toUpperCase()
+  .replace(/[^A-Z0-9]+/g, '_')
+  .replace(/^_+|_+$/g, '')
+  .slice(0, 60)
+
 const accessSummary = (menuAccess) => {
   const read = MENU_OPTIONS.filter((menu) => menuAccess?.[menu.key] === 'read').length
   const edit = MENU_OPTIONS.filter((menu) => menuAccess?.[menu.key] === 'edit').length
@@ -29,6 +37,7 @@ function RoleForm({ role, onCancel, onSaved }) {
   const [codeSuffix, setCodeSuffix] = useState(() => (
     role?.code ? role.code.replace(/^CUSTOM_/, '') : ''
   ))
+  const [codeTouched, setCodeTouched] = useState(false)
   const [description, setDescription] = useState(role?.description ?? '')
   const [menuAccess, setMenuAccess] = useState(() => ({ ...emptyMenuAccess(), ...(role?.menuAccess ?? {}) }))
   const [saving, setSaving] = useState(false)
@@ -37,6 +46,17 @@ function RoleForm({ role, onCancel, onSaved }) {
   const setMenu = (key, value) => {
     setMenuAccess((current) => ({ ...current, [key]: value }))
     setError('')
+  }
+
+  const handleNameChange = (value) => {
+    setDisplayName(value)
+    setError('')
+    if (!isEdit && !codeTouched) setCodeSuffix(roleCodeFromName(value))
+  }
+
+  const handleCodeChange = (value) => {
+    setCodeTouched(true)
+    setCodeSuffix(value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))
   }
 
   const submit = async (event) => {
@@ -72,15 +92,19 @@ function RoleForm({ role, onCancel, onSaved }) {
       <div className="role-form-grid">
         <div className="form-group">
           <label htmlFor="role-name">Nama Role *</label>
-          <input id="role-name" className="input-field" value={displayName} maxLength={80} onChange={(event) => setDisplayName(event.target.value)} placeholder="Contoh: K3" required />
+          <input id="role-name" className="input-field" value={displayName} maxLength={80} onChange={(event) => handleNameChange(event.target.value)} placeholder="Contoh: K3" required />
         </div>
         <div className="form-group">
           <label htmlFor="role-code">Kode Role *</label>
           <div className="role-code-input">
             <span>CUSTOM_</span>
-            <input id="role-code" className="input-field" value={codeSuffix} maxLength={60} disabled={isEdit} onChange={(event) => setCodeSuffix(event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} placeholder="K3" required />
+            <input id="role-code" className="input-field" value={codeSuffix} maxLength={60} disabled={isEdit} onChange={(event) => handleCodeChange(event.target.value)} placeholder="K3" required />
           </div>
-          <span className="invite-hint">Kode tidak dapat diubah setelah role dibuat.</span>
+          <span className="invite-hint">
+            {isEdit
+              ? 'Kode tidak dapat diubah setelah role dibuat.'
+              : 'Terisi otomatis dari nama role; dapat disesuaikan sebelum disimpan.'}
+          </span>
         </div>
         <div className="form-group role-form-description">
           <label htmlFor="role-description">Deskripsi</label>
