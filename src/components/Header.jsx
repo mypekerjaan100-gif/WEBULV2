@@ -13,15 +13,18 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
   const themeRef = useRef(null)
   const notificationRef = useRef(null)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
+  const previewLabel = preview?.active ? preview.label : null
   const contractAccess = authority?.actor?.contract_access?.[0] ?? null
   const orgAccess = authority?.actor?.organization_access?.[0] ?? null
   const activeAccess = contractAccess ?? orgAccess
-  const loginRole = isSuperAdmin
+  const loginRole = previewLabel ?? (isSuperAdmin
     ? 'SUPER_ADMIN'
-    : activeAccess?.role ?? activeAccess?.organization_role ?? 'Akses terverifikasi'
-  const scopeLabel = activeAccess?.role === 'ADMIN_ULP'
-    ? activeAccess.operational_unit_name
-    : activeAccess?.operational_up3_name ?? activeAccess?.operational_unit_name ?? activeAccess?.internal_org_unit_name ?? null
+    : activeAccess?.role ?? activeAccess?.organization_role ?? 'Akses terverifikasi')
+  const scopeLabel = preview?.active
+    ? (preview?.scopeLabel || null)
+    : activeAccess?.role === 'ADMIN_ULP'
+      ? activeAccess.operational_unit_name
+      : activeAccess?.operational_up3_name ?? activeAccess?.operational_unit_name ?? activeAccess?.internal_org_unit_name ?? null
   const pendingCount = approvalNotifications?.count ?? 0
   const hasSourceError = approvalNotifications?.groups?.some((group) => group.error) ?? false
 

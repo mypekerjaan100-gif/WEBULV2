@@ -178,6 +178,8 @@ export default function SLAPelayananTeknikPage({
   onRouteChange = null,
   onSlaVariableRejectedChange,
   customMenuAccess = null,
+  viewAsRoleCode = null,
+  viewAsLabel = '',
 }) {
   const [moduleId, setModuleId] = useState(() => {
     if (customMenuAccess) {
@@ -217,21 +219,26 @@ export default function SLAPelayananTeknikPage({
   const [savedEntriesByUnit, setSavedEntriesByUnit] = useState({})
   const [savedTargets, setSavedTargets] = useState({})
   const actor = auth?.authority?.actor
-  const isSuperAdmin = actor?.is_super_admin === true
+  const previewActive = Boolean(viewAsRoleCode)
+  const isSuperAdmin = !previewActive && actor?.is_super_admin === true
   const contractAccess = actor?.contract_access ?? []
-  const isAdminUp3 = contractAccess.some(
-    (access) =>
-      access.role === 'ADMIN_UP3' &&
-      access.contract_id === orgMap?.contractUuid &&
-      access.operational_up3_id === orgMap?.up3Uuid,
-  )
-  const isAdminUlp = contractAccess.some(
-    (access) =>
-      access.role === 'ADMIN_ULP' &&
-      access.contract_id === orgMap?.contractUuid &&
-      access.operational_up3_id === orgMap?.up3Uuid &&
-      access.operational_unit_id != null,
-  )
+  const isAdminUp3 = previewActive
+    ? viewAsRoleCode === 'ADMIN_UP3'
+    : contractAccess.some(
+      (access) =>
+        access.role === 'ADMIN_UP3' &&
+        access.contract_id === orgMap?.contractUuid &&
+        access.operational_up3_id === orgMap?.up3Uuid,
+    )
+  const isAdminUlp = previewActive
+    ? viewAsRoleCode === 'ADMIN_ULP'
+    : contractAccess.some(
+      (access) =>
+        access.role === 'ADMIN_ULP' &&
+        access.contract_id === orgMap?.contractUuid &&
+        access.operational_up3_id === orgMap?.up3Uuid &&
+        access.operational_unit_id != null,
+    )
   const managementRoles = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
   const isManagement = isManagementUser || (actor?.organization_access ?? []).some((a) => managementRoles.includes(a.organization_role))
   const managementAccess = (actor?.organization_access ?? organizationAccess ?? []).filter((a) => managementRoles.includes(a.organization_role))
@@ -479,15 +486,17 @@ export default function SLAPelayananTeknikPage({
     : role === 'ulp'
       ? null
       : (ulpUnits[0]?.id ?? up3Id)
-  const adminUlpAccess = contractAccess.find(
-    (access) =>
-      access.role === 'ADMIN_ULP' &&
-      access.contract_id === orgMap?.contractUuid &&
-      access.operational_up3_id === orgMap?.up3Uuid,
-  )
   const selectedUnitUuid = orgMap?.units.find(
     (entry) => entry.uuid === effectiveUnitId || entry.legacyKey === effectiveUnitId,
   )?.uuid ?? null
+  const adminUlpAccess = isAdminUlp && previewActive
+    ? { operational_unit_id: selectedUnitUuid }
+    : contractAccess.find(
+      (access) =>
+        access.role === 'ADMIN_ULP' &&
+        access.contract_id === orgMap?.contractUuid &&
+        access.operational_up3_id === orgMap?.up3Uuid,
+    )
   const lemburUnitUuid = role === 'ulp'
     ? isAdminUlp
       ? adminUlpAccess?.operational_unit_id ?? null
@@ -1058,6 +1067,13 @@ export default function SLAPelayananTeknikPage({
           <Icon name="arrow-left" size={16} /> Dashboard
         </button>
       </header>
+
+      {previewActive && (
+        <div className="sla-preview-banner" role="status">
+          <strong>Pratinjau akses: {viewAsLabel || viewAsRoleCode}</strong>
+          <span>Menu dan tombol mengikuti role ini. Perubahan data dinonaktifkan selama pratinjau.</span>
+        </div>
+      )}
 
       {isManagement && managementScopeLabel && moduleId !== 'sla' && (
         <div className="sla-role-banner sla-role-banner-mgmt" style={{ marginTop: 8 }}>{managementScopeLabel}</div>

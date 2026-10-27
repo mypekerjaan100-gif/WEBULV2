@@ -14,8 +14,10 @@ import {
 import { contracts } from './data/contracts.js'
 import { pelayananTeknikModules, slaPeriods } from './data/slaPelayananTeknik.js'
 import { parseRouteHash, writeRouteHash } from './lib/routeHash.js'
-import { getOrgUnits } from './data/orgIdMap.js'
+import { getOrgUnits, resolveContractCodeToUuid, resolveLegacyKeyToUuid } from './data/orgIdMap.js'
 import { useAuth } from './lib/AppAuth.jsx'
+import { listCustomRoles } from './lib/customRoles.js'
+import { setViewAsActive } from './lib/viewAsState.js'
 import {
   listAdminUp3ApprovalNotifications,
   listManagementApprovalNotifications,
@@ -74,25 +76,44 @@ export default function App() {
   const [slaActiveModule, setSlaActiveModule] = useState('sla')
   const [slaVariableRejected, setSlaVariableRejected] = useState(0)
   const [finRouteRequest, setFinRouteRequest] = useState(null)
+  const [viewAsRoleCode, setViewAsRoleCode] = useState(null)
+  const [customRoleList, setCustomRoleList] = useState([])
+  const [previewApprovalAccess, setPreviewApprovalAccess] = useState(null)
   const routeRestoredRef = useRef(false)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access ?? []
   const organizationAccess = authority?.actor?.organization_access ?? []
+  const previewRole = isSuperAdmin && viewAsRoleCode
+    ? (viewAsRoleCode === 'ADMIN_UP3'
+      ? { code: 'ADMIN_UP3', displayName: 'Admin UP3', menuAccess: null }
+      : viewAsRoleCode === 'ADMIN_ULP'
+        ? { code: 'ADMIN_ULP', displayName: 'Admin ULP', menuAccess: null }
+        : customRoleList.find((role) => role.code === viewAsRoleCode) ?? null)
+    : null
+  const previewActive = Boolean(previewRole)
+  const effectiveIsSuperAdmin = isSuperAdmin && !previewActive
   const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
   const FINANCIAL_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP']
-  const isManagementUserRaw = !isSuperAdmin && organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
-  const hasAdminUp3Scope = contractAccess.some((access) =>
-    access.role === 'ADMIN_UP3' && access.contract_code === 'pelayanan-teknik' && access.operational_up3_id,
-  )
-  const hasAdminUlpScope = contractAccess.some((access) =>
-    access.role === 'ADMIN_ULP' && access.contract_code === 'pelayanan-teknik' && access.operational_up3_id,
-  )
-  const canViewAdminUp3Modules = isSuperAdmin || hasAdminUp3Scope || isManagementUserRaw
+  const isManagementUserRaw = !effectiveIsSuperAdmin && organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
+  const hasAdminUp3Scope = previewActive
+    ? previewRole.code === 'ADMIN_UP3'
+    : contractAccess.some((access) =>
+      access.role === 'ADMIN_UP3' && access.contract_code === 'pelayanan-teknik' && access.operational_up3_id,
+    )
+  const hasAdminUlpScope = previewActive
+    ? previewRole.code === 'ADMIN_ULP'
+    : contractAccess.some((access) =>
+      access.role === 'ADMIN_ULP' && access.contract_code === 'pelayanan-teknik' && access.operational_up3_id,
+    )
+  const canViewAdminUp3Modules = effectiveIsSuperAdmin || hasAdminUp3Scope || isManagementUserRaw
   const canViewReadOnlyMasterLocations = hasAdminUlpScope
-  const customContractAccess = contractAccess.length === 1 && contractAccess[0]?.is_custom ? contractAccess[0] : null
-  const customMenuAccess = customContractAccess?.menu_access ?? null
+  const customContractAccess = !previewActive && contractAccess.length === 1 && contractAccess[0]?.is_custom ? contractAccess[0] : null
+  const previewCustomRole = previewRole && !['ADMIN_UP3', 'ADMIN_ULP'].includes(previewRole.code) ? previewRole : null
+  const customMenuAccess = previewCustomRole
+    ? (previewCustomRole.menuAccess ?? {})
+    : customContractAccess?.menu_access ?? null
   const customCanView = (menu) => ['read', 'edit'].includes(customMenuAccess?.[menu] ?? 'none')
-  const canViewVehicles = isSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope || customCanView('alat_kendaraan')
+  const canViewVehicles = effectiveIsSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope || customCanView('alat_kendaraan')
   const slaPrimaryModules = useMemo(
     () => {
       if (customMenuAccess) {
@@ -127,10 +148,12 @@ export default function App() {
     }
     return modules
   }, [canViewAdminUp3Modules, canViewReadOnlyMasterLocations, customMenuAccess])
-  const canAccessFinancial = isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
-  const adminUp3Access = !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
-    ? contractAccess[0]
-    : null
+  const canAccessFinancial = !previewActive && (isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role)))
+  const adminUp3Access = previewActive
+    ? previewApprovalAccess
+    : !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
+      ? contractAccess[0]
+      : null
   const adminUp3ScopeKey = adminUp3Access ? `${adminUp3Access.contract_id}:${adminUp3Access.operational_up3_id}` : null
   const managementScopeKey = managementScopes.length
     ? `management:${managementScopes.map((scope) => scope.key).sort().join('|')}`
@@ -140,6 +163,37 @@ export default function App() {
   const selectedManagementScope = managementScopes.find((scope) => scope.key === selectedManagementScopeKey)
     ?? managementScopes[0]
     ?? null
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setCustomRoleList([])
+      setViewAsRoleCode(null)
+      return undefined
+    }
+    let cancelled = false
+    listCustomRoles()
+      .then((rows) => {
+        if (!cancelled) setCustomRoleList(rows.filter((role) => role.isActive))
+      })
+      .catch(() => {
+        if (!cancelled) setCustomRoleList([])
+      })
+    return () => { cancelled = true }
+  }, [isSuperAdmin])
+
+  useEffect(() => {
+    if (!isSuperAdmin || !viewAsRoleCode) return
+    if (['ADMIN_UP3', 'ADMIN_ULP'].includes(viewAsRoleCode)) return
+    if (customRoleList.length > 0 && !customRoleList.some((role) => role.code === viewAsRoleCode)) {
+      setViewAsRoleCode(null)
+    }
+  }, [customRoleList, isSuperAdmin, viewAsRoleCode])
+
+  // Kunci lapisan data selama pratinjau agar tidak ada perubahan tersimpan.
+  useEffect(() => {
+    setViewAsActive(previewActive)
+    return () => setViewAsActive(false)
+  }, [previewActive])
 
   const refreshApprovalNotifications = useCallback(async () => {
     // Gabungkan pemicu bersamaan (mount + fokus + ganti scope) ke satu request per scope.
@@ -199,7 +253,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     setRealScopeLoaded(false)
-    if (isSuperAdmin) {
+    if (effectiveIsSuperAdmin || previewActive) {
       setRealScope(null)
       setRealScopeLoaded(true)
       return undefined
@@ -245,7 +299,7 @@ export default function App() {
         setRealScopeLoaded(true)
       })
     return () => { cancelled = true }
-  }, [isSuperAdmin, contractAccess])
+  }, [effectiveIsSuperAdmin, previewActive, contractAccess])
 
   useEffect(() => {
     let cancelled = false
@@ -299,25 +353,48 @@ export default function App() {
     setManagementUnitId(selectedManagementScope?.up3Id ?? '')
   }, [selectedManagementScope?.key, selectedManagementScope?.up3Id])
 
-  const isRealScopedUser = !isSuperAdmin && (realScope !== null || isManagementUserRaw)
-  const isManagementUser = !isSuperAdmin && isManagementUserRaw
+  const isRealScopedUser = !effectiveIsSuperAdmin && (realScope !== null || isManagementUserRaw)
+  const isManagementUser = !effectiveIsSuperAdmin && isManagementUserRaw
   const actualRole = selectedManagementScope ? 'up3' : isRealScopedUser && realScope ? realScope.role : role
   const actualUp3Id = selectedManagementScope ? selectedManagementScope.up3Id : isRealScopedUser && realScope ? realScope.up3Id : up3Id
   const actualUnitId = selectedManagementScope ? managementUnitId : isRealScopedUser && realScope ? realScope.unitId : unitId
-  const authorizedContractIds = isSuperAdmin
+  const authorizedContractIds = effectiveIsSuperAdmin
     ? null
-    : realScope
-      ? [realScope.contractId]
-      : selectedManagementScope
-        ? [selectedManagementScope.contractCode]
-        : []
-  const isActiveContractAuthorized = !activeContractId || isSuperAdmin || authorizedContractIds.includes(activeContractId)
+    : previewActive
+      ? ['pelayanan-teknik']
+      : realScope
+        ? [realScope.contractId]
+        : selectedManagementScope
+          ? [selectedManagementScope.contractCode]
+          : []
+  const isActiveContractAuthorized = !activeContractId || effectiveIsSuperAdmin || authorizedContractIds.includes(activeContractId)
+
+  // Pratinjau Admin UP3 memakai scope UP3 yang sedang dipilih, termasuk notifikasi persetujuan.
+  useEffect(() => {
+    setPreviewApprovalAccess(null)
+    if (!previewActive || viewAsRoleCode !== 'ADMIN_UP3') return undefined
+    let cancelled = false
+    Promise.all([
+      resolveContractCodeToUuid('pelayanan-teknik'),
+      resolveLegacyKeyToUuid(actualUp3Id),
+    ])
+      .then(([contractId, up3Uuid]) => {
+        if (cancelled) return
+        setPreviewApprovalAccess({
+          contract_id: contractId,
+          contract_code: 'pelayanan-teknik',
+          operational_up3_id: up3Uuid,
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [actualUp3Id, previewActive, viewAsRoleCode])
 
   useEffect(() => {
-    if (currentPage === 'pengguna-akses' && !isSuperAdmin) setCurrentPage(null)
+    if (currentPage === 'pengguna-akses' && !effectiveIsSuperAdmin) setCurrentPage(null)
     else if (currentPage === 'analisis-finansial' && !canAccessFinancial) setCurrentPage(null)
     if (!isActiveContractAuthorized) setActiveContractId(null)
-  }, [canAccessFinancial, currentPage, isActiveContractAuthorized, isSuperAdmin])
+  }, [canAccessFinancial, currentPage, effectiveIsSuperAdmin, isActiveContractAuthorized])
 
   // Terapkan rute dari URL hash ke state (dipakai saat refresh & Back/Forward).
   // Mengembalikan representasi kanonik untuk penulisan URL.
@@ -328,14 +405,14 @@ export default function App() {
     let nextPage = null
     let nextModule = null
     let nextPeriode = null
-    if (first === 'pengguna-akses' && isSuperAdmin) {
+    if (first === 'pengguna-akses' && effectiveIsSuperAdmin) {
       nextPage = 'pengguna-akses'
     } else if (first === 'analisis-finansial' && canAccessFinancial) {
       nextPage = 'analisis-finansial'
       if (periode && slaPeriods.includes(periode)) nextPeriode = periode
     } else if (first) {
       const contract = contracts.find((entry) => entry.id === first)
-      if (contract && (isSuperAdmin || authorizedContractIds.includes(contract.id))) {
+      if (contract && (effectiveIsSuperAdmin || authorizedContractIds.includes(contract.id))) {
         nextContract = contract.id
         if (contract.id === 'pelayanan-teknik') {
           if (second && pelayananTeknikModules.some((module) => module.id === second)) nextModule = second
@@ -356,7 +433,7 @@ export default function App() {
       segments: nextPage ? [nextPage] : nextContract ? [nextContract, ...(nextModule ? [nextModule] : [])] : [],
       periode: nextPeriode,
     }
-  }, [isSuperAdmin, canAccessFinancial, authorizedContractIds])
+  }, [effectiveIsSuperAdmin, canAccessFinancial, authorizedContractIds])
 
   // Pulihkan posisi sekali setelah sesi, otoritas, DAN pemetaan scope
   // (Admin UP3/ULP, manajemen) siap; kanonikalisasi URL.
@@ -380,7 +457,7 @@ export default function App() {
   }, [applyHashRoute])
 
   const navigate = (contractId) => {
-    if (contractId && !isSuperAdmin && !authorizedContractIds.includes(contractId)) return
+    if (contractId && !effectiveIsSuperAdmin && !authorizedContractIds.includes(contractId)) return
     setActiveContractId(contractId)
     setCurrentPage(null)
     setSlaRouteRequest(null)
@@ -399,9 +476,9 @@ export default function App() {
       writeRouteHash({ segments: [], periode: null }, { push: true })
       return
     }
-    if (pageId === 'pengguna-akses' && !isSuperAdmin) return
+    if (pageId === 'pengguna-akses' && !effectiveIsSuperAdmin) return
     if (pageId === 'analisis-finansial' && !canAccessFinancial) return
-    if (pageId !== 'pengguna-akses' && pageId !== 'analisis-finansial' && !isSuperAdmin) return
+    if (pageId !== 'pengguna-akses' && pageId !== 'analisis-finansial' && !effectiveIsSuperAdmin) return
     setCurrentPage(pageId)
     setActiveContractId(null)
     setSlaActiveModule('sla')
@@ -422,6 +499,29 @@ export default function App() {
     setSlaRouteRequest(null)
     setFinRouteRequest(null)
     writeRouteHash({ segments: [contractCode], periode: null }, { push: true })
+  }
+
+  const handleViewAsChange = (nextRole) => {
+    if (!isSuperAdmin) return
+    if (nextRole === 'super') {
+      setViewAsRoleCode(null)
+      setRole('up3')
+      setUnitId(up3Id)
+      return
+    }
+    if (nextRole === 'ADMIN_UP3') {
+      setViewAsRoleCode('ADMIN_UP3')
+      setRole('up3')
+      setUnitId(up3Id)
+      return
+    }
+    const custom = nextRole === 'ADMIN_ULP' ? null : customRoleList.find((role) => role.code === nextRole)
+    if (nextRole !== 'ADMIN_ULP' && !custom) return
+    setViewAsRoleCode(nextRole)
+    setRole('ulp')
+    setUnitId((current) => activeUlps.some((unit) => unit.id === current)
+      ? current
+      : (activeUlps[0]?.id ?? ''))
   }
 
   const handleRoleChange = (nextRole) => {
@@ -471,9 +571,9 @@ export default function App() {
   }
 
   const activeContract = contracts.find((contract) =>
-    contract.id === activeContractId && (isSuperAdmin || authorizedContractIds.includes(contract.id)),
+    contract.id === activeContractId && (effectiveIsSuperAdmin || authorizedContractIds.includes(contract.id)),
   )
-  const visibleApprovalNotifications = (adminUp3Access && isRealScopedUser && approvalNotifications.scopeKey === adminUp3ScopeKey) || (isManagementUser && approvalNotifications.scopeKey === managementScopeKey)
+  const visibleApprovalNotifications = (adminUp3Access && (isRealScopedUser || previewActive) && approvalNotifications.scopeKey === adminUp3ScopeKey) || (isManagementUser && approvalNotifications.scopeKey === managementScopeKey)
     ? approvalNotifications
     : null
   const slaApprovalCounts = Object.fromEntries(
@@ -484,9 +584,30 @@ export default function App() {
     lembur: slaApprovalCounts.lembur ?? 0,
   }
 
+  const viewAsOptions = [
+    { id: 'super', name: 'Super Admin' },
+    { id: 'ADMIN_UP3', name: 'Admin UP3' },
+    { id: 'ADMIN_ULP', name: 'Admin ULP' },
+    ...customRoleList.map((role) => ({ id: role.code, name: role.displayName })),
+  ]
+  const previewLabel = previewActive ? previewRole.displayName : ''
+  const previewUnit = units.find((unit) => unit.id === actualUnitId)
+  const previewUp3 = units.find((unit) => unit.id === actualUp3Id)
+  const previewScopeLabel = previewActive
+    ? (viewAsRoleCode === 'ADMIN_UP3'
+      ? (previewUp3 ? currentNameOf(previewUp3) : '')
+      : (previewUnit ? currentNameOf(previewUnit) : ''))
+    : ''
+
   const preview = {
+    active: previewActive,
+    label: previewLabel,
+    scopeLabel: previewScopeLabel,
+    value: previewActive ? viewAsRoleCode : 'super',
+    options: viewAsOptions,
+    onReset: () => handleViewAsChange('super'),
     role: actualRole,
-    onRoleChange: handleRoleChange,
+    onRoleChange: handleViewAsChange,
     unitId: actualUnitId,
     onUnitChange: handleUnitChange,
     up3Id: actualUp3Id,
@@ -511,6 +632,8 @@ export default function App() {
         slaActiveModule={slaActiveModule}
         slaModuleBadges={slaModuleBadges}
         onNavigateModule={navigateSlaModule}
+        previewActive={previewActive}
+        previewLabel={previewLabel}
       >
         {currentPage === 'pengguna-akses' ? (
           <UserListPage onBack={() => navigatePage(null)} />
@@ -523,7 +646,7 @@ export default function App() {
         ) : activeContract ? (
           activeContract.id === 'pelayanan-teknik' ? (
             <SLAPelayananTeknikPage
-              key={`${activeContractId}:${actualRole}:${actualUp3Id}:${actualUnitId}:${isManagementUser ? 'mgmt' : ''}`}
+              key={`${activeContractId}:${actualRole}:${actualUp3Id}:${actualUnitId}:${isManagementUser ? 'mgmt' : ''}:${viewAsRoleCode ?? 'full'}`}
               contractId={activeContractId}
               onBack={() => navigate(null)}
               role={actualRole}
@@ -547,6 +670,8 @@ export default function App() {
               initialPeriode={slaRouteRequest?.periode ?? null}
               routeRequest={slaRouteRequest}
               customMenuAccess={customMenuAccess}
+              viewAsRoleCode={previewActive ? viewAsRoleCode : null}
+              viewAsLabel={previewLabel}
               onSlaVariableRejectedChange={setSlaVariableRejected}
               onRouteChange={({ module, periode }) => {
                 setSlaActiveModule(module ?? 'sla')

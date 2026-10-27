@@ -2,12 +2,16 @@ import {
   currentNameOf,
   effectiveStatusOf,
 } from '../../data/organisasiPelayananTeknik.js'
-import { slaRoles } from '../../data/slaPelayananTeknik.js'
 
 export default function SlaPreviewBar({ preview }) {
   const {
+    active = false,
+    label = '',
+    value = 'super',
+    options = [],
     role,
     onRoleChange,
+    onReset,
     unitId,
     onUnitChange,
     up3Id,
@@ -22,19 +26,21 @@ export default function SlaPreviewBar({ preview }) {
       effectiveStatusOf(units, unit.id) === 'Aktif',
   )
   return (
-    <div className="header-preview">
+    <div className={`header-preview ${active ? 'header-preview-mode' : ''}`}>
       <label className="header-preview-control">
-        <span className="header-preview-label">View As</span>
+        <span className="header-preview-label">{active ? 'Pratinjau' : 'View As'}</span>
         <select
           className="header-preview-select"
-          value={role}
-          onChange={(event) => onRoleChange(event.target.value)}
+          value={value}
+          onChange={(event) => onRoleChange?.(event.target.value)}
+          aria-label="Pilih role untuk pratinjau"
         >
-          {slaRoles.map((item) => (
+          {options.map((item) => (
             <option key={item.id} value={item.id}>{item.name}</option>
           ))}
         </select>
       </label>
+      {active && <span className="header-preview-badge" title="Mode pratinjau membaca saja">Read-only</span>}
       {up3s.length > 1 && (
         <label className="header-preview-control header-preview-unit">
           <span className="header-preview-label">UP3</span>
@@ -67,6 +73,16 @@ export default function SlaPreviewBar({ preview }) {
             ))}
           </select>
         </label>
+      )}
+      {active && (
+        <button
+          type="button"
+          className="header-preview-exit"
+          onClick={onReset}
+          title={`Keluar dari pratinjau ${label}`}
+        >
+          Keluar
+        </button>
       )}
     </div>
   )

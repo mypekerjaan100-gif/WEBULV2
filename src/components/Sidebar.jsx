@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/AppAuth.jsx'
 import Icon from './Icon.jsx'
 
-export default function Sidebar({ open, collapsed, onToggleCollapse, activeContractId, currentPage, onNavigate, onNavigatePage, onNavigateModule, slaPrimaryModules = [], slaConfigurationModules = [], slaActiveModule = 'sla', slaModuleBadges = {}, onClose }) {
+export default function Sidebar({ open, collapsed, onToggleCollapse, activeContractId, currentPage, onNavigate, onNavigatePage, onNavigateModule, slaPrimaryModules = [], slaConfigurationModules = [], slaActiveModule = 'sla', slaModuleBadges = {}, previewActive = false, previewLabel = '', onClose }) {
   const { authority } = useAuth()
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const allowedContractCodes = new Set(
@@ -12,7 +12,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
   const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
   const FINANCIAL_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP']
   const isManagementUser = organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
-  const canAccessFinancial = isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
+  const canAccessFinancial = !previewActive && (isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role)))
   if (isManagementUser) allowedContractCodes.add('pelayanan-teknik')
 
   const pelayananTeknik = { id: 'pelayanan-teknik', title: 'Pelayanan Teknik', icon: 'operations' }
@@ -22,11 +22,13 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
     { id: 'ground-patrol', title: 'Ground Patrol', icon: 'patrol' },
   ]
 
-  const showPelayananTeknik = isSuperAdmin || allowedContractCodes.has(pelayananTeknik.id)
-  const kontrakLainFiltered = kontrakLain.filter((c) => isSuperAdmin || allowedContractCodes.has(c.id))
+  const showPelayananTeknik = previewActive || isSuperAdmin || allowedContractCodes.has(pelayananTeknik.id)
+  const kontrakLainFiltered = kontrakLain.filter((c) => !previewActive && (isSuperAdmin || allowedContractCodes.has(c.id)))
   const actorEmail = authority?.actor?.email ?? authority?.actor?.user_email ?? ''
   const customRoleLabel = authority?.actor?.custom_role?.display_name
-  const actorLabel = isSuperAdmin ? 'Super Admin' : customRoleLabel ?? organizationAccess[0]?.organization_role?.replaceAll('_',' ') ?? allowedContractCodes.has('pelayanan-teknik') ? 'Manajemen' : 'Pengguna'
+  const actorLabel = previewActive
+    ? (previewLabel || 'Pratinjau')
+    : isSuperAdmin ? 'Super Admin' : customRoleLabel ?? organizationAccess[0]?.organization_role?.replaceAll('_',' ') ?? allowedContractCodes.has('pelayanan-teknik') ? 'Manajemen' : 'Pengguna'
 
   const [pelayananOpen, setPelayananOpen] = useState(activeContractId === pelayananTeknik.id)
   const [masterOpen, setMasterOpen] = useState(false)
@@ -185,7 +187,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
           <span className="nav-item-label">Komponen &amp; Unit</span>
         </div>
 
-        {isSuperAdmin && (
+        {isSuperAdmin && !previewActive && (
           <>
             <div className="nav-section-title">Pengguna &amp; Akses</div>
             <button
