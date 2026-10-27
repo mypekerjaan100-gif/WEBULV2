@@ -73,6 +73,7 @@ const emptyForm = (defaultUnitId, up3Id) => ({
   retirementDateOverride: '',
   pensionOverrideReason: '',
   employmentStatus: 'Aktif',
+  employmentType: '',
   statusReason: '',
   statusReasonNote: '',
   statusEffectiveDate: '',
@@ -118,6 +119,7 @@ export default function SLADatabasePegawai({
   const [search, setSearch] = useState('')
   const [filterJabatan, setFilterJabatan] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterEmploymentType, setFilterEmploymentType] = useState('')
   const [filterApproval, setFilterApproval] = useState('')
   const [filterUnit, setFilterUnit] = useState('')
   const [filterLocation, setFilterLocation] = useState('')
@@ -370,6 +372,13 @@ export default function SLADatabasePegawai({
     }
     if (filterJabatan && data.positionId !== filterJabatan) return false
     if (filterStatus && data.employmentStatus !== filterStatus) return false
+    if (filterEmploymentType) {
+      if (filterEmploymentType === '__none__') {
+        if (data.employmentType) return false
+      } else if (data.employmentType !== filterEmploymentType) {
+        return false
+      }
+    }
     if (filterApproval && approvalOf(row) !== filterApproval) return false
     if (filterUnit && role === 'up3' && data.unitId !== filterUnit) return false
     if (filterLocation && data.workLocationId !== filterLocation) return false
@@ -440,6 +449,7 @@ export default function SLADatabasePegawai({
       { label: 'No Rekening', width: 22 },
       { label: 'Tarif Lembur/Jam', width: 20 },
       { label: 'Status', width: 14 },
+      { label: 'Jenis Perjanjian Kerja', width: 20 },
       { label: 'Approval', width: 14 },
     ]
     const rows = filtered.map((row, index) => {
@@ -463,6 +473,7 @@ export default function SLADatabasePegawai({
         { value: data.accountNumber ?? '' },
         { value: data.hourlyRate && data.hourlyRate > 0 ? `Rp ${Number(data.hourlyRate).toLocaleString('id-ID')}/jam` : '\u2014' },
         { value: data.employmentStatus ?? '' },
+        { value: data.employmentType || 'Belum diisi' },
         { value: approvalOf(row) },
       ]
     })
@@ -496,6 +507,7 @@ export default function SLADatabasePegawai({
     retirementDateOverride: employee.retirementDateOverride ?? '',
     pensionOverrideReason: employee.pensionOverrideReason ?? '',
     employmentStatus: employee.employmentStatus,
+    employmentType: employee.employmentType ?? '',
     statusReason: employee.statusReason ?? '',
     statusReasonNote: employee.statusReasonNote ?? '',
     statusEffectiveDate: employee.statusEffectiveDate ?? '',
@@ -536,6 +548,7 @@ export default function SLADatabasePegawai({
       retirementDateOverride: e.retirementDateOverride ?? '',
       pensionOverrideReason: e.pensionOverrideReason ?? '',
       employmentStatus: e.employmentStatus,
+      employmentType: e.employmentType ?? '',
       statusReason: e.statusReason ?? '',
       statusReasonNote: e.statusReasonNote ?? '',
       statusEffectiveDate: e.statusEffectiveDate ?? '',
@@ -570,6 +583,9 @@ export default function SLADatabasePegawai({
     if (!form.nip.trim()) return 'NIP wajib diisi.'
     if (form.birthDate && form.birthDate > todayStr) {
       return 'Tanggal lahir tidak boleh melebihi hari ini.'
+    }
+    if (form.employmentType && !['PKWT', 'PKWTT'].includes(form.employmentType)) {
+      return 'Jenis perjanjian kerja tidak valid.'
     }
     if (form.workLocationId) {
       const location = locationById.get(form.workLocationId)
@@ -654,6 +670,7 @@ export default function SLADatabasePegawai({
     retirementDateOverride: form.retirementDateOverride.trim() || null,
     pensionOverrideReason: form.pensionOverrideReason.trim() || null,
     employmentStatus: form.employmentStatus,
+    employmentType: form.employmentType || '',
     statusReason: form.employmentStatus === 'Nonaktif' ? form.statusReason : null,
     statusReasonNote:
       form.employmentStatus === 'Nonaktif' ? form.statusReasonNote.trim() : null,
@@ -827,6 +844,7 @@ export default function SLADatabasePegawai({
       retirementDateOverride: 'Tgl Pensiun (Override)',
       pensionOverrideReason: 'Keterangan Override',
       employmentStatus: 'Status',
+      employmentType: 'Jenis Perjanjian',
       statusReason: 'Alasan',
       statusEffectiveDate: 'Tgl Efektif',
       photoAssetId: 'Foto',
@@ -965,6 +983,7 @@ export default function SLADatabasePegawai({
           />
           <Field label="Jabatan" value={positionName(data.positionId) ?? 'Belum Ditentukan'} />
           <Field label="Status Pegawai" value={data.employmentStatus} />
+          <Field label="Jenis Perjanjian Kerja" value={data.employmentType || 'Belum diisi'} />
           {data.employmentStatus === 'Nonaktif' && (
             <>
               <Field label="Alasan Nonaktif" value={data.statusReason ?? '\u2014'} />
@@ -1179,6 +1198,20 @@ export default function SLADatabasePegawai({
           >
             <option value="Aktif">Aktif</option>
             <option value="Nonaktif">Nonaktif</option>
+          </select>
+        </div>
+        <div className="sla-context-field">
+          <span className="sla-context-label">Jenis Perjanjian Kerja</span>
+          <select
+            className="sla-context-select"
+            value={form.employmentType}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, employmentType: e.target.value }))
+            }
+          >
+            <option value="">Belum diisi</option>
+            <option value="PKWT">PKWT</option>
+            <option value="PKWTT">PKWTT</option>
           </select>
         </div>
         {form.employmentStatus === 'Nonaktif' && (
@@ -1518,6 +1551,7 @@ export default function SLADatabasePegawai({
         no_rekening: data.accountNumber ?? '',
         tarif_lembur_jam: rate === '' || rate == null ? '' : rate,
         status: data.employmentStatus ?? 'Aktif',
+        jenis_perjanjian: data.employmentType ?? '',
         alasan_nonaktif: data.statusReason ?? '',
         keterangan_nonaktif: data.statusReasonNote ?? '',
         tanggal_efektif_status: data.statusEffectiveDate ?? '',
@@ -1925,6 +1959,22 @@ export default function SLADatabasePegawai({
             </select>
           </div>
           <div className="sla-filter-field">
+            <span className="sla-filter-label">Jenis Perjanjian</span>
+            <select
+              className="sla-filter-select"
+              value={filterEmploymentType}
+              onChange={(e) => {
+                setFilterEmploymentType(e.target.value)
+                resetPage()
+              }}
+            >
+              <option value="">Semua</option>
+              <option value="PKWT">PKWT</option>
+              <option value="PKWTT">PKWTT</option>
+              <option value="__none__">Belum diisi</option>
+            </select>
+          </div>
+          <div className="sla-filter-field">
             <span className="sla-filter-label">Pensiun</span>
             <select
               className="sla-filter-select"
@@ -2012,6 +2062,7 @@ export default function SLADatabasePegawai({
               <th>No Rekening</th>
               <th>Tarif Lembur/Jam</th>
               <th>Status</th>
+              <th>Perjanjian</th>
               <th>Approval</th>
               <th>Aksi</th>
             </tr>
@@ -2115,6 +2166,15 @@ export default function SLADatabasePegawai({
                     </span>
                   </td>
                   <td>
+                    {data.employmentType ? (
+                      <span className={`sla-status-badge ${data.employmentType === 'PKWTT' ? 'sla-status-active' : 'sla-status-draft'}`}>
+                        {data.employmentType}
+                      </span>
+                    ) : (
+                      <span className="sla-table-hint">Belum diisi</span>
+                    )}
+                  </td>
+                  <td>
                     <span
                       className={`sla-status-badge ${approvalOf(row) === 'Approved' ? 'sla-status-active' : 'sla-status-draft'}`}
                     >
@@ -2138,7 +2198,7 @@ export default function SLADatabasePegawai({
             })}
             {!visibleRows.length && (
               <tr>
-                <td colSpan={14} className="sla-table-hint">
+                <td colSpan={15} className="sla-table-hint">
                   Tidak ada pegawai yang cocok dengan filter.
                 </td>
               </tr>

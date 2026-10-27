@@ -14,6 +14,7 @@ function mapEmployeeRow(row, { unitName, positionName, locationName }) {
     sourcePosition: row.source_position ?? null,
     retirementDateOverride: row.retirement_date_override ?? null,
     pensionOverrideReason: row.pension_override_reason ?? null,
+    employmentType: row.employment_type ?? '',
     createdAt: row.created_at,
     _unitName: unitName,
     _positionName: positionName,
@@ -54,7 +55,7 @@ export async function fetchEmployeesFromSupabase({
   const { data: employees, error: empErr } = await supabase
     .from('employees')
     .select(
-      'id, nip, name, birth_date, source_position, retirement_date_override, pension_override_reason, created_at',
+      'id, nip, name, birth_date, source_position, retirement_date_override, pension_override_reason, employment_type, created_at',
     )
     .order('nip')
 

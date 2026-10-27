@@ -119,6 +119,7 @@ export function buildNewEmployee({
   accountNumber,
   hourlyRate,
   birthDate,
+  employmentType,
   contractId = 'pelayanan-teknik',
   up3Id,
   workLocationId,
@@ -141,6 +142,7 @@ export function buildNewEmployee({
     retirementDateOverride: null,
     pensionOverrideReason: null,
     employmentStatus: 'Aktif',
+    employmentType: employmentType ?? '',
     statusReason: null,
     statusReasonNote: null,
     statusEffectiveDate: null,
@@ -247,6 +249,7 @@ export function applyProposedChange(employee, proposed, effectiveDate) {
       validFrom: ef,
     })
   }
+  if (proposed.employmentType !== undefined) next.employmentType = proposed.employmentType ?? ''
   if (proposed.employmentStatus !== undefined && proposed.employmentStatus !== employee.employmentStatus) {
     next.employmentStatus = proposed.employmentStatus
     next.statusReason = proposed.statusReason ?? null

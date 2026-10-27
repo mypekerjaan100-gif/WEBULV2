@@ -24,6 +24,12 @@ function normLower(value) {
   return norm(value).toLowerCase()
 }
 
+export function normalizeEmploymentType(value) {
+  const v = norm(value).toUpperCase()
+  if (!v) return ''
+  return v === 'PKWT' || v === 'PKWTT' ? v : null
+}
+
 function toDateOrNull(value) {
   const v = norm(value)
   if (!v) return null
@@ -142,6 +148,7 @@ export function toRpcProposed(frontProposed, ctx = {}) {
     pension_override_reason: norm(frontProposed.pensionOverrideReason ?? frontProposed.keterangan_override_pensiun ?? ''),
     source_position: sourcePositionName,
     employment_status: norm(frontProposed.employmentStatus ?? frontProposed.status ?? 'Aktif') || 'Aktif',
+    employment_type: norm(frontProposed.employmentType ?? frontProposed.employment_type ?? '').toUpperCase(),
     status_reason: norm(frontProposed.statusReason ?? frontProposed.alasan_nonaktif ?? frontProposed.status_reason ?? '') || null,
     status_reason_note: norm(frontProposed.statusReasonNote ?? frontProposed.keterangan_nonaktif ?? '') || null,
     status_effective_date: norm(frontProposed.statusEffectiveDate ?? frontProposed.tanggal_efektif_status ?? '') || null,
@@ -180,6 +187,7 @@ export function rpcSnapshotToUi(snap) {
     retirementDateOverride: snap.retirement_date_override ?? snap.retirementDateOverride ?? '',
     pensionOverrideReason: snap.pension_override_reason ?? snap.pensionOverrideReason ?? '',
     employmentStatus: snap.employment_status ?? snap.employmentStatus ?? 'Aktif',
+    employmentType: snap.employment_type ?? snap.employmentType ?? '',
     statusReason: snap.status_reason ?? snap.statusReason ?? '',
     statusReasonNote: snap.status_reason_note ?? snap.statusReasonNote ?? '',
     statusEffectiveDate: snap.status_effective_date ?? snap.statusEffectiveDate ?? '',
@@ -277,6 +285,7 @@ export async function submitEmployeeEdit({ employee, proposed, contractId, up3Id
     retirement_date_override: employee.retirementDateOverride ?? '',
     pension_override_reason: employee.pensionOverrideReason ?? '',
     employment_status: employee.employmentStatus,
+    employment_type: employee.employmentType ?? '',
     status_reason: employee.statusReason,
     status_reason_note: employee.statusReasonNote,
     status_effective_date: employee.statusEffectiveDate,
@@ -309,6 +318,7 @@ export async function submitEditWithSnapshot({ employee, proposedRpc, contractId
     pension_override_reason: employee.pensionOverrideReason ?? '',
     source_position: employee.sourcePosition ?? '',
     employment_status: employee.employmentStatus ?? 'Aktif',
+    employment_type: employee.employmentType ?? '',
     status_reason: employee.statusReason ?? null,
     status_reason_note: employee.statusReasonNote ?? null,
     status_effective_date: employee.statusEffectiveDate ?? null,
@@ -380,6 +390,7 @@ const IMPORT_HEADERS = [
   'no_rekening',
   'tarif_lembur_jam',
   'status',
+  'jenis_perjanjian',
   'alasan_nonaktif',
   'keterangan_nonaktif',
   'tanggal_efektif_status',
@@ -401,6 +412,7 @@ const IMPORT_TEMPLATE_EXAMPLE = {
   no_rekening: '1234567890',
   tarif_lembur_jam: 21000,
   status: 'Aktif',
+  jenis_perjanjian: 'PKWT',
   alasan_nonaktif: '',
   keterangan_nonaktif: '',
   tanggal_efektif_status: '',
@@ -516,7 +528,12 @@ export function normalizeImportRow(raw, ctx = {}) {
   const account = get('no_rekening', 'account_number', 'no rekening')
   const rateRaw = get('tarif_lembur_jam', 'tarif', 'hourly_rate')
   const status = get('status', 'employmentstatus') || 'Aktif'
+  const employmentTypeRaw = get('jenis_perjanjian', 'employment_type', 'perjanjian_kerja')
+  const hasEmploymentTypeColumn = ['jenis_perjanjian', 'employment_type', 'perjanjian_kerja']
+    .some((key) => Object.prototype.hasOwnProperty.call(raw, key))
+  const employmentType = normalizeEmploymentType(employmentTypeRaw)
   const errors = []
+  if (employmentType === null) errors.push(`Jenis perjanjian tidak dikenal: ${employmentTypeRaw}`)
   if (!nip) errors.push('NIP wajib')
   if (!name) errors.push('Nama wajib')
   let birth = ''
@@ -579,6 +596,7 @@ export function normalizeImportRow(raw, ctx = {}) {
     status_reason_note: get('keterangan_nonaktif') || null,
     status_effective_date: get('tanggal_efektif_status') || null,
   }
+  if (hasEmploymentTypeColumn) rpc.employment_type = employmentType ?? ''
   if (st === 'Nonaktif' && !rpc.status_reason) errors.push('Alasan Nonaktif wajib untuk status Nonaktif')
   return { rpc, errors, raw }
 }
