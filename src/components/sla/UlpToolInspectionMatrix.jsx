@@ -475,7 +475,7 @@ export default function UlpToolInspectionMatrix({
                           <small className="uc-row-reason">{Number(item.bad_qty) > 0 ? 'Ada kondisi rusak' : 'Jumlah baik kurang'}</small>
                         )}
                         {result.status === 'invalid' && <small className="uc-row-reason">{result.issue || 'Periksa jumlah kondisi.'}</small>}
-                        {isDefaultVehicle && <small className="uc-row-reason">Default rekap · unit belum diinspeksi</small>}
+                        {isDefaultVehicle && <small className="uc-row-reason">Default rekap · belum disimpan bulan ini</small>}
                         {showInspections && issueCount > 0 && <small className="uc-row-reason">{issueCount} issue unit terbuka</small>}
                         {showInspections && itemHistory.length > 0 && (
                           <button
