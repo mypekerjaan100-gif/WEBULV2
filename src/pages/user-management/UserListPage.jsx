@@ -252,15 +252,11 @@ function ContractAccessForm({ user, onSuccess }) {
       <div className="form-group">
         <label htmlFor="access-role">Role Kontrak</label>
         <select id="access-role" className="input-select" value={role} onChange={(e) => { setRole(e.target.value); setUlpId('') }}>
-          <optgroup label="Role Bawaan">
-            <option value="ADMIN_UP3">ADMIN_UP3</option>
-            <option value="ADMIN_ULP">ADMIN_ULP</option>
-          </optgroup>
-          {(options.customRoles || []).length > 0 && (
-            <optgroup label="Role Custom">
-              {options.customRoles.map((custom) => <option key={custom.code} value={custom.code}>{custom.displayName} ({custom.code})</option>)}
-            </optgroup>
-          )}
+          <option value="ADMIN_UP3">ADMIN_UP3</option>
+          <option value="ADMIN_ULP">ADMIN_ULP</option>
+          {(options.customRoles || []).map((custom) => (
+            <option key={custom.code} value={custom.code}>{custom.displayName}</option>
+          ))}
         </select>
       </div>
       <div className="form-group">
@@ -615,11 +611,9 @@ function CreateUserModal({ onClose, onSuccess }) {
                 <option value="ADMIN_UP3">ADMIN_UP3</option>
                 <option value="ADMIN_ULP">ADMIN_ULP</option>
                 {MANAGEMENT_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                {(options.customRoles || []).length > 0 && (
-                  <optgroup label="Role Custom">
-                    {options.customRoles.map((custom) => <option key={custom.code} value={custom.code}>{custom.displayName} ({custom.code})</option>)}
-                  </optgroup>
-                )}
+                {(options.customRoles || []).map((custom) => (
+                  <option key={custom.code} value={custom.code}>{custom.displayName}</option>
+                ))}
               </select>
             </div>
             {contractRole && <>

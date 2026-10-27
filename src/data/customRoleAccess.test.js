@@ -81,6 +81,8 @@ assert(roleModal.includes('setCustomRoleActive'), 'Aksi aktif/nonaktif role hila
 const users = read('../pages/user-management/UserListPage.jsx')
 assert(users.includes('RoleManagerModal'), 'Modal role belum terpasang')
 assert(users.includes('options.customRoles'), 'Form pengguna belum memuat role custom')
+assert(users.includes('{custom.displayName}</option>'), 'Role buatan Super Admin harus tampil dengan nama saja')
+assert(!users.includes('optgroup'), 'Dropdown role tidak boleh mengelompokkan role custom terpisah')
 assert(users.includes('requiresUlp'), 'Form role custom harus meminta ULP')
 
 console.log(`customRoleAccess.test.js: ${passed} assertions passed`)
