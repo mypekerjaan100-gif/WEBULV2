@@ -13,7 +13,7 @@ assert.deepEqual(
 )
 assert.deepEqual(
   splitOvertimeExportTimes('2026-08-31T22:00:00+07:00', '2026-09-01T02:00:00+07:00'),
-  { startTime: '22:00', endTime: '02:00 (+1 hari)' },
+  { startTime: '22:00', endTime: '02:00' },
 )
 
 const component = readFileSync(
