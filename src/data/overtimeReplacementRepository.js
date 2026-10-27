@@ -395,6 +395,43 @@ export async function listOvertimeEmployeeHistory({ entryId, limit = 10, offset 
     totalCount: Number(row.total_count ?? 0),
   }))
 }
+// Riwayat Cuti pada detail Pengganti Cuti: pengajuan lain untuk pegawai yang
+// digantikan, beserta metadata Form Cuti (bukan nominal/saldo cuti).
+export async function listOvertimeReplacementLeaveHistory({ entryId, limit = 10, offset = 0 }) {
+  const rows = await rpc('list_overtime_replacement_leave_history', {
+    p_entry_id: entryId,
+    p_limit: limit,
+    p_offset: offset,
+  })
+  return (rows ?? []).map((row) => ({
+    activityId: row.activity_id,
+    date: row.overtime_date,
+    status: row.status,
+    unitId: row.unit_id,
+    participantEmployeeId: row.participant_employee_id,
+    participantName: row.participant_name,
+    replacedEmployeeId: row.replaced_employee_id,
+    replacedEmployeeName: row.replaced_employee_name,
+    description: row.description,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    rejectionCount: Number(row.rejection_count ?? 0),
+    closureReason: row.closure_reason,
+    formEvidence: (row.form_evidence ?? []).map((evidence) => ({
+      id: evidence.id,
+      activityId: evidence.activityId,
+      entryId: evidence.entryId ?? null,
+      evidenceType: evidence.evidenceType,
+      originalFilename: evidence.originalFilename,
+      originalMimeType: evidence.originalMimeType,
+      storedMimeType: evidence.originalMimeType,
+      storedSizeBytes: Number(evidence.storedSizeBytes ?? 0),
+      uploadedAt: evidence.uploadedAt,
+      status: 'ACTIVE',
+    })),
+    totalCount: Number(row.total_count ?? 0),
+  }))
+}
 export async function getOvertimeDetail(activityId) {
   return rpc('get_overtime_detail_l5', { p_activity_id: activityId })
 }

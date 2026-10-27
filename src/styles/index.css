@@ -6711,6 +6711,16 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .lembur-employee-history-keterangan strong { display: block; color: #294b59; font-size: 12px; }
 .lembur-employee-history-keterangan span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: 11px; }
 .lembur-employee-history-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; color: var(--color-text-muted); font-size: 11px; }
+.lembur-leave-history-table { min-width: 980px; }
+.lembur-leave-forms { display: flex; flex-wrap: wrap; gap: 6px; }
+.lembur-leave-form { display: flex; align-items: center; gap: 6px; max-width: 230px; padding: 4px; border: 1px solid #dce5e9; border-radius: 7px; background: #ffffff; color: #294b59; text-align: left; cursor: pointer; }
+.lembur-leave-form:hover { border-color: #7f9fac; background: #f8fbfc; }
+.lembur-leave-form img, .lembur-leave-form-loading { width: 54px; height: 42px; flex: 0 0 54px; border-radius: 5px; object-fit: cover; background: #edf2f4; }
+.lembur-leave-form-loading { display: grid; place-items: center; color: var(--color-text-muted); font-size: 9px; }
+.lembur-leave-form > span:last-child { min-width: 0; }
+.lembur-leave-form strong, .lembur-leave-form small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lembur-leave-form strong { font-size: 10.5px; }
+.lembur-leave-form small { margin-top: 3px; color: var(--color-text-muted); font-size: 9.5px; }
 
 .lembur-preview-overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 24px; background: rgba(7, 20, 28, .78); }
 .lembur-preview-modal { display: grid; width: min(100%, 1000px); max-height: calc(100vh - 48px); overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 24px 80px rgba(0, 0, 0, .35); }
@@ -8854,6 +8864,17 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 :root[data-theme='dark'] .lembur-employee-history-keterangan strong {
   color: var(--text-primary);
+}
+
+:root[data-theme='dark'] .lembur-leave-form {
+  border-color: var(--border);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+:root[data-theme='dark'] .lembur-leave-form:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
 }
 
 :root[data-theme='dark'] .lembur-history-item p,

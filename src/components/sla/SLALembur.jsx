@@ -7,6 +7,7 @@ import {
   getOvertimeInitialDeadlineConfig,
   listOvertimeEmployeeHistory,
   listOvertimeHistory,
+  listOvertimeReplacementLeaveHistory,
   listOvertimeReplacements,
   listOvertimeWork,
   listReplacementEmployees,
@@ -101,6 +102,19 @@ function employeeHistoryPseudoRecord(historyRow) {
     closureReason: historyRow.closureReason ?? historyRow.activityClosureReason ?? null,
     rejectionCount: historyRow.rejectionCount ?? 0,
     revisionDeadlineAt: historyRow.revisionDeadlineAt ?? null,
+  }
+}
+
+// Baris riwayat cuti memakai status aktivitas pengganti cuti (bukan status
+// draft entry), agar badge menunggu approval/disetujui konsisten.
+function leaveHistoryPseudoRecord(row) {
+  if (!row) return null
+  return {
+    type: 'REPLACEMENT_LEAVE',
+    status: row.status,
+    closureReason: row.closureReason ?? null,
+    rejectionCount: row.rejectionCount ?? 0,
+    revisionDeadlineAt: null,
   }
 }
 
@@ -359,6 +373,11 @@ export default function SLALembur({
     setEmpHistoryError('')
     setEmpHistoryPage(1)
     setEmpHistoryTotal(0)
+    setLeaveHistory([])
+    setLeaveHistoryError('')
+    setLeaveHistoryPage(1)
+    setLeaveHistoryTotal(0)
+    setLeaveHistoryUrls({})
   }
   const closeDetail = () => {
     setDetailActivityId(null)
@@ -376,6 +395,12 @@ export default function SLALembur({
     setEmpHistoryError('')
     setEmpHistoryPage(1)
     setEmpHistoryTotal(0)
+    setLeaveHistory([])
+    setLeaveHistoryLoading(false)
+    setLeaveHistoryError('')
+    setLeaveHistoryPage(1)
+    setLeaveHistoryTotal(0)
+    setLeaveHistoryUrls({})
   }
   const [detailEvidence, setDetailEvidence] = useState([])
   const [detailEntries, setDetailEntries] = useState([])
@@ -395,6 +420,14 @@ export default function SLALembur({
   const [empHistoryTotal, setEmpHistoryTotal] = useState(0)
   const [empHistoryTick, setEmpHistoryTick] = useState(0)
   const empHistoryPageSize = 10
+  const [leaveHistory, setLeaveHistory] = useState([])
+  const [leaveHistoryLoading, setLeaveHistoryLoading] = useState(false)
+  const [leaveHistoryError, setLeaveHistoryError] = useState('')
+  const [leaveHistoryPage, setLeaveHistoryPage] = useState(1)
+  const [leaveHistoryTotal, setLeaveHistoryTotal] = useState(0)
+  const [leaveHistoryTick, setLeaveHistoryTick] = useState(0)
+  const [leaveHistoryUrls, setLeaveHistoryUrls] = useState({})
+  const leaveHistoryPageSize = 10
   const [formOpen, setFormOpen] = useState(false)
   const [formStep, setFormStep] = useState('main')
   const [evidenceUrls, setEvidenceUrls] = useState({})
@@ -2152,6 +2185,59 @@ export default function SLALembur({
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailActivityId, detailEntryId, detailTab, empHistoryPage, empHistoryTick])
+  // Riwayat cuti: pengajuan Pengganti Cuti lain untuk pegawai yang digantikan.
+  useEffect(() => {
+    if (!detailActivityId || detailTab !== 'leave-history') return undefined
+    const entryId = detailEntryId ?? detailRecords?.[0]?.entryId ?? null
+    let cancelled = false
+    if (!entryId) {
+      setLeaveHistory([])
+      setLeaveHistoryTotal(0)
+      setLeaveHistoryLoading(false)
+      setLeaveHistoryError('Peserta tidak valid. Tutup detail lalu buka kembali dari baris peserta.')
+      return undefined
+    }
+    setLeaveHistoryLoading(true)
+    setLeaveHistoryError('')
+    listOvertimeReplacementLeaveHistory({ entryId, limit: leaveHistoryPageSize, offset: (leaveHistoryPage - 1) * leaveHistoryPageSize })
+      .then((rows) => {
+        if (cancelled) return
+        setLeaveHistory(rows)
+        setLeaveHistoryTotal(rows[0]?.totalCount ?? 0)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setLeaveHistory([])
+        setLeaveHistoryTotal(0)
+        setLeaveHistoryError(friendlyEmployeeHistoryError(e?.message))
+      })
+      .finally(() => {
+        if (!cancelled) setLeaveHistoryLoading(false)
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailActivityId, detailEntryId, detailTab, leaveHistoryPage, leaveHistoryTick])
+  // Thumbnail Form Cuti memakai signed URL singkat yang scopenya dicek server.
+  useEffect(() => {
+    if (detailTab !== 'leave-history' || !leaveHistory.length) {
+      setLeaveHistoryUrls({})
+      return undefined
+    }
+    let cancelled = false
+    const forms = leaveHistory.flatMap((row) => row.formEvidence).filter(isImageEvidence)
+    if (!forms.length) {
+      setLeaveHistoryUrls({})
+      return undefined
+    }
+    import('../../data/overtimeEvidenceRepository.js')
+      .then(({ createOvertimeEvidenceSignedUrl }) => Promise.all(forms.map(async (entry) => {
+        const signed = await createOvertimeEvidenceSignedUrl(entry.id)
+        return [entry.id, signed.signedUrl]
+      })))
+      .then((urls) => { if (!cancelled) setLeaveHistoryUrls(Object.fromEntries(urls)) })
+      .catch(() => { if (!cancelled) setLeaveHistoryUrls({}) })
+    return () => { cancelled = true }
+  }, [detailTab, leaveHistory])
   function friendlyEmployeeHistoryError(message) {
     const text = String(message ?? '')
     if (/participant not found/i.test(text)) return 'Peserta tidak ditemukan. Muat ulang daftar lembur.'
@@ -2197,6 +2283,7 @@ export default function SLALembur({
   // Tolak Final sementara hanya Administrasi, Pengganti Izin, Pengganti Sakit.
   const detailSupportsFinalReject = detailActivity ? recordSupportsFinalReject(detailActivity) : false
   const empHistoryTotalPages = Math.max(1, Math.ceil(empHistoryTotal / empHistoryPageSize))
+  const leaveHistoryTotalPages = Math.max(1, Math.ceil(leaveHistoryTotal / leaveHistoryPageSize))
 
   const changeType = (type) => {
     if (activeActivityId && evidence.length && type!==draft.lemburType) {
@@ -2899,6 +2986,9 @@ export default function SLALembur({
                                          <div className="lembur-detail-tabs" role="tablist" aria-label="Tab Detail Lembur">
                        <button type="button" className={detailTab==='submission'?'lembur-detail-tab is-active':'lembur-detail-tab'} onClick={()=>setDetailTab('submission')}>Pengajuan Ini</button>
                        <button type="button" className={detailTab==='employee-history'?'lembur-detail-tab is-active':'lembur-detail-tab'} onClick={()=>setDetailTab('employee-history')}>Riwayat Lembur Pegawai</button>
+                       {detailActivity.type === 'REPLACEMENT_LEAVE' && (
+                         <button type="button" className={detailTab==='leave-history'?'lembur-detail-tab is-active':'lembur-detail-tab'} onClick={()=>setDetailTab('leave-history')}>Riwayat Cuti</button>
+                       )}
                      </div>
                      {detailTab==='submission' && (<>
                       <section className="lembur-detail-section"><h3>Evidence{detailEvidenceGroups.length ? ' · per peserta' : ''}</h3>{detailLoading?<div className="lembur-detail-empty">Memuat evidence...</div>:detailEvidenceGroups.length ? <div className="lembur-participant-evidence-list">{detailEvidenceDisplayGroups.map((group)=><div key={`${group.shared ? 'bersama' : 'peserta'}-${group.name}`} className="lembur-participant-evidence"><div className="lembur-participant-evidence-heading"><strong>{group.name}</strong><span className="lembur-evidence-status is-complete">{group.items.length} file</span></div>{group.items.length?<div className="lembur-detail-evidence-grid">{group.items.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">{group.shared ? 'Belum ada evidence bersama.' : detailSharedEvidence.length ? 'Memakai evidence bersama di atas.' : 'Belum ada evidence peserta ini.'}</div>}</div>)}</div>:activeDetailEvidence.length?<div className="lembur-detail-evidence-grid">{activeDetailEvidence.map((entry)=>isImageEvidence(entry)?<button type="button" className="lembur-detail-photo" key={entry.id} onClick={()=>previewEvidence(entry,photoDetailEvidence)}>{detailEvidenceUrls[entry.id]?<img src={detailEvidenceUrls[entry.id]} alt={entry.originalFilename} />:<span className="lembur-evidence-loading">Memuat foto...</span>}<span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span></button>:<button type="button" className="lembur-detail-document" key={entry.id} onClick={()=>previewEvidence(entry)}><span className="lembur-doc-icon">DOC</span><span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename} · {(entry.storedSizeBytes/1024).toFixed(0)} KB</small></span><b>Preview</b></button>)}</div>:<div className="lembur-detail-empty">Belum ada evidence.</div>}</section>
@@ -2932,6 +3022,59 @@ export default function SLALembur({
                       {(isAdminUp3||isSuperAdmin) && !detailOfficeBlocked && !detailCanApprove && recordReviewStatus(detailActivity)==='SUBMITTED' && detailRecords.length>1 && <Alert tone="info" className="lembur-approval-alert">Buka detail dari baris peserta tertentu untuk menyetujui atau menolak per peserta.</Alert>}
                        {detailOfficeBlocked && recordReviewStatus(detailActivity)==='SUBMITTED' && <Alert tone="info" className="lembur-approval-alert">Lembur kantor UP3 hanya dapat disetujui atau ditolak oleh Super Admin.</Alert>}
                      </>)}
+                     {detailTab==='leave-history' && detailActivity.type === 'REPLACEMENT_LEAVE' && (
+                       <section className="lembur-detail-section lembur-employee-history-section lembur-leave-history-section">
+                         <h3>Riwayat Cuti{detailActivity.replacedEmployeeName ? ` · ${detailActivity.replacedEmployeeName}` : ''}</h3>
+                         <p className="sla-table-hint lembur-employee-history-hint">Semua tanggal cuti yang tercatat untuk pegawai yang digantikan. Hanya pengajuan yang pernah dikirim; pengajuan yang sedang dibuka tidak ditampilkan. Riwayat ini bukan perhitungan saldo cuti.</p>
+                         {leaveHistoryLoading ? <div className="lembur-detail-empty">Memuat riwayat cuti...</div>
+                         : leaveHistoryError ? <div className="lembur-detail-empty"><span>{leaveHistoryError}</span><div style={{ marginTop: 10 }}><Button variant="secondary" size="small" onClick={()=>setLeaveHistoryTick(t=>t+1)}>Coba Lagi</Button></div></div>
+                         : leaveHistory.length ? (<>
+                          <div className="lembur-employee-history-wrap"><table className="sla-table lembur-employee-history-table lembur-leave-history-table">
+                            <thead><tr><th>Tanggal</th><th>Waktu Cuti</th><th>Pegawai Pengganti</th><th>Unit</th><th>Keterangan</th><th>Status</th><th>Form Cuti</th></tr></thead>
+                            <tbody>
+                              {leaveHistory.map((row) => {
+                                const pseudo = leaveHistoryPseudoRecord(row)
+                                const time = pontianakFormValues(row.startedAt, row.endedAt)
+                                return (
+                                  <tr key={row.activityId}>
+                                    <td>{row.date ?? '—'}</td>
+                                    <td className="lembur-table-time">{time.startTime}–{time.endTime}{time.endTime <= time.startTime ? ' (+1 hari)' : ''}</td>
+                                    <td>{row.participantName || '—'}</td>
+                                    <td>{getUlpName(row.unitId) ?? '—'}</td>
+                                    <td className="lembur-employee-history-keterangan"><span>{row.description || '—'}</span></td>
+                                    <td className="lembur-table-status"><StatusBadge status={statusBadgeKey(pseudo)} tone={statusTone(pseudo)}>{displayStatus(pseudo)}</StatusBadge></td>
+                                    <td>
+                                      {row.formEvidence.length ? (
+                                        <div className="lembur-leave-forms">
+                                          {row.formEvidence.map((entry) => (
+                                            <button type="button" key={entry.id} className="lembur-leave-form" onClick={() => previewEvidence(entry, row.formEvidence)} title={`Lihat ${entry.originalFilename}`}>
+                                              {isImageEvidence(entry) ? (
+                                                leaveHistoryUrls[entry.id]
+                                                  ? <img src={leaveHistoryUrls[entry.id]} alt={entry.originalFilename} />
+                                                  : <span className="lembur-leave-form-loading">Memuat...</span>
+                                              ) : <span className="lembur-doc-icon">DOC</span>}
+                                              <span><strong>{evidenceLabel(entry.evidenceType)}</strong><small>{entry.originalFilename}</small></span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      ) : <span className="sla-table-hint">Belum ada form</span>}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table></div>
+                          {leaveHistoryTotalPages > 1 && (
+                            <div className="lembur-employee-history-pagination">
+                              <span>Halaman {leaveHistoryPage} dari {leaveHistoryTotalPages}</span>
+                              <Button variant="secondary" size="small" disabled={leaveHistoryPage<=1 || leaveHistoryLoading} onClick={()=>setLeaveHistoryPage(p=>Math.max(1,p-1))}>Sebelumnya</Button>
+                              <Button variant="secondary" size="small" disabled={leaveHistoryPage>=leaveHistoryTotalPages || leaveHistoryLoading} onClick={()=>setLeaveHistoryPage(p=>p+1)}>Berikutnya</Button>
+                            </div>
+                          )}
+                         </>)
+                         : <div className="lembur-detail-empty">Belum ada riwayat cuti lain untuk pegawai ini dalam akses Anda.</div>}
+                       </section>
+                     )}
                      {detailTab==='employee-history' && (
                        <section className="lembur-detail-section lembur-employee-history-section"><h3>Riwayat Lembur Pegawai{detailRecords[0]?.participantName ? ` · ${detailRecords[0].participantName}` : ''}</h3>
                        <p className="sla-table-hint lembur-employee-history-hint">Semua jenis lembur, semua periode. Hanya pengajuan yang pernah dikirim; pengajuan yang sedang dibuka tidak ditampilkan.</p>
