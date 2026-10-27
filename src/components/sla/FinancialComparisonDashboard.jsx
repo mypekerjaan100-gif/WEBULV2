@@ -147,8 +147,8 @@ function formatTrendMonth(value) {
   })
 }
 
-export default function FinancialComparisonDashboard({ contractId, up3Id, period, periods, onPeriodChange, units, orgMap }) {
-  const [unitId, setUnitId] = useState(ALL_UNITS)
+export default function FinancialComparisonDashboard({ contractId, up3Id, period, periods, onPeriodChange, units, orgMap, restrictedUnitId = null }) {
+  const [unitId, setUnitId] = useState(restrictedUnitId ?? ALL_UNITS)
   const [selectedRevenueCodes, setSelectedRevenueCodes] = useState(() => REVENUE_ELIGIBLE.map((i) => i.code))
   const [selectedCostCodes, setSelectedCostCodes] = useState(() => COST_DEFINITIONS.map((c) => c.code))
   const [dashboard, setDashboard] = useState(null)
@@ -189,9 +189,13 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   useEffect(() => {
     if (prevScopeKey.current !== scopeKey) {
       prevScopeKey.current = scopeKey
-      setUnitId(ALL_UNITS)
+      setUnitId(restrictedUnitId ?? ALL_UNITS)
     }
-  }, [scopeKey])
+  }, [scopeKey, restrictedUnitId])
+
+  useEffect(() => {
+    if (restrictedUnitId) setUnitId(restrictedUnitId)
+  }, [restrictedUnitId])
 
   // Snapshot bulan terpilih (independen dari tren).
   useEffect(() => {
@@ -558,9 +562,9 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
               <span className="fin-ref-compact-label">Unit / ULP</span>
               <span className="fin-ref-compact-select">
                 <Icon name="layers" size={13} />
-                <select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-                  <option value={ALL_UNITS}>Semua ULP</option>
-                  {(units ?? []).filter((u) => u.type === 'ULP').map((u) => {
+                <select value={unitId} onChange={(e) => setUnitId(e.target.value)} disabled={Boolean(restrictedUnitId)}>
+                  {!restrictedUnitId && <option value={ALL_UNITS}>Semua ULP</option>}
+                  {(units ?? []).filter((u) => u.type === 'ULP' && (!restrictedUnitId || (u.uuid ?? u.id) === restrictedUnitId)).map((u) => {
                     const id = u.uuid ?? u.id
                     return <option key={id} value={id}>{u.displayName ?? u.name ?? id}</option>
                   })}

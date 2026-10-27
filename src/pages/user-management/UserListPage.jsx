@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../lib/AppAuth.jsx'
 import { callUserManagement } from '../../lib/userManagement.js'
+import RoleManagerModal from './RoleManagerModal.jsx'
+import { listCustomRoles } from '../../lib/customRoles.js'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Semua Status' },
@@ -166,7 +168,7 @@ function OrganizationAccessForm({ user, onSuccess }) {
 }
 
 function ContractAccessForm({ user, onSuccess }) {
-  const [options, setOptions] = useState({ contracts: [], scopes: [] })
+  const [options, setOptions] = useState({ contracts: [], scopes: [], customRoles: [] })
   const [contractId, setContractId] = useState('')
   const [role, setRole] = useState('ADMIN_UP3')
   const [up3Id, setUp3Id] = useState('')
@@ -180,7 +182,7 @@ function ContractAccessForm({ user, onSuccess }) {
     callUserManagement('access_options').then(({ data, error: fnError }) => {
       if (cancelled) return
       if (fnError) setError(fnError)
-      else setOptions({ contracts: data?.contracts || [], scopes: data?.scopes || [] })
+      else setOptions({ contracts: data?.contracts || [], scopes: data?.scopes || [], customRoles: data?.customRoles || [] })
       setLoading(false)
     }).catch((err) => {
       if (!cancelled) {
@@ -208,7 +210,7 @@ function ContractAccessForm({ user, onSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
-    if (!contractId || !up3Id || (role === 'ADMIN_ULP' && !ulpId)) {
+    if (!contractId || !up3Id || (requiresUlp && !ulpId)) {
       setError('Lengkapi kontrak, role, dan scope operasional.')
       return
     }
@@ -221,7 +223,7 @@ function ContractAccessForm({ user, onSuccess }) {
           contractId,
           contractRole: role,
           operationalUp3Id: up3Id,
-          operationalUnitId: role === 'ADMIN_ULP' ? ulpId : null,
+          operationalUnitId: requiresUlp ? ulpId : null,
         },
       })
       if (fnError) {
@@ -250,8 +252,15 @@ function ContractAccessForm({ user, onSuccess }) {
       <div className="form-group">
         <label htmlFor="access-role">Role Kontrak</label>
         <select id="access-role" className="input-select" value={role} onChange={(e) => { setRole(e.target.value); setUlpId('') }}>
-          <option value="ADMIN_UP3">ADMIN_UP3</option>
-          <option value="ADMIN_ULP">ADMIN_ULP</option>
+          <optgroup label="Role Bawaan">
+            <option value="ADMIN_UP3">ADMIN_UP3</option>
+            <option value="ADMIN_ULP">ADMIN_ULP</option>
+          </optgroup>
+          {(options.customRoles || []).length > 0 && (
+            <optgroup label="Role Custom">
+              {options.customRoles.map((custom) => <option key={custom.code} value={custom.code}>{custom.displayName} ({custom.code})</option>)}
+            </optgroup>
+          )}
         </select>
       </div>
       <div className="form-group">
@@ -261,7 +270,7 @@ function ContractAccessForm({ user, onSuccess }) {
           {scopes.map((scope) => <option key={scope.up3Id} value={scope.up3Id}>{scope.up3Name}</option>)}
         </select>
       </div>
-      {role === 'ADMIN_ULP' && (
+      {requiresUlp && (
         <div className="form-group">
           <label htmlFor="access-ulp">ULP</label>
           <select id="access-ulp" className="input-select" value={ulpId} onChange={(e) => setUlpId(e.target.value)} disabled={!up3Id} required>
@@ -460,7 +469,7 @@ function CreateUserModal({ onClose, onSuccess }) {
   const [password, setPassword] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('ADMIN_UP3')
-  const [options, setOptions] = useState({ contracts: [], scopes: [], internalOrganizationUnits: [] })
+  const [options, setOptions] = useState({ contracts: [], scopes: [], internalOrganizationUnits: [], customRoles: [] })
   const [contractId, setContractId] = useState('')
   const [up3Id, setUp3Id] = useState('')
   const [ulpId, setUlpId] = useState('')
@@ -480,6 +489,7 @@ function CreateUserModal({ onClose, onSuccess }) {
         contracts: data?.contracts || [],
         scopes: data?.scopes || [],
         internalOrganizationUnits: data?.internalOrganizationUnits || [],
+        customRoles: data?.customRoles || [],
       })
     }).catch((err) => {
       if (!cancelled) setError(err?.message || 'Gagal memuat opsi pembuatan akun.')
@@ -496,13 +506,15 @@ function CreateUserModal({ onClose, onSuccess }) {
     errorRef.current?.focus({ preventScroll: true })
   }, [error])
 
-  const contractRole = role === 'ADMIN_UP3' || role === 'ADMIN_ULP'
+  const customRole = (options.customRoles || []).find((item) => item.code === role)
+  const contractRole = role === 'ADMIN_UP3' || role === 'ADMIN_ULP' || Boolean(customRole)
   const organizationRole = MANAGEMENT_ROLE_LEVEL[role]
   const scopes = options.scopes.filter((scope) => scope.contractId === contractId)
   const selectedScope = scopes.find((scope) => scope.up3Id === up3Id)
   const internalUnits = options.internalOrganizationUnits.filter((unit) => unit.type === organizationRole)
+  const requiresUlp = role === 'ADMIN_ULP' || Boolean(customRole)
   const scopeComplete = role === 'SUPER_ADMIN'
-    || (contractRole && contractId && up3Id && (role !== 'ADMIN_ULP' || ulpId))
+    || (contractRole && contractId && up3Id && (!requiresUlp || ulpId))
     || (organizationRole && internalOrgUnitId)
 
   const changeRole = (nextRole) => {
@@ -525,7 +537,7 @@ function CreateUserModal({ onClose, onSuccess }) {
           internalOrgUnitId: organizationRole ? internalOrgUnitId : null,
           contractId: contractRole ? contractId : null,
           operationalUp3Id: contractRole ? up3Id : null,
-          operationalUnitId: role === 'ADMIN_ULP' ? ulpId : null,
+          operationalUnitId: requiresUlp ? ulpId : null,
         },
       })
       if (fnError) {
@@ -603,12 +615,17 @@ function CreateUserModal({ onClose, onSuccess }) {
                 <option value="ADMIN_UP3">ADMIN_UP3</option>
                 <option value="ADMIN_ULP">ADMIN_ULP</option>
                 {MANAGEMENT_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {(options.customRoles || []).length > 0 && (
+                  <optgroup label="Role Custom">
+                    {options.customRoles.map((custom) => <option key={custom.code} value={custom.code}>{custom.displayName} ({custom.code})</option>)}
+                  </optgroup>
+                )}
               </select>
             </div>
             {contractRole && <>
               <div className="form-group"><label htmlFor="create-contract">Kontrak *</label><select id="create-contract" className="input-select" value={contractId} onChange={(e) => { setContractId(e.target.value); setUp3Id(''); setUlpId('') }} required><option value="">Pilih kontrak</option>{options.contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.title}</option>)}</select></div>
               <div className="form-group"><label htmlFor="create-up3">UP3 *</label><select id="create-up3" className="input-select" value={up3Id} onChange={(e) => { setUp3Id(e.target.value); setUlpId('') }} required disabled={!contractId}><option value="">Pilih UP3</option>{scopes.map((scope) => <option key={scope.up3Id} value={scope.up3Id}>{scope.up3Name}</option>)}</select></div>
-              {role === 'ADMIN_ULP' && <div className="form-group"><label htmlFor="create-ulp">ULP *</label><select id="create-ulp" className="input-select" value={ulpId} onChange={(e) => setUlpId(e.target.value)} required disabled={!up3Id}><option value="">Pilih ULP</option>{(selectedScope?.ulps || []).map((ulp) => <option key={ulp.id} value={ulp.id}>{ulp.name}</option>)}</select></div>}
+              {requiresUlp && <div className="form-group"><label htmlFor="create-ulp">ULP *</label><select id="create-ulp" className="input-select" value={ulpId} onChange={(e) => setUlpId(e.target.value)} required disabled={!up3Id}><option value="">Pilih ULP</option>{(selectedScope?.ulps || []).map((ulp) => <option key={ulp.id} value={ulp.id}>{ulp.name}</option>)}</select></div>}
             </>}
             {organizationRole && <div className="form-group"><label htmlFor="create-internal-unit">Unit Organisasi *</label><select id="create-internal-unit" className="input-select" value={internalOrgUnitId} onChange={(e) => setInternalOrgUnitId(e.target.value)} required><option value="">Pilih unit</option>{internalUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></div>}
             <p className="invite-hint">
@@ -660,7 +677,15 @@ function UserListTable({ users, onSelect }) {
                 <td>{u.username || '-'}</td>
                 <td>{u.email ? <>{u.email}{!u.recoveryEmailVerified && <span className="text-muted"> (belum terverifikasi)</span>}</> : <span className="text-muted">Belum ada</span>}</td>
                 <td>
-                  {u.roles.length > 0 ? u.roles.join(', ') : <span className="text-muted">Belum Ditentukan</span>}
+                  {(() => {
+                    const roleLabels = [
+                      ...u.roles,
+                      ...u.contractMemberships
+                        .map((membership) => membership.role)
+                        .filter((code) => code?.startsWith('CUSTOM_')),
+                    ]
+                    return roleLabels.length > 0 ? roleLabels.join(', ') : <span className="text-muted">Belum Ditentukan</span>
+                  })()}
                 </td>
                 <td>
                   {u.organizationMemberships.length > 0
@@ -704,6 +729,13 @@ export default function UserListPage({ onBack }) {
   const [roleFilter, setRoleFilter] = useState('')
   const [selectedUser, setSelectedUser] = useState(null)
   const [showInvite, setShowInvite] = useState(false)
+  const [showRoleManager, setShowRoleManager] = useState(false)
+  const [customRoleOptions, setCustomRoleOptions] = useState([])
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    listCustomRoles().then((roles) => setCustomRoleOptions(roles.filter((role) => role.isActive))).catch(() => {})
+  }, [isSuperAdmin])
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -740,7 +772,7 @@ export default function UserListPage({ onBack }) {
       !roleFilter ||
       (roleFilter === 'SUPER_ADMIN'
         ? u.isSuperAdmin
-        : u.roles.includes(roleFilter))
+        : u.roles.includes(roleFilter) || u.contractMemberships.some((membership) => membership.role === roleFilter))
     return matchSearch && matchStatus && matchRole
   })
 
@@ -790,7 +822,19 @@ export default function UserListPage({ onBack }) {
           {ROLE_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
+          {customRoleOptions.map((role) => (
+            <option key={role.code} value={role.code}>{role.displayName}</option>
+          ))}
         </select>
+        {isSuperAdmin && (
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => setShowRoleManager(true)}
+          >
+            Kelola Role
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-primary"
@@ -832,6 +876,15 @@ export default function UserListPage({ onBack }) {
 
       {showInvite && (
         <CreateUserModal onClose={() => setShowInvite(false)} onSuccess={handleInviteSuccess} />
+      )}
+
+      {showRoleManager && (
+        <RoleManagerModal
+          onClose={() => setShowRoleManager(false)}
+          onRolesChanged={() => {
+            listCustomRoles().then((roles) => setCustomRoleOptions(roles.filter((role) => role.isActive))).catch(() => {})
+          }}
+        />
       )}
     </div>
   )

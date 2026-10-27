@@ -177,10 +177,18 @@ export default function SLAPelayananTeknikPage({
   routeRequest = null,
   onRouteChange = null,
   onSlaVariableRejectedChange,
+  customMenuAccess = null,
 }) {
-  const [moduleId, setModuleId] = useState(
-    VEHICLE_TAB_DISABLED && initialModule === 'kendaraan-ulp' ? 'sla' : (initialModule ?? 'sla'),
-  )
+  const [moduleId, setModuleId] = useState(() => {
+    if (customMenuAccess) {
+      const allowed = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp'].filter((id) => {
+        const menu = { 'sla': 'sla', 'variable-cost': 'variable_cost', 'lembur': 'lembur', 'kendaraan-ulp': 'alat_kendaraan' }[id]
+        return ['read', 'edit'].includes(customMenuAccess?.[menu] ?? 'none')
+      })
+      return initialModule && allowed.includes(initialModule) ? initialModule : (allowed[0] ?? 'sla')
+    }
+    return VEHICLE_TAB_DISABLED && initialModule === 'kendaraan-ulp' ? 'sla' : (initialModule ?? 'sla')
+  })
   const [period, setPeriod] = useState(() => initialPeriode ?? defaultSlaPeriod())
   const [versionId, setVersionId] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
@@ -240,7 +248,11 @@ export default function SLAPelayananTeknikPage({
     : null
   const canViewAdminUp3Modules = canManageUp3Operations
   const canViewReadOnlyMasterLocations = isAdminUlp
-  const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp
+  const isCustomRole = Boolean(customMenuAccess)
+  const customMenuLevel = (menu) => customMenuAccess?.[menu] ?? 'none'
+  const customCanRead = (menu) => ['read', 'edit'].includes(customMenuLevel(menu))
+  const customCanEdit = (menu) => customMenuLevel(menu) === 'edit'
+  const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp || customCanRead('alat_kendaraan')
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
   const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
@@ -668,6 +680,15 @@ export default function SLAPelayananTeknikPage({
     return () => { cancelled = true }
   }, [selectedVersion?.id, orgMap?.contractUuid, orgMap?.up3Uuid, periodMonth, up3Id, isUp3View, effectiveUnitId, slaReloadToken])
   const authorizedModules = pelayananTeknikModules.filter((module) => {
+    if (isCustomRole) {
+      const menuKey = {
+        sla: 'sla',
+        'variable-cost': 'variable_cost',
+        lembur: 'lembur',
+        'kendaraan-ulp': 'alat_kendaraan',
+      }[module.id]
+      return Boolean(menuKey && customCanRead(menuKey))
+    }
     if (module.id === 'kendaraan-ulp') return canViewVehicles
     return (
       !module.adminOnly ||
@@ -685,27 +706,36 @@ export default function SLAPelayananTeknikPage({
 
   // Terapkan rute dari URL (refresh / Back-Forward); modul tak dikenal/diizinkan diabaikan.
   // Validasi modul menunggu orgMap karena izin modul admin bergantung padanya.
+  const primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']
+  const isCustomMenuVisible = (id) => {
+    if (!isCustomRole) return true
+    const menu = { sla: 'sla', 'variable-cost': 'variable_cost', lembur: 'lembur', 'kendaraan-ulp': 'alat_kendaraan' }[id]
+    return Boolean(menu && customCanRead(menu))
+  }
+  const defaultVisibleModule = isCustomRole
+    ? (primaryModuleIds.find((id) => isCustomMenuVisible(id)) ?? 'sla')
+    : 'sla'
   const initialModuleCheckedRef = useRef(false)
   useEffect(() => {
     if (initialModuleCheckedRef.current || visibleModules.length === 0) return
     if (orgMapStatus === 'loading') return
     initialModuleCheckedRef.current = true
     if (initialModule && !visibleModules.some((module) => module.id === initialModule)) {
-      setModuleId('sla')
+      setModuleId(defaultVisibleModule)
     }
-  }, [initialModule, visibleModules, orgMapStatus])
+  }, [defaultVisibleModule, initialModule, visibleModules, orgMapStatus])
   useEffect(() => {
     if (!routeRequest) return
     if (VEHICLE_TAB_DISABLED && routeRequest.module === 'kendaraan-ulp') {
-      selectModule('sla')
+      selectModule(defaultVisibleModule)
       return
     }
     if (routeRequest.module && orgMapStatus === 'loading') return
     if (routeRequest.module && routeRequest.module !== moduleId
       && visibleModules.some((module) => module.id === routeRequest.module)) {
       if (!selectModule(routeRequest.module)) return
-    } else if (!routeRequest.module && moduleId !== 'sla') {
-      if (!selectModule('sla')) return
+    } else if (!routeRequest.module && moduleId !== defaultVisibleModule) {
+      if (!selectModule(defaultVisibleModule)) return
     }
     if (routeRequest.periode && slaPeriods.includes(routeRequest.periode) && routeRequest.periode !== period) {
       if (!canLeaveEditor()) {
@@ -896,20 +926,22 @@ export default function SLAPelayananTeknikPage({
   useEffect(() => {
     if (orgMapStatus === 'loading') return
     const canViewActiveModule =
-      activeModule?.id === 'kendaraan-ulp'
-        ? canViewVehicles && !VEHICLE_TAB_DISABLED
-        : !activeModule?.adminOnly ||
-          canViewAdminUp3Modules ||
-          (activeModule?.id === 'master-lokasi' && canViewReadOnlyMasterLocations)
+      isCustomRole
+        ? isCustomMenuVisible(activeModule?.id)
+        : activeModule?.id === 'kendaraan-ulp'
+          ? canViewVehicles && !VEHICLE_TAB_DISABLED
+          : !activeModule?.adminOnly ||
+            canViewAdminUp3Modules ||
+            (activeModule?.id === 'master-lokasi' && canViewReadOnlyMasterLocations)
     if (!canViewActiveModule) {
-      setModuleId('sla')
+      setModuleId(defaultVisibleModule)
     }
-  }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations, canViewVehicles, orgMapStatus])
+  }, [activeModule, canViewAdminUp3Modules, canViewReadOnlyMasterLocations, canViewVehicles, defaultVisibleModule, isCustomRole, orgMapStatus])
 
   const isActiveReportingVersion = selectedVersion?.databaseStatus === 'ACTIVE'
   const isOwnAdminUlp = isAdminUlp && selectedUnitUuid === adminUlpAccess?.operational_unit_id
   const canEditManualOperations = Boolean(
-    isActiveReportingVersion && !isUp3View && (isOwnAdminUlp || isSuperAdmin),
+    isActiveReportingVersion && !isUp3View && (isOwnAdminUlp || isSuperAdmin || (isCustomRole && customCanEdit('sla'))),
   )
   const canEditTarget = Boolean(isActiveReportingVersion && canManageUp3Operations)
 
@@ -1045,7 +1077,11 @@ export default function SLAPelayananTeknikPage({
         </label>
       )}
 
-      {moduleId === 'pengaturan-lembur' && orgMapStatus === 'loading' ? (
+      {isCustomRole && visibleModules.length === 0 ? (
+        <StatePanel state="empty" title="Belum ada akses menu">
+          <p>Role Anda belum memiliki akses ke menu Pelayanan Teknik. Hubungi Super Admin.</p>
+        </StatePanel>
+      ) : moduleId === 'pengaturan-lembur' && orgMapStatus === 'loading' ? (
         <StatePanel state="loading" title="Memuat pengaturan Lembur" />
       ) : moduleId === 'pengaturan-lembur' && (orgMapStatus === 'error' || !orgMap) ? (
         <StatePanel state="error" title="Pengaturan Lembur tidak tersedia">
@@ -1337,7 +1373,7 @@ export default function SLAPelayananTeknikPage({
             approvalTarget={canManageUp3Operations ? approvalTarget : null}
             onApprovalTargetHandled={onApprovalTargetHandled}
             onApprovalChange={onApprovalChange}
-            isManagementReadOnly={isManagement && !canManageUp3Operations}
+            isManagementReadOnly={(isManagement && !canManageUp3Operations) || (isCustomRole && !customCanEdit('variable_cost'))}
             canManageKonstruksiMonthly={canManageUp3Operations}
             canViewVariableFinancial={canManageUp3Operations}
           />
@@ -1369,7 +1405,7 @@ export default function SLAPelayananTeknikPage({
             unitId={lemburUnitUuid}
             periodMonth={lemburPeriodMonth}
             records={lemburRecords}
-            canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3}
+            canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3 || (isCustomRole && customCanEdit('lembur'))}
             isExactAdminUp3={isAdminUp3}
             isAdminUp3={canManageUp3Operations}
             isSuperAdmin={isSuperAdmin}
@@ -1408,8 +1444,8 @@ export default function SLAPelayananTeknikPage({
           key={`${orgMap.contractUuid}:${orgMap.up3Uuid}:${periodMonth}`}
           contractUuid={orgMap.contractUuid}
           up3Uuid={orgMap.up3Uuid}
-          ownUlpUuid={adminUlpAccess?.operational_unit_id ?? null}
-          canManage={isSuperAdmin || isAdminUlp}
+          ownUlpUuid={adminUlpAccess?.operational_unit_id ?? (isCustomRole ? selectedUnitUuid : null)}
+          canManage={isSuperAdmin || isAdminUlp || (isCustomRole && customCanEdit('alat_kendaraan'))}
           canPickUlp={isSuperAdmin || isAdminUp3}
           units={orgMap.units}
           initialMonth={periodMonth}

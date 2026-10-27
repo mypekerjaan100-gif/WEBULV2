@@ -89,15 +89,30 @@ export default function App() {
   )
   const canViewAdminUp3Modules = isSuperAdmin || hasAdminUp3Scope || isManagementUserRaw
   const canViewReadOnlyMasterLocations = hasAdminUlpScope
-  const canViewVehicles = isSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope
+  const customContractAccess = contractAccess.length === 1 && contractAccess[0]?.is_custom ? contractAccess[0] : null
+  const customMenuAccess = customContractAccess?.menu_access ?? null
+  const customCanView = (menu) => ['read', 'edit'].includes(customMenuAccess?.[menu] ?? 'none')
+  const canViewVehicles = isSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope || customCanView('alat_kendaraan')
   const slaPrimaryModules = useMemo(
-    () => pelayananTeknikModules.filter(
-      (module) => SLA_PRIMARY_MODULE_IDS.includes(module.id)
-        && (module.id !== 'kendaraan-ulp' || canViewVehicles),
-    ),
-    [canViewVehicles],
+    () => {
+      if (customMenuAccess) {
+        const allowed = {
+          sla: customCanView('sla'),
+          'variable-cost': customCanView('variable_cost'),
+          lembur: customCanView('lembur'),
+          'kendaraan-ulp': customCanView('alat_kendaraan'),
+        }
+        return pelayananTeknikModules.filter((module) => SLA_PRIMARY_MODULE_IDS.includes(module.id) && allowed[module.id])
+      }
+      return pelayananTeknikModules.filter(
+        (module) => SLA_PRIMARY_MODULE_IDS.includes(module.id)
+          && (module.id !== 'kendaraan-ulp' || canViewVehicles),
+      )
+    },
+    [canViewVehicles, customMenuAccess],
   )
   const slaConfigurationModules = useMemo(() => {
+    if (customMenuAccess) return []
     const modules = pelayananTeknikModules.filter((module) => (
       !SLA_PRIMARY_MODULE_IDS.includes(module.id)
       && (!module.adminOnly
@@ -111,7 +126,7 @@ export default function App() {
       ]
     }
     return modules
-  }, [canViewAdminUp3Modules, canViewReadOnlyMasterLocations])
+  }, [canViewAdminUp3Modules, canViewReadOnlyMasterLocations, customMenuAccess])
   const canAccessFinancial = isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
   const adminUp3Access = !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
     ? contractAccess[0]
@@ -189,11 +204,14 @@ export default function App() {
       setRealScopeLoaded(true)
       return undefined
     }
-    const access = contractAccess.length === 1 && ['ADMIN_UP3', 'ADMIN_ULP'].includes(contractAccess[0]?.role)
+    const access = contractAccess.length === 1 && (
+      ['ADMIN_UP3', 'ADMIN_ULP'].includes(contractAccess[0]?.role)
+      || contractAccess[0]?.is_custom === true
+    )
       ? contractAccess[0]
       : null
     if (!access?.contract_code || !access.operational_up3_id ||
-      (access.role === 'ADMIN_ULP' && !access.operational_unit_id)) {
+      ((access.role === 'ADMIN_ULP' || access.is_custom) && !access.operational_unit_id)) {
       setRealScope(null)
       setRealScopeLoaded(true)
       return undefined
@@ -528,6 +546,7 @@ export default function App() {
               initialModule={slaRouteRequest?.module ?? null}
               initialPeriode={slaRouteRequest?.periode ?? null}
               routeRequest={slaRouteRequest}
+              customMenuAccess={customMenuAccess}
               onSlaVariableRejectedChange={setSlaVariableRejected}
               onRouteChange={({ module, periode }) => {
                 setSlaActiveModule(module ?? 'sla')

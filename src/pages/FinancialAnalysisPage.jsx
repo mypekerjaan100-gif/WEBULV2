@@ -12,12 +12,16 @@ export default function FinancialAnalysisPage({ initialPeriode = null, routeRequ
   const isSuperAdmin = actor?.is_super_admin === true
   const orgAccess = actor?.organization_access ?? []
   const FINANCIAL_ROLES = ['TEAM_LEADER', 'MANAGER_UNIT', 'MANAGER_UP']
-  const canAccess = isSuperAdmin || orgAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
+  const customFinancialAccess = ['read', 'edit'].includes(actor?.custom_menu_access?.analisis_finansial ?? 'none')
+  const canAccess = isSuperAdmin || orgAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role)) || customFinancialAccess
 
   const [period, setPeriod] = useState(() => initialPeriode ?? defaultSlaPeriod())
   const [orgMap, setOrgMap] = useState(null)
   const [orgMapError, setOrgMapError] = useState('')
   const up3Id = preview?.up3Id ?? 'up3'
+  const restrictedUnitId = customFinancialAccess
+    ? (orgMap?.units.find((unit) => unit.legacyKey === preview?.unitId || unit.uuid === preview?.unitId)?.uuid ?? null)
+    : null
 
   const routeChangeRef = useRef(onRouteChange)
   routeChangeRef.current = onRouteChange
@@ -79,6 +83,7 @@ export default function FinancialAnalysisPage({ initialPeriode = null, routeRequ
             onPeriodChange={setPeriod}
             units={orgMap.units}
             orgMap={orgMap}
+            restrictedUnitId={restrictedUnitId}
           />
         )}
       </div>

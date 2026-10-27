@@ -43,8 +43,45 @@ export async function handleSessionContext(
   const roles = (roleRows || [])
     .map((row) => (row.authorization_roles as { code: string } | null)?.code)
     .filter((code): code is string => Boolean(code));
-  const assigned = roles.length > 0 || (organizationMemberships || []).length > 0 || (contractMemberships || []).length > 0;
-  const accountStatus = profile?.status || (user.confirmed_at ? "ACTIVE" : "INVITED");
+
+  const customCodes = [...new Set(
+    contractMemberships
+      .map((membership) => membership.contract_role as string)
+      .filter((code) => code?.startsWith("CUSTOM_")),
+  )];
+  const customRoles = new Map<string, { display_name: string; role_level: string; menu_access: unknown; is_active: boolean; permissions: string[] }>();
+  if (customCodes.length > 0) {
+    const { data: roleDefs } = await adminClient
+      .from("authorization_roles")
+      .select("id, code, display_name, role_level, menu_access, is_active")
+      .in("code", customCodes)
+      .eq("role_namespace", "CONTRACT");
+    const roleIds = (roleDefs || []).map((role) => role.id as string);
+    const { data: permissionRows } = roleIds.length
+      ? await adminClient
+        .from("authorization_role_permissions")
+        .select("role_id, authorization_permissions!inner(code)")
+        .in("role_id", roleIds)
+      : { data: [] };
+    const permissionsByRole = new Map<string, string[]>();
+    for (const row of permissionRows || []) {
+      const roleId = row.role_id as string;
+      const code = (row.authorization_permissions as { code: string } | null)?.code;
+      if (!code) continue;
+      if (!permissionsByRole.has(roleId)) permissionsByRole.set(roleId, []);
+      permissionsByRole.get(roleId)!.push(code);
+    }
+    for (const role of roleDefs || []) {
+      customRoles.set(role.code as string, {
+        display_name: role.display_name as string,
+        role_level: role.role_level as string,
+        menu_access: role.menu_access ?? {},
+        is_active: role.is_active !== false,
+        permissions: permissionsByRole.get(role.id as string) || [],
+      });
+    }
+  }
+
   const contractsById = new Map((contracts || []).map((contract) => [contract.id as string, contract]));
   const organizationNamesById = new Map<string, string>();
   for (const name of organizationNames || []) {
@@ -53,9 +90,8 @@ export async function handleSessionContext(
     }
   }
   const contractAccess = (contractMemberships || []).map((membership) => {
-    const contract = contractsById.get(membership.contract_id as string) as
-      | { code: string; title: string }
-      | undefined;
+    const contract = contractsById.get(membership.contract_id as string) as { code: string; title: string } | undefined;
+    const custom = customRoles.get(membership.contract_role as string);
     return {
       membership_id: membership.id,
       contract_id: membership.contract_id,
@@ -68,6 +104,11 @@ export async function handleSessionContext(
         ? organizationNamesById.get(membership.operational_unit_id as string) ?? "Unknown"
         : null,
       role: membership.contract_role,
+      is_custom: Boolean(custom),
+      role_display_name: custom?.display_name ?? membership.contract_role,
+      role_level: custom?.role_level ?? null,
+      menu_access: custom?.menu_access ?? null,
+      permissions: custom?.permissions ?? [],
     };
   });
 
@@ -85,20 +126,33 @@ export async function handleSessionContext(
     };
   });
 
+  const customAccess = contractAccess.find((access) => access.is_custom) ?? null;
+  const permissions = [...new Set(contractAccess.flatMap((access) => access.permissions as string[]))];
+
   return {
     status: 200,
     body: {
       actor: {
         authenticated: true,
-        account_status: accountStatus,
+        account_status: profile?.status || (user.confirmed_at ? "ACTIVE" : "INVITED"),
         is_super_admin: roles.includes("SUPER_ADMIN"),
         roles,
         organization_memberships: (organizationMemberships || []).length,
         organization_access: organizationAccess,
         contract_memberships: (contractMemberships || []).length,
         contract_access: contractAccess,
-        permissions: [],
-        access_state: assigned ? "ASSIGNED" : "AWAITING_ASSIGNMENT",
+        permissions,
+        custom_menu_access: customAccess?.menu_access ?? null,
+        custom_role: customAccess
+          ? {
+            code: customAccess.role,
+            display_name: customAccess.role_display_name,
+            level: customAccess.role_level,
+          }
+          : null,
+        access_state: roles.length > 0 || organizationMemberships.length > 0 || contractMemberships.length > 0
+          ? "ASSIGNED"
+          : "AWAITING_ASSIGNMENT",
       },
     },
   };

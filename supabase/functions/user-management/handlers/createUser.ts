@@ -13,7 +13,6 @@ interface CreateUserPayload {
 }
 
 const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{2,31}$/;
-const ROLES = new Set(["SUPER_ADMIN", "ADMIN_UP3", "ADMIN_ULP", "TEAM_LEADER", "MANAGER_UNIT", "MANAGER_UP", "ASMAN_OPERASI", "ASMAN_KEUANGAN"]);
 
 function requiredEnv(name: string): string {
   const value = Deno.env.get(name);
@@ -37,7 +36,7 @@ export async function handleCreateUser(
   if (password.length < 8) return { status: 400, body: { error: "invalid_password", message: "Password minimal 8 karakter." } };
   if (recoveryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail)) return { status: 400, body: { error: "invalid_email", message: "Email pemulihan tidak valid." } };
   if (!displayName) return { status: 400, body: { error: "display_name_required", message: "Nama wajib diisi." } };
-  if (!ROLES.has(role)) return { status: 400, body: { error: "invalid_role", message: "Role tidak valid." } };
+  if (!role) return { status: 400, body: { error: "invalid_role", message: "Role tidak valid." } };
 
   const adminClient = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -74,7 +73,7 @@ export async function handleCreateUser(
     p_internal_unit_id: request?.internalOrgUnitId ?? null,
     p_contract_id: request?.contractId ?? null,
     p_up3_id: request?.operationalUp3Id ?? null,
-    p_unit_id: role === "ADMIN_ULP" ? request?.operationalUnitId ?? null : null,
+    p_unit_id: role === "ADMIN_ULP" || role.startsWith("CUSTOM_") ? request?.operationalUnitId ?? null : null,
     p_actor_id: actorUserId,
   });
   if (accessError) {

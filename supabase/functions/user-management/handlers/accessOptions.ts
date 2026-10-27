@@ -12,18 +12,22 @@ export async function handleAccessOptions(): Promise<{ status: number; body: Rec
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
-  const [{ data: contracts, error: contractsError }, { data: scopes, error: scopesError }, { data: units, error: unitsError }, { data: names, error: namesError }, { data: internalUnits, error: internalUnitsError }, { data: orgAccess, error: orgAccessError }] = await Promise.all([
-    adminClient.from("contracts").select("id, title").eq("status", "active"),
-    adminClient.from("contract_up3_scopes").select("contract_id, up3_id").eq("status", "Aktif"),
-    adminClient.from("organization_units").select("id, type, parent_id").eq("own_status", "Aktif"),
-    adminClient.from("organization_name_history").select("organization_unit_id, name, effective_from, effective_to"),
-    adminClient.from("internal_organization_units").select("id, code, name, type, parent_id, status").eq("status", "ACTIVE").order("name"),
-    adminClient.from("organization_contract_access").select("internal_org_unit_id, contract_id, operational_up3_id, status, effective_from, effective_to").eq("status", "ACTIVE").is("effective_to", null),
-  ]);
-  if (contractsError || scopesError || unitsError || namesError || internalUnitsError || orgAccessError) {
+  const { data: contracts, error: contractsError } = await adminClient.from("contracts").select("id, title").eq("status", "active");
+  const { data: scopes, error: scopesError } = await adminClient.from("contract_up3_scopes").select("contract_id, up3_id").eq("status", "Aktif");
+  const { data: units, error: unitsError } = await adminClient.from("organization_units").select("id, type, parent_id").eq("own_status", "Aktif");
+  const { data: names, error: namesError } = await adminClient.from("organization_name_history").select("organization_unit_id, name, effective_from, effective_to");
+  const { data: internalUnits, error: internalUnitsError } = await adminClient.from("internal_organization_units").select("id, code, name, type, parent_id, status").eq("status", "ACTIVE").order("name");
+  const { data: orgAccess, error: orgAccessError } = await adminClient.from("organization_contract_access").select("internal_org_unit_id, contract_id, operational_up3_id, status, effective_from, effective_to").eq("status", "ACTIVE").is("effective_to", null);
+  const { data: customRoles, error: customRolesError } = await adminClient
+    .from("authorization_roles")
+    .select("id, code, display_name, description, role_level, menu_access")
+    .eq("role_namespace", "CONTRACT")
+    .eq("is_custom", true)
+    .eq("is_active", true)
+    .order("display_name");
+  if (contractsError || scopesError || unitsError || namesError || internalUnitsError || orgAccessError || customRolesError) {
     return { status: 500, body: { error: "access_options_query_failed", message: "Gagal memuat opsi akses." } };
   }
-
   const today = new Date().toISOString().slice(0, 10);
   const namesByUnit = new Map<string, string>();
   for (const name of names || []) {
@@ -69,6 +73,14 @@ export async function handleAccessOptions(): Promise<{ status: number; body: Rec
       contracts: (contracts || []).map((contract) => ({ id: contract.id, title: contract.title })),
       scopes: allowedScopes,
       internalOrganizationUnits,
+      customRoles: (customRoles || []).map((role) => ({
+        id: role.id,
+        code: role.code,
+        displayName: role.display_name,
+        description: role.description ?? '',
+        scopeLevel: role.role_level,
+        menuAccess: role.menu_access ?? {},
+      })),
     },
   };
 }

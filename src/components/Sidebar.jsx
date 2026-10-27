@@ -25,7 +25,8 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
   const showPelayananTeknik = isSuperAdmin || allowedContractCodes.has(pelayananTeknik.id)
   const kontrakLainFiltered = kontrakLain.filter((c) => isSuperAdmin || allowedContractCodes.has(c.id))
   const actorEmail = authority?.actor?.email ?? authority?.actor?.user_email ?? ''
-  const actorLabel = isSuperAdmin ? 'Super Admin' : organizationAccess[0]?.organization_role?.replaceAll('_',' ') ?? allowedContractCodes.has('pelayanan-teknik') ? 'Manajemen' : 'Pengguna'
+  const customRoleLabel = authority?.actor?.custom_role?.display_name
+  const actorLabel = isSuperAdmin ? 'Super Admin' : customRoleLabel ?? organizationAccess[0]?.organization_role?.replaceAll('_',' ') ?? allowedContractCodes.has('pelayanan-teknik') ? 'Manajemen' : 'Pengguna'
 
   const [pelayananOpen, setPelayananOpen] = useState(activeContractId === pelayananTeknik.id)
   const [masterOpen, setMasterOpen] = useState(false)

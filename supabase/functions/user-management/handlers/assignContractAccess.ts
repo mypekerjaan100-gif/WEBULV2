@@ -29,11 +29,11 @@ export async function handleAssignContractAccess(
   const contractRole = request?.contractRole;
   if (!uuid(targetUserId) || !uuid(request?.contractId) || !uuid(request?.operationalUp3Id) ||
     (request?.operationalUnitId != null && !uuid(request.operationalUnitId)) ||
-    (contractRole !== "ADMIN_UP3" && contractRole !== "ADMIN_ULP") || targetRoleCode !== contractRole) {
+    typeof contractRole !== "string" || targetRoleCode !== contractRole) {
     return { status: 400, body: { error: "invalid_contract_assignment" } };
   }
   if ((contractRole === "ADMIN_UP3" && request.operationalUnitId != null) ||
-    (contractRole === "ADMIN_ULP" && !uuid(request.operationalUnitId))) {
+    ((contractRole === "ADMIN_ULP" || contractRole.startsWith("CUSTOM_")) && !uuid(request.operationalUnitId))) {
     return { status: 400, body: { error: "invalid_role_scope" } };
   }
 
@@ -47,12 +47,18 @@ export async function handleAssignContractAccess(
     adminClient.from("contracts").select("id").eq("id", request.contractId).eq("status", "active").maybeSingle(),
     adminClient.from("contract_up3_scopes").select("id").eq("contract_id", request.contractId).eq("up3_id", request.operationalUp3Id).eq("status", "Aktif").maybeSingle(),
     adminClient.from("organization_units").select("id, type").eq("id", request.operationalUp3Id).eq("type", "UP3").eq("own_status", "Aktif").maybeSingle(),
-    adminClient.from("authorization_roles").select("id").eq("role_namespace", "CONTRACT").eq("code", contractRole).maybeSingle(),
+    adminClient.from("authorization_roles").select("id, code, is_custom, is_active, role_level").eq("role_namespace", "CONTRACT").eq("code", contractRole).maybeSingle(),
   ]);
   if (!targetProfile || !contract || !contractScope || !up3 || !role) {
     return { status: 400, body: { error: "invalid_contract_assignment" } };
   }
-  if (contractRole === "ADMIN_ULP") {
+  if (role.is_active === false) {
+    return { status: 400, body: { error: "invalid_role_scope", message: "Role tidak aktif." } };
+  }
+  if (role.is_custom && role.role_level !== "ULP") {
+    return { status: 400, body: { error: "invalid_role_scope", message: "Role custom hanya mendukung cakupan ULP." } };
+  }
+  if (contractRole === "ADMIN_ULP" || role.is_custom) {
     const { data: ulp } = await adminClient
       .from("organization_units")
       .select("id")
