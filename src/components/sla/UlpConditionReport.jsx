@@ -8,7 +8,6 @@ import {
   correctPrescribedVehiclePlate, getUlpConditionReport, listUlpConditionOverview, saveUlpVehicleCondition, setPrescribedVehiclePlate,
 } from '../../data/ulpConditionRepository.js'
 import { getToolInspectionBundle } from '../../data/toolInspectionRepository.js'
-import AlkesModal from './AlkesModal.jsx'
 import UlpToolInspectionMatrix from './UlpToolInspectionMatrix.jsx'
 import UlpToolUnitPanel from './UlpToolUnitPanel.jsx'
 
@@ -482,7 +481,202 @@ export default function UlpConditionReport({
     {error && <div className="uc-alert uc-alert--error" role="alert">{error}<button type="button" className="sla-btn" disabled={saving} onClick={() => { if (canChangeContext()) setReloadToken((value) => value + 1) }}>Muat Ulang</button></div>}
     {message && <p className="uc-alert" role="status">{message}</p>}
 
-    {loading ? <div className="uc-empty" role="status">Memuat penetapan dan laporan kendaraan...</div> : isOverview ? <div className="uc-overview">
+    {selectedVehicle && selectedSummary ? (
+      <div className="uc-vehicle-page">
+        <div className="uc-page-head">
+          <button type="button" className="sla-btn uc-page-back" onClick={() => closeVehicle()}>← Kembali ke daftar kendaraan</button>
+          <div className="uc-page-title">
+            <span className="uc-eyebrow">PEMERIKSAAN KENDARAAN</span>
+            <h3>{selectedVehicle.plate_display || selectedVehicle.label}</h3>
+            <p>{selectedVehicle.label} · {selectedVehicle.vehicle_type_name} / {selectedVehicle.assignment_name}{vehicleLocationLabel(selectedVehicle) ? ` · ${vehicleLocationLabel(selectedVehicle)}` : ''}</p>
+          </div>
+          <Status value={selectedSummary.hasAttention ? 'non_compliant' : selectedSummary.isComplete ? 'compliant' : 'draft'} />
+        </div>
+        {modalError && <p className="uc-alert uc-alert--error" role="alert">{modalError}</p>}
+        {modalMessage && <p className="uc-alert" role="status">{modalMessage}</p>}
+        {editable && selectedIsDefault && !dirty && (
+          <p className="uc-alert" role="status">Kondisi awal bulan ini otomatis 100%. Simpan hanya jika ada kondisi yang perlu diubah.</p>
+        )}
+        <div className="alkes-modal-form">
+          <section className="alkes-modal-section">
+            <div className="alkes-modal-section-head">
+              <div>
+                <h3>Identitas dan Acuan</h3>
+                <p>Jenis, penugasan, dan template ditetapkan Admin UP3.</p>
+              </div>
+            </div>
+            <div className="uc-assignment-summary-grid">
+              <div><span>Jenis Kendaraan</span><strong>{selectedVehicle.vehicle_type_name || '-'}</strong></div>
+              <div><span>Penugasan</span><strong>{selectedVehicle.assignment_name || '-'}</strong></div>
+              <div><span>Lokasi Tujuan</span><strong>{vehicleLocationLabel(selectedVehicle) || 'Belum ditetapkan'}</strong></div>
+              <div><span>Template</span><strong>{selectedVehicle.template_name || '-'}</strong></div>
+              <div><span>Versi</span><strong>Versi {selectedVehicle.template_version}</strong></div>
+              <div className="uc-assignment-plate">
+                <span>Nomor Polisi</span>
+                {selectedVehicle.plate_display
+                  ? (
+                    <div className="uc-plate-inline">
+                      <strong>{selectedVehicle.plate_display}</strong>
+                      {canManagePlateNow && !plateEdit && (
+                        <button
+                          type="button"
+                          className="sla-btn uc-plate-edit"
+                          disabled={saving || vehicleItemsDirty}
+                          title={vehicleItemsDirty ? 'Simpan kondisi yang sedang diisi terlebih dahulu.' : 'Koreksi nopol yang salah ketik'}
+                          onClick={openPlateEdit}
+                        >
+                          Edit Nopol
+                        </button>
+                      )}
+                    </div>
+                  )
+                  : <strong className="uc-plate-unset">Belum diisi</strong>}
+              </div>
+            </div>
+            {selectedVehicle.plate_display && canManagePlateNow && !plateEdit && (
+              <p className="uc-assignment-note">Nopol yang salah ketik dapat dikoreksi; laporan bulanan tersimpan ikut diperbarui.</p>
+            )}
+            {selectedVehicle.plate_display && canManagePlateNow && plateEdit && (
+              <div className="uc-plate-correction">
+                <h4>Koreksi Nomor Polisi</h4>
+                <p className="uc-plate-correction-note">Hanya nopol yang berubah. Lokasi, template, kondisi, dan status tetap; laporan tersimpan yang memuat nopol lama ikut direvisi.</p>
+                <div className="uc-plate-correction-fields">
+                  <label className="uc-plate-correction-plate" htmlFor={`plate-edit-${selectedVehicle.id}`}>Nomor Polisi Baru *<input id={`plate-edit-${selectedVehicle.id}`} maxLength={30} autoComplete="off" data-autofocus value={plateEdit.plate} placeholder="Contoh: KB 1234 XX" onChange={(event) => updatePlateEdit({ plate: event.target.value })} /></label>
+                  <label className="uc-plate-correction-reason" htmlFor={`plate-reason-${selectedVehicle.id}`}>Alasan Koreksi *<textarea id={`plate-reason-${selectedVehicle.id}`} maxLength={500} rows={2} placeholder="Contoh: salah ketik huruf akhir" value={plateEdit.reason} onChange={(event) => updatePlateEdit({ reason: event.target.value })} /></label>
+                </div>
+                <div className="uc-plate-correction-actions">
+                  <span>Nopol saat ini: <strong>{savedVehicle?.plate_display || selectedVehicle.plate_display}</strong></span>
+                  <div className="alkes-modal-actions">
+                    <button type="button" className="sla-btn" disabled={saving} onClick={() => setPlateEdit(null)}>Batal</button>
+                    <button type="button" className="sla-btn sla-btn-primary" disabled={saving || !plateEdit.plate.trim() || !plateEdit.reason.trim()} onClick={savePlateCorrection}>{saving ? 'Menyimpan...' : 'Simpan Koreksi'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!selectedVehicle.plate_display && canManagePlateNow && (
+              <div className="uc-plate-entry">
+                <label htmlFor={`plate-${selectedVehicle.id}`}>Nomor Polisi *<input data-autofocus id={`plate-${selectedVehicle.id}`} maxLength={30} autoComplete="off" value={plates[selectedVehicle.id] || ''} placeholder="Contoh: KB 1234 XX" onChange={(event) => { setPlates((prev) => ({ ...prev, [selectedVehicle.id]: event.target.value })); setModalError(''); setModalMessage('') }} /></label>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={saving || !(plates[selectedVehicle.id] || '').trim()} onClick={() => savePlate(selectedVehicle)}>Simpan Nopol</button>
+                <p>Diisi sekali oleh Admin ULP. Nopol diperlukan sebelum kondisi dapat disimpan.</p>
+              </div>
+            )}
+            {!selectedVehicle.plate_display && !canManagePlateNow && <p className="uc-alert">Nomor polisi belum dilengkapi untuk kendaraan ini. Admin ULP perlu mengisinya.</p>}
+            {selectedVehicle.contract_reference && <p className="uc-footnote">Acuan: {selectedVehicle.contract_reference}</p>}
+            {selectedVehicle.legacy_metadata && <p className="uc-footnote">Template lama: metadata katalog mengikuti katalog saat ini.</p>}
+          </section>
+
+          <section className="alkes-modal-section">
+            <div className="alkes-modal-section-head">
+              <div>
+                <h3>Kondisi Kendaraan</h3>
+                <p>Pilih kondisi unit kendaraan. Kondisi kendaraan memengaruhi status kendaraan ini.</p>
+              </div>
+            </div>
+            {selectedCondition ? (
+              <div className="uc-vehicle-condition">
+                <span>Kondisi kendaraan *</span>
+                {editable ? (
+                  <>
+                    <div className="uc-condition-options">
+                      {[['Baik', 1, 0], ['Rusak', 0, 1]].map(([label, good, bad], index) => (
+                        <label key={label}>
+                          <input
+                            type="radio"
+                            name={`condition-${selectedVehicle.id}`}
+                            data-autofocus={selectedVehicle.plate_display && index === 0 ? '' : undefined}
+                            checked={Number(selectedCondition.good_qty) === good && Number(selectedCondition.bad_qty) === bad && selectedCondition.good_qty != null && selectedCondition.bad_qty != null}
+                            onChange={() => selectCondition(selectedCondition, good, bad)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <Status value={evaluateCondition(selectedCondition).status} />
+                  </>
+                ) : <Status value={evaluateCondition(selectedCondition).status} />}
+              </div>
+            ) : <p className="uc-assignment-empty">Data kondisi kendaraan tidak tersedia pada laporan ini.</p>}
+          </section>
+
+          <section className="alkes-modal-section uc-tool-matrix-section">
+            <div className="alkes-modal-section-head">
+              <div>
+                <h3>Peralatan &amp; Inspeksi</h3>
+                <p>Satu baris per alat. Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Ada di ULP mengikuti jumlah kontrak. Inspeksi per unit terbuka dari tombol Inspeksi pada baris alat; rekap jumlah disimpan dari tombol bawah.</p>
+              </div>
+              <div className="uc-tool-section-actions">
+                <span className="sla-table-hint">{selectedToolSummary.filled}/{selectedToolSummary.total} alat terisi · {selectedToolSummary.failed} perlu perhatian</span>
+                {editable && <button type="button" className="sla-btn" disabled={saving} onClick={() => setFillPrompt(true)}>Isi Semua 100%</button>}
+              </div>
+            </div>
+            {fillPrompt && (
+              <div className="uc-fill-prompt" role="alert">
+                <div>
+                  <strong>Isi seluruh peralatan sebagai Baik 100%?</strong>
+                  <span>Baik akan sama dengan jumlah kontrak dan Rusak menjadi 0. Nilai kondisi yang sedang diisi akan diganti.</span>
+                </div>
+                <div className="alkes-modal-actions">
+                  <button type="button" className="sla-btn" disabled={saving} onClick={() => setFillPrompt(false)}>Batal</button>
+                  <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={fillAll}>Ya, Isi 100%</button>
+                </div>
+              </div>
+            )}
+            {selectedOpenIssues.length > 0 && (
+              <p className="uc-alert" role="status">
+                Ada {selectedOpenIssues.length} issue unit terbuka. Rekap Baik/Rusak tetap dapat diisi;
+                issue hanya selesai melalui tombol Serah Terima pada unit terkait.
+              </p>
+            )}
+            <UlpToolInspectionMatrix
+              items={selectedToolItems}
+              assets={selectedToolAssets}
+              history={selectedToolHistory}
+              canManage={editable}
+              canInspect={canInspect && !future}
+              canResolveIssue={canResolveIssue && !future}
+              showInspections={!historical}
+              future={future}
+              inspectionStatus={toolStatus}
+              isDefaultVehicle={selectedIsDefault && !vehicleItemsDirty}
+              vehicleLabel={selectedVehicle.plate_display || selectedVehicle.label}
+              contractUuid={contractUuid}
+              up3Uuid={up3Uuid}
+              ulpId={ulpId}
+              highlightedIssueId={highlightIssueId}
+              onQuantityChange={updateToolQuantity}
+              onNoteChange={(item, note) => updateItem(item.key, { note })}
+              onChanged={() => setToolReloadToken((value) => value + 1)}
+              onMessage={(value) => { setMessage(value); setModalMessage(value) }}
+              onEditorStateChange={setPanelEditor}
+            />
+            {toolStatus === 'error' && <p className="uc-alert">Rincian unit tidak dapat dimuat: {toolError}</p>}
+            {historical && <p className="uc-alert">Arsip bulanan hanya memuat rekap jumlah. Inspeksi per unit mengikuti kondisi terkini dan tidak disimpan dalam arsip.</p>}
+          </section>
+
+          {discardPrompt && (
+            <div ref={discardRef} className="alkes-modal-discard" role="alert">
+              <div>
+                <strong>Isian kendaraan belum disimpan</strong>
+                <span>Perubahan rekap, nopol, atau isian inspeksi akan hilang jika halaman ditutup sekarang.</span>
+              </div>
+              <div className="alkes-modal-actions">
+                <button type="button" className="sla-btn" disabled={saving} onClick={() => setDiscardPrompt(false)}>Tetap Mengisi</button>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={() => closeVehicle(true)}>Tutup Tanpa Menyimpan</button>
+              </div>
+            </div>
+          )}
+        </div>
+        <footer className="alkes-modal-footer uc-page-footer">
+          <div className="uc-modal-footer">
+            <span>{saving ? 'Menyimpan...' : panelEditor.busy ? 'Menyimpan inspeksi...' : !editable ? (historical ? 'Mode riwayat baca saja' : canManagePlateNow ? 'Nopol dapat dikelola; kondisi hanya baca.' : 'Hanya baca') : !selectedVehicle.plate_display ? 'Nopol belum diisi. Admin ULP perlu melengkapinya sebelum kondisi disimpan.' : (dirty || panelEditor.dirty) ? 'Ada perubahan belum disimpan' : selectedIsDefault ? 'Default bulan ini 100%' : 'Tidak ada perubahan'}</span>
+            <div className="alkes-modal-actions">
+              <button type="button" className="sla-btn" disabled={saving || panelEditor.busy} onClick={() => closeVehicle()}>{editable ? 'Batal' : 'Tutup'}</button>
+              {editable && <button type="button" className="sla-btn sla-btn-primary" disabled={saving || panelEditor.busy || !dirty || !selectedVehicle.plate_display} onClick={saveVehicle}>{saving ? 'Menyimpan...' : 'Simpan Rekap'}</button>}
+            </div>
+          </div>
+        </footer>
+      </div>
+    ) : loading ? <div className="uc-empty" role="status">Memuat penetapan dan laporan kendaraan...</div> : isOverview ? <div className="uc-overview">
       <div className="uc-section-title"><h3>Ringkasan {conditionMonthLabel(month)}</h3><span>{overview.length} ULP</span></div>
       <div className="uc-scroll"><table className="uc-table"><thead><tr><th>ULP</th><th>Kendaraan Ditetapkan</th><th>Nopol Belum Diisi</th><th>Pemeriksaan</th><th>Hasil</th><th /></tr></thead><tbody>{overview.map((row) => <tr key={row.ulp_id}><td><strong>{ulps.find((unit) => unit.uuid === row.ulp_id)?.displayName || 'ULP'}</strong></td><td>{row.vehicle_count} kendaraan</td><td>{row.missing_plates}</td><td>{row.filled_count} / {row.items_count} diisi</td><td><Status value={row.report_status} /></td><td><button type="button" className="sla-btn" onClick={() => changeUlp(row.ulp_id)}>Lihat Laporan</button></td></tr>)}{!overview.length && <tr><td colSpan={6}>Belum ada ULP pada scope ini.</td></tr>}</tbody></table></div>
       <p className="uc-footnote">Hasil hanya menunjukkan kesesuaian kendaraan dan alat terhadap template. Tidak mengubah nilai atau indikator SLA.</p>
@@ -607,201 +801,5 @@ export default function UlpConditionReport({
       <details className="uc-history"><summary>Riwayat laporan{bundle.history.length ? ` (${bundle.history.length} revisi terbaru)` : ''}</summary>{bundle.history.length ? <div className="uc-history-list">{bundle.history.map((entry) => <div key={entry.revision}><div><strong>Revisi {entry.revision}</strong><span>{timestamp(entry.created_at)} / {entry.actor_role === 'SUPER_ADMIN' ? 'Super Admin' : entry.actor_role === 'ADMIN_UP3' ? 'Admin UP3' : entry.actor_role === 'INSPECTOR' ? 'Petugas Inspeksi' : 'Admin ULP'}</span></div><Status value={historyStatus(entry)} /><button type="button" className="sla-btn" disabled={saving} onClick={() => { if (canChangeContext()) { setHistorical(entry); setSelectedVehicleId(null); setFocusedToolVehicleId(null) } }}>Lihat</button></div>)}</div> : <p>Riwayat tersedia setelah laporan disimpan.</p>}</details>
       <p className="uc-footnote">Pemenuhan baik dihitung per alat. Kerusakan tetap membuat status Tidak Memenuhi. Tidak ada sinkronisasi indikator atau denda SLA.</p>
     </> : null}
-
-    {selectedVehicle && selectedSummary && (
-      <AlkesModal
-        open
-        onClose={() => closeVehicle()}
-        eyebrow="PEMERIKSAAN KENDARAAN"
-        title={selectedVehicle.plate_display || selectedVehicle.label}
-        subtitle={`${selectedVehicle.label} · ${selectedVehicle.vehicle_type_name} / ${selectedVehicle.assignment_name}${vehicleLocationLabel(selectedVehicle) ? ` · ${vehicleLocationLabel(selectedVehicle)}` : ''}`}
-        size="inspection"
-        dismissDisabled={saving || panelEditor.busy}
-        meta={<Status value={selectedSummary.hasAttention ? 'non_compliant' : selectedSummary.isComplete ? 'compliant' : 'draft'} />}
-        footer={(
-          <div className="uc-modal-footer">
-            <span>{saving ? 'Menyimpan...' : panelEditor.busy ? 'Menyimpan inspeksi...' : !editable ? (historical ? 'Mode riwayat baca saja' : canManagePlateNow ? 'Nopol dapat dikelola; kondisi hanya baca.' : 'Hanya baca') : !selectedVehicle.plate_display ? 'Nopol belum diisi. Admin ULP perlu melengkapinya sebelum kondisi disimpan.' : (dirty || panelEditor.dirty) ? 'Ada perubahan belum disimpan' : selectedIsDefault ? 'Default bulan ini 100%' : 'Tidak ada perubahan'}</span>
-            <div className="alkes-modal-actions">
-              <button type="button" className="sla-btn" disabled={saving || panelEditor.busy} onClick={() => closeVehicle()}>{editable ? 'Batal' : 'Tutup'}</button>
-              {editable && <button type="button" className="sla-btn sla-btn-primary" disabled={saving || panelEditor.busy || !dirty || !selectedVehicle.plate_display} onClick={saveVehicle}>{saving ? 'Menyimpan...' : 'Simpan Rekap'}</button>}
-            </div>
-          </div>
-        )}
-      >
-        <div className="alkes-modal-form">
-          {modalError && <p className="alkes-modal-alert" role="alert">{modalError}</p>}
-          {modalMessage && <p className="uc-alert" role="status">{modalMessage}</p>}
-          {editable && selectedIsDefault && !dirty && (
-            <p className="uc-alert" role="status">Kondisi awal bulan ini otomatis 100%. Simpan hanya jika ada kondisi yang perlu diubah.</p>
-          )}
-          <section className="alkes-modal-section">
-            <div className="alkes-modal-section-head">
-              <div>
-                <h3>Identitas dan Acuan</h3>
-                <p>Jenis, penugasan, dan template ditetapkan Admin UP3.</p>
-              </div>
-            </div>
-            <div className="uc-assignment-summary-grid">
-              <div><span>Jenis Kendaraan</span><strong>{selectedVehicle.vehicle_type_name || '-'}</strong></div>
-              <div><span>Penugasan</span><strong>{selectedVehicle.assignment_name || '-'}</strong></div>
-              <div><span>Lokasi Tujuan</span><strong>{vehicleLocationLabel(selectedVehicle) || 'Belum ditetapkan'}</strong></div>
-              <div><span>Template</span><strong>{selectedVehicle.template_name || '-'}</strong></div>
-              <div><span>Versi</span><strong>Versi {selectedVehicle.template_version}</strong></div>
-              <div className="uc-assignment-plate">
-                <span>Nomor Polisi</span>
-                {selectedVehicle.plate_display
-                  ? (
-                    <div className="uc-plate-inline">
-                      <strong>{selectedVehicle.plate_display}</strong>
-                      {canManagePlateNow && !plateEdit && (
-                        <button
-                          type="button"
-                          className="sla-btn uc-plate-edit"
-                          disabled={saving || vehicleItemsDirty}
-                          title={vehicleItemsDirty ? 'Simpan kondisi yang sedang diisi terlebih dahulu.' : 'Koreksi nopol yang salah ketik'}
-                          onClick={openPlateEdit}
-                        >
-                          Edit Nopol
-                        </button>
-                      )}
-                    </div>
-                  )
-                  : <strong className="uc-plate-unset">Belum diisi</strong>}
-              </div>
-            </div>
-            {selectedVehicle.plate_display && canManagePlateNow && !plateEdit && (
-              <p className="uc-assignment-note">Nopol yang salah ketik dapat dikoreksi; laporan bulanan tersimpan ikut diperbarui.</p>
-            )}
-            {selectedVehicle.plate_display && canManagePlateNow && plateEdit && (
-              <div className="uc-plate-correction">
-                <h4>Koreksi Nomor Polisi</h4>
-                <p className="uc-plate-correction-note">Hanya nopol yang berubah. Lokasi, template, kondisi, dan status tetap; laporan tersimpan yang memuat nopol lama ikut direvisi.</p>
-                <div className="uc-plate-correction-fields">
-                  <label className="uc-plate-correction-plate" htmlFor={`plate-edit-${selectedVehicle.id}`}>Nomor Polisi Baru *<input id={`plate-edit-${selectedVehicle.id}`} maxLength={30} autoComplete="off" data-autofocus value={plateEdit.plate} placeholder="Contoh: KB 1234 XX" onChange={(event) => updatePlateEdit({ plate: event.target.value })} /></label>
-                  <label className="uc-plate-correction-reason" htmlFor={`plate-reason-${selectedVehicle.id}`}>Alasan Koreksi *<textarea id={`plate-reason-${selectedVehicle.id}`} maxLength={500} rows={2} placeholder="Contoh: salah ketik huruf akhir" value={plateEdit.reason} onChange={(event) => updatePlateEdit({ reason: event.target.value })} /></label>
-                </div>
-                <div className="uc-plate-correction-actions">
-                  <span>Nopol saat ini: <strong>{savedVehicle?.plate_display || selectedVehicle.plate_display}</strong></span>
-                  <div className="alkes-modal-actions">
-                    <button type="button" className="sla-btn" disabled={saving} onClick={() => setPlateEdit(null)}>Batal</button>
-                    <button type="button" className="sla-btn sla-btn-primary" disabled={saving || !plateEdit.plate.trim() || !plateEdit.reason.trim()} onClick={savePlateCorrection}>{saving ? 'Menyimpan...' : 'Simpan Koreksi'}</button>
-                  </div>
-                </div>
-              </div>
-            )}
-            {!selectedVehicle.plate_display && canManagePlateNow && (
-              <div className="uc-plate-entry">
-                <label htmlFor={`plate-${selectedVehicle.id}`}>Nomor Polisi *<input data-autofocus id={`plate-${selectedVehicle.id}`} maxLength={30} autoComplete="off" value={plates[selectedVehicle.id] || ''} placeholder="Contoh: KB 1234 XX" onChange={(event) => { setPlates((prev) => ({ ...prev, [selectedVehicle.id]: event.target.value })); setModalError(''); setModalMessage('') }} /></label>
-                <button type="button" className="sla-btn sla-btn-primary" disabled={saving || !(plates[selectedVehicle.id] || '').trim()} onClick={() => savePlate(selectedVehicle)}>Simpan Nopol</button>
-                <p>Diisi sekali oleh Admin ULP. Nopol diperlukan sebelum kondisi dapat disimpan.</p>
-              </div>
-            )}
-            {!selectedVehicle.plate_display && !canManagePlateNow && <p className="uc-alert">Nomor polisi belum dilengkapi untuk kendaraan ini. Admin ULP perlu mengisinya.</p>}
-            {selectedVehicle.contract_reference && <p className="uc-footnote">Acuan: {selectedVehicle.contract_reference}</p>}
-            {selectedVehicle.legacy_metadata && <p className="uc-footnote">Template lama: metadata katalog mengikuti katalog saat ini.</p>}
-          </section>
-
-          <section className="alkes-modal-section">
-            <div className="alkes-modal-section-head">
-              <div>
-                <h3>Kondisi Kendaraan</h3>
-                <p>Pilih kondisi unit kendaraan. Kondisi kendaraan memengaruhi status kendaraan ini.</p>
-              </div>
-            </div>
-            {selectedCondition ? (
-              <div className="uc-vehicle-condition">
-                <span>Kondisi kendaraan *</span>
-                {editable ? (
-                  <>
-                    <div className="uc-condition-options">
-                      {[['Baik', 1, 0], ['Rusak', 0, 1]].map(([label, good, bad], index) => (
-                        <label key={label}>
-                          <input
-                            type="radio"
-                            name={`condition-${selectedVehicle.id}`}
-                            data-autofocus={selectedVehicle.plate_display && index === 0 ? '' : undefined}
-                            checked={Number(selectedCondition.good_qty) === good && Number(selectedCondition.bad_qty) === bad && selectedCondition.good_qty != null && selectedCondition.bad_qty != null}
-                            onChange={() => selectCondition(selectedCondition, good, bad)}
-                          />
-                          {label}
-                        </label>
-                      ))}
-                    </div>
-                    <Status value={evaluateCondition(selectedCondition).status} />
-                  </>
-                ) : <Status value={evaluateCondition(selectedCondition).status} />}
-              </div>
-            ) : <p className="uc-assignment-empty">Data kondisi kendaraan tidak tersedia pada laporan ini.</p>}
-          </section>
-
-          <section className="alkes-modal-section uc-tool-matrix-section">
-            <div className="alkes-modal-section-head">
-              <div>
-                <h3>Peralatan &amp; Inspeksi</h3>
-                <p>Satu baris per alat. Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Ada di ULP mengikuti jumlah kontrak. Inspeksi unit, foto, issue, dan penggantian berada pada baris yang sama; status rekap dan status unit dihitung terpisah. Inspeksi disimpan dari tombol unit, rekap jumlah dari tombol bawah.</p>
-              </div>
-              <div className="uc-tool-section-actions">
-                <span className="sla-table-hint">{selectedToolSummary.filled}/{selectedToolSummary.total} alat terisi · {selectedToolSummary.failed} perlu perhatian</span>
-                {editable && <button type="button" className="sla-btn" disabled={saving} onClick={() => setFillPrompt(true)}>Isi Semua 100%</button>}
-              </div>
-            </div>
-            {fillPrompt && (
-              <div className="uc-fill-prompt" role="alert">
-                <div>
-                  <strong>Isi seluruh peralatan sebagai Baik 100%?</strong>
-                  <span>Baik akan sama dengan jumlah kontrak dan Rusak menjadi 0. Nilai kondisi yang sedang diisi akan diganti.</span>
-                </div>
-                <div className="alkes-modal-actions">
-                  <button type="button" className="sla-btn" disabled={saving} onClick={() => setFillPrompt(false)}>Batal</button>
-                  <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={fillAll}>Ya, Isi 100%</button>
-                </div>
-              </div>
-            )}
-            {selectedOpenIssues.length > 0 && (
-              <p className="uc-alert" role="status">
-                Ada {selectedOpenIssues.length} issue unit terbuka. Rekap Baik/Rusak tetap dapat diisi;
-                issue hanya selesai melalui tombol Serah Terima pada unit terkait.
-              </p>
-            )}
-            <UlpToolInspectionMatrix
-              items={selectedToolItems}
-              assets={selectedToolAssets}
-              history={selectedToolHistory}
-              canManage={editable}
-              canInspect={canInspect && !future}
-              canResolveIssue={canResolveIssue && !future}
-              showInspections={!historical}
-              future={future}
-              inspectionStatus={toolStatus}
-              isDefaultVehicle={selectedIsDefault && !vehicleItemsDirty}
-              contractUuid={contractUuid}
-              up3Uuid={up3Uuid}
-              ulpId={ulpId}
-              highlightedIssueId={highlightIssueId}
-              onQuantityChange={updateToolQuantity}
-              onNoteChange={(item, note) => updateItem(item.key, { note })}
-              onChanged={() => setToolReloadToken((value) => value + 1)}
-              onMessage={(value) => { setMessage(value); setModalMessage(value) }}
-              onEditorStateChange={setPanelEditor}
-            />
-            {toolStatus === 'error' && <p className="uc-alert">Rincian unit tidak dapat dimuat: {toolError}</p>}
-            {historical && <p className="uc-alert">Arsip bulanan hanya memuat rekap jumlah. Inspeksi per unit mengikuti kondisi terkini dan tidak disimpan dalam arsip.</p>}
-          </section>
-
-          {discardPrompt && (
-            <div ref={discardRef} className="alkes-modal-discard" role="alert">
-              <div>
-                <strong>Isian kendaraan belum disimpan</strong>
-                <span>Perubahan rekap, nopol, atau isian inspeksi akan hilang jika modal ditutup sekarang.</span>
-              </div>
-              <div className="alkes-modal-actions">
-                <button type="button" className="sla-btn" disabled={saving} onClick={() => setDiscardPrompt(false)}>Tetap Mengisi</button>
-                <button type="button" className="sla-btn sla-btn-primary" disabled={saving} onClick={() => closeVehicle(true)}>Tutup Tanpa Menyimpan</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </AlkesModal>
-    )}
   </section>
 }

@@ -4,6 +4,7 @@ import {
   Button,
   FormField,
   Input,
+  Modal,
   Select,
   Textarea,
 } from '../ui/Primitives.jsx'
@@ -36,129 +37,18 @@ function ConditionBadge({ status }) {
   )
 }
 
-function InlineEditor({
-  editor,
-  item,
-  inspectForm,
-  resolveForm,
-  error,
-  submitting,
-  onInspectChange,
-  onResolveChange,
-  onCancel,
-  onSubmitInspection,
-  onSubmitResolution,
-}) {
-  if (!editor) return null
+function ModalScope({ editor, vehicleLabel }) {
   const asset = editor.asset
-  const isInspect = editor.mode === 'inspect'
-  const issue = asset.open_issue
   return (
-    <div className="tool-inline-form">
-      <div className="tool-inline-form-head">
-        <div>
-          <strong>{isInspect ? 'Inspeksi unit' : 'Serah terima pengganti'} · Unit {asset.asset_sequence} · {item.name}</strong>
-          <span>
-            {asset.commissioned_at
-              ? `Mulai pakai ${formatDateTime(asset.commissioned_at)}`
-              : 'Awal masa pakai belum tercatat'}
-          </span>
-        </div>
-        <button type="button" className="tool-link-button" disabled={submitting} onClick={onCancel}>Tutup</button>
-      </div>
-      {error && <Alert tone="danger">{error}</Alert>}
-      {isInspect ? (
-        <form className="tool-inline-form-body" onSubmit={onSubmitInspection}>
-          <div className="tool-inline-grid">
-            <FormField label="Kondisi alat" required>
-              <Select value={inspectForm.condition} onChange={(event) => onInspectChange({ condition: event.target.value })}>
-                <option value="GOOD">Baik</option>
-                <option value="DAMAGED">Rusak</option>
-              </Select>
-            </FormField>
-            <FormField label="Tanggal & waktu inspeksi" required>
-              <Input
-                type="datetime-local"
-                value={inspectForm.inspectedAt}
-                min={asset.commissioned_at ? pontianakInputValue(new Date(asset.commissioned_at)) : undefined}
-                max={pontianakInputValue()}
-                onChange={(event) => onInspectChange({ inspectedAt: event.target.value })}
-              />
-            </FormField>
-            <FormField label={inspectForm.condition === 'DAMAGED' ? 'Catatan kerusakan' : 'Catatan'} required={inspectForm.condition === 'DAMAGED'}>
-              <Textarea
-                rows={2}
-                maxLength={2000}
-                value={inspectForm.note}
-                onChange={(event) => onInspectChange({ note: event.target.value })}
-                placeholder={inspectForm.condition === 'DAMAGED' ? 'Jelaskan kerusakan yang ditemukan' : 'Catatan pemeriksaan (opsional)'}
-              />
-            </FormField>
-            <FormField label="Foto bukti" required>
-              <PhotoPicker
-                files={inspectForm.files}
-                disabled={submitting}
-                onChange={(files) => onInspectChange({ files })}
-              />
-            </FormField>
-          </div>
-          {inspectForm.condition === 'DAMAGED' && (
-            <Alert tone="warning">
-              Kondisi Rusak membuka issue. Issue tetap terbuka sampai penggantian diserahkan dengan bukti foto.
-            </Alert>
-          )}
-          <div className="tool-inline-actions">
-            <Button variant="ghost" disabled={submitting} onClick={onCancel}>Batal</Button>
-            <Button variant="primary" type="submit" disabled={submitting}>
-              {submitting ? 'Menyimpan...' : 'Simpan Inspeksi'}
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <form className="tool-inline-form-body" onSubmit={onSubmitResolution}>
-          <div className="tool-issue-scope">
-            <span>Ditemukan {formatDateTime(issue?.opened_at)}</span>
-            <span>Umur saat rusak {ageLabel(issue?.age_at_failure_months)} · standar {issue?.standard_life_months == null ? 'belum diisi' : ageLabel(issue.standard_life_months)}</span>
-            {issue?.damaged_before_life && <span className="tool-warning">Rusak sebelum masa pakai standar</span>}
-            {issue?.note && <span>{issue.note}</span>}
-          </div>
-          <div className="tool-inline-grid tool-inline-grid--resolve">
-            <FormField label="Tanggal & waktu serah terima" required>
-              <Input
-                type="datetime-local"
-                value={resolveForm.resolvedAt}
-                min={issue?.opened_at ? pontianakInputValue(new Date(issue.opened_at)) : undefined}
-                max={pontianakInputValue()}
-                onChange={(event) => onResolveChange({ resolvedAt: event.target.value })}
-              />
-            </FormField>
-            <FormField label="Catatan serah terima" required>
-              <Input
-                value={resolveForm.note}
-                maxLength={2000}
-                onChange={(event) => onResolveChange({ note: event.target.value })}
-              />
-            </FormField>
-            <FormField label="Foto alat pengganti" required>
-              <PhotoPicker
-                files={resolveForm.files}
-                disabled={submitting}
-                onChange={(files) => onResolveChange({ files })}
-              />
-            </FormField>
-          </div>
-          <Alert tone="info">
-            Waktu serah terima menjadi awal masa pakai alat pengganti dan bukti penyerahan dari K3 ke ULP.
-          </Alert>
-          <div className="tool-inline-actions">
-            <Button variant="ghost" disabled={submitting} onClick={onCancel}>Batal</Button>
-            <Button variant="primary" type="submit" disabled={submitting}>
-              {submitting ? 'Menyimpan...' : 'Simpan Serah Terima'}
-            </Button>
-          </div>
-        </form>
-      )}
-    </div>
+    <p className="tool-modal-scope">
+      <strong>Unit {asset.asset_sequence}</strong>
+      <span>{vehicleLabel ? `${vehicleLabel} · ` : ''}{asset.equipment_name}</span>
+      <span>
+        {asset.commissioned_at
+          ? `Mulai pakai ${formatDateTime(asset.commissioned_at)}`
+          : 'Awal masa pakai belum tercatat'}
+      </span>
+    </p>
   )
 }
 
@@ -173,6 +63,7 @@ export default function UlpToolInspectionMatrix({
   future = false,
   inspectionStatus = 'ready',
   isDefaultVehicle = false,
+  vehicleLabel = '',
   contractUuid,
   up3Uuid,
   ulpId,
@@ -190,21 +81,29 @@ export default function UlpToolInspectionMatrix({
   const [submitting, setSubmitting] = useState(false)
   const [expandedHistoryKey, setExpandedHistoryKey] = useState(null)
   const quantityRefs = useRef(new Map())
-  const formRowRef = useRef(null)
+  const editorInitRef = useRef(null)
   const groups = groupConditionItems(items)
   const columnCount = showInspections ? 8 : 7
-
-  useEffect(() => {
-    if (!editor) return
-    window.requestAnimationFrame(() => {
-      formRowRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    })
-  }, [editor])
+  const editorItem = editor ? items.find((item) => item.key === editor.itemKey) || null : null
 
   useEffect(() => {
     onEditorStateChange?.({ dirty: Boolean(editor), busy: submitting })
     return () => onEditorStateChange?.({ dirty: false, busy: false })
   }, [editor, submitting, onEditorStateChange])
+
+  const formDirty = (() => {
+    if (!editor) return false
+    const init = editorInitRef.current || {}
+    if (editor.mode === 'inspect') {
+      return inspectForm.condition !== init.condition
+        || inspectForm.inspectedAt !== init.inspectedAt
+        || inspectForm.note !== init.note
+        || inspectForm.files.length > 0
+    }
+    return resolveForm.resolvedAt !== init.resolvedAt
+      || resolveForm.note !== init.note
+      || resolveForm.files.length > 0
+  })()
 
   const confirmSwitch = (assetId) => {
     if (!editor || editor.asset.id === assetId) return true
@@ -214,28 +113,37 @@ export default function UlpToolInspectionMatrix({
   const openInspect = (item, asset) => {
     if (submitting || !canInspect || asset.open_issue || future) return
     if (!confirmSwitch(asset.id)) return
+    const init = { condition: 'GOOD', inspectedAt: pontianakInputValue(), note: '' }
+    editorInitRef.current = init
     setEditor({ mode: 'inspect', itemKey: item.key, asset })
-    setInspectForm({ condition: 'GOOD', inspectedAt: pontianakInputValue(), note: '', files: [] })
+    setInspectForm({ ...init, files: [] })
     setFormError('')
   }
 
   const openResolve = (item, asset) => {
     if (submitting || !canResolveIssue || !asset.open_issue || future) return
     if (!confirmSwitch(asset.id)) return
-    setEditor({ mode: 'resolve', itemKey: item.key, asset })
-    setResolveForm({
+    const init = {
       resolvedAt: pontianakInputValue(),
       note: 'Serah terima alat pengganti kepada ULP.',
-      files: [],
-    })
+    }
+    editorInitRef.current = init
+    setEditor({ mode: 'resolve', itemKey: item.key, asset })
+    setResolveForm({ ...init, files: [] })
     setFormError('')
   }
 
   const closeEditor = () => {
-    if (submitting) return
     setEditor(null)
     setFormError('')
   }
+
+  const requestEditorClose = () => {
+    if (submitting) return
+    if (formDirty && !window.confirm('Isian belum disimpan. Tutup formulir?')) return
+    closeEditor()
+  }
+
 
   const submitInspection = async (event) => {
     event.preventDefault()
@@ -358,7 +266,6 @@ export default function UlpToolInspectionMatrix({
                 const unitAssets = assets.filter((asset) => asset.equipment_id === item.equipment_id)
                 const issueCount = unitAssets.filter((asset) => asset.open_issue).length
                 const itemHistory = history.filter((entry) => entry.equipment_name === item.name)
-                const editing = editor?.itemKey === item.key
                 return (
                   <Fragment key={item.key}>
                     <tr className={`tool-matrix-row ${result.status === 'non_compliant' ? 'is-non-compliant' : ''}`}>
@@ -488,25 +395,6 @@ export default function UlpToolInspectionMatrix({
                         )}
                       </td>
                     </tr>
-                    {editing && (
-                      <tr className="tool-matrix-form-row" ref={formRowRef}>
-                        <td colSpan={columnCount}>
-                          <InlineEditor
-                            editor={editor}
-                            item={item}
-                            inspectForm={inspectForm}
-                            resolveForm={resolveForm}
-                            error={formError}
-                            submitting={submitting}
-                            onInspectChange={(patch) => setInspectForm((current) => ({ ...current, ...patch }))}
-                            onResolveChange={(patch) => setResolveForm((current) => ({ ...current, ...patch }))}
-                            onCancel={closeEditor}
-                            onSubmitInspection={submitInspection}
-                            onSubmitResolution={submitResolution}
-                          />
-                        </td>
-                      </tr>
-                    )}
                     {expandedHistoryKey === item.key && itemHistory.length > 0 && (
                       <tr className="tool-matrix-history-row">
                         <td colSpan={columnCount}>
@@ -539,6 +427,113 @@ export default function UlpToolInspectionMatrix({
           ))}
         </tbody>
       </table>
+      <Modal
+        open={Boolean(editor)}
+        onClose={requestEditorClose}
+        size="large"
+        dismissDisabled={submitting}
+        title={editor?.mode === 'inspect'
+          ? `Isi Inspeksi · ${editorItem?.name || editor?.asset.equipment_name || 'Alat'}`
+          : `Serah Terima Pengganti · ${editorItem?.name || editor?.asset.equipment_name || 'Alat'}`}
+        footer={(
+          <div className="tool-modal-actions">
+            <Button variant="ghost" disabled={submitting} onClick={requestEditorClose}>Batal</Button>
+            <Button
+              variant="primary"
+              disabled={submitting}
+              onClick={editor?.mode === 'inspect' ? submitInspection : submitResolution}
+            >
+              {submitting ? 'Menyimpan...' : editor?.mode === 'inspect' ? 'Simpan Inspeksi' : 'Simpan Serah Terima'}
+            </Button>
+          </div>
+        )}
+      >
+        {editor && (
+          editor.mode === 'inspect' ? (
+            <form className="tool-form" onSubmit={submitInspection}>
+              {formError && <Alert tone="danger">{formError}</Alert>}
+              <ModalScope editor={editor} vehicleLabel={vehicleLabel} />
+              <div className="tool-form-grid">
+                <FormField label="Kondisi alat" required>
+                  <Select value={inspectForm.condition} onChange={(event) => setInspectForm((current) => ({ ...current, condition: event.target.value }))}>
+                    <option value="GOOD">Baik</option>
+                    <option value="DAMAGED">Rusak</option>
+                  </Select>
+                </FormField>
+                <FormField label="Tanggal & waktu inspeksi" required>
+                  <Input
+                    type="datetime-local"
+                    value={inspectForm.inspectedAt}
+                    min={editor.asset.commissioned_at ? pontianakInputValue(new Date(editor.asset.commissioned_at)) : undefined}
+                    max={pontianakInputValue()}
+                    onChange={(event) => setInspectForm((current) => ({ ...current, inspectedAt: event.target.value }))}
+                  />
+                </FormField>
+                <FormField label={inspectForm.condition === 'DAMAGED' ? 'Catatan kerusakan' : 'Catatan'} required={inspectForm.condition === 'DAMAGED'}>
+                  <Textarea
+                    rows={2}
+                    maxLength={2000}
+                    value={inspectForm.note}
+                    onChange={(event) => setInspectForm((current) => ({ ...current, note: event.target.value }))}
+                    placeholder={inspectForm.condition === 'DAMAGED' ? 'Jelaskan kerusakan yang ditemukan' : 'Catatan pemeriksaan (opsional)'}
+                  />
+                </FormField>
+                <FormField label="Foto bukti" required>
+                  <PhotoPicker
+                    files={inspectForm.files}
+                    disabled={submitting}
+                    onChange={(files) => setInspectForm((current) => ({ ...current, files }))}
+                  />
+                </FormField>
+              </div>
+              {inspectForm.condition === 'DAMAGED' && (
+                <Alert tone="warning">
+                  Kondisi Rusak membuka issue. Issue tetap terbuka sampai penggantian diserahkan dengan bukti foto.
+                </Alert>
+              )}
+            </form>
+          ) : (
+            <form className="tool-form" onSubmit={submitResolution}>
+              {formError && <Alert tone="danger">{formError}</Alert>}
+              <ModalScope editor={editor} vehicleLabel={vehicleLabel} />
+              <div className="tool-issue-scope">
+                <span>Ditemukan {formatDateTime(editor.asset.open_issue?.opened_at)}</span>
+                <span>Umur saat rusak {ageLabel(editor.asset.open_issue?.age_at_failure_months)} · standar {editor.asset.open_issue?.standard_life_months == null ? 'belum diisi' : ageLabel(editor.asset.open_issue.standard_life_months)}</span>
+                {editor.asset.open_issue?.damaged_before_life && <span className="tool-warning">Rusak sebelum masa pakai standar</span>}
+                {editor.asset.open_issue?.note && <span>{editor.asset.open_issue.note}</span>}
+              </div>
+              <div className="tool-form-grid">
+                <FormField label="Tanggal & waktu serah terima" required>
+                  <Input
+                    type="datetime-local"
+                    value={resolveForm.resolvedAt}
+                    min={editor.asset.open_issue?.opened_at ? pontianakInputValue(new Date(editor.asset.open_issue.opened_at)) : undefined}
+                    max={pontianakInputValue()}
+                    onChange={(event) => setResolveForm((current) => ({ ...current, resolvedAt: event.target.value }))}
+                  />
+                </FormField>
+                <FormField label="Catatan serah terima" required>
+                  <Input
+                    value={resolveForm.note}
+                    maxLength={2000}
+                    onChange={(event) => setResolveForm((current) => ({ ...current, note: event.target.value }))}
+                  />
+                </FormField>
+              </div>
+              <FormField label="Foto alat pengganti" required>
+                <PhotoPicker
+                  files={resolveForm.files}
+                  disabled={submitting}
+                  onChange={(files) => setResolveForm((current) => ({ ...current, files }))}
+                />
+              </FormField>
+              <Alert tone="info">
+                Waktu serah terima menjadi awal masa pakai alat pengganti dan bukti penyerahan dari K3 ke ULP.
+              </Alert>
+            </form>
+          )
+        )}
+      </Modal>
     </div>
   )
 }
