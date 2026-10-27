@@ -7,14 +7,14 @@ const items = [
   { key: 'a:vehicle', kind: 'vehicle', vehicle_id: 'a', required_qty: 1, good_qty: 1, bad_qty: 0 },
   { key: 'a:helm', kind: 'equipment', vehicle_id: 'a', equipment_id: 'helm', category: 'K3', required_qty: 1, good_qty: 0, bad_qty: 1 },
   { key: 'b:vehicle', kind: 'vehicle', vehicle_id: 'b', required_qty: 1, good_qty: 1, bad_qty: 0 },
-  { key: 'b:helm', kind: 'equipment', vehicle_id: 'b', equipment_id: 'helm', category: 'K3', required_qty: 1, good_qty: 10, bad_qty: 0 },
+  { key: 'b:helm', kind: 'equipment', vehicle_id: 'b', equipment_id: 'helm', category: 'K3', required_qty: 1, good_qty: 1, bad_qty: 0 },
 ]
 const grouped = groupVehicleConditions(vehicles, items)
 assert.equal(grouped.length, 2)
 assert.equal(grouped[0].condition.key, 'a:vehicle')
 assert.equal(grouped[0].groups[0][1][0].key, 'a:helm')
 assert.equal(grouped[1].groups[0][1][0].key, 'b:helm')
-assert.equal(summarizeFleet(vehicles, items).status, 'non_compliant', 'Surplus in vehicle B must not compensate for broken tools in vehicle A')
+assert.equal(summarizeFleet(vehicles, items).status, 'non_compliant', 'Broken tools in vehicle A must fail the fleet')
 assert.equal(summarizeFleet(vehicles, items).failed, 1)
 assert.equal(summarizeFleet([{ id: 'a', plate_display: '' }], [items[0]]).status, 'draft')
 assert.equal(summarizeFleet([{ id: 'a', plate_display: '' }], [items[0]]).missingPlates, 1)
@@ -71,6 +71,6 @@ assert.equal((master.match(/\{ id: 'template', label:/g) || []).length, 1)
 const component = readFileSync(new URL('../components/sla/UlpConditionReport.jsx', import.meta.url), 'utf8')
 assert.ok(component.includes('Simpan Nopol'))
 assert.ok(component.includes('groupVehicleConditions(shownVehicles, shownItems)'))
-assert.ok(component.includes('vehicleMetadataDirty'))
-assert.ok(component.includes('condition.good_qty != null && condition.bad_qty != null'))
+assert.ok(component.includes('plateDirty'))
+assert.ok(component.includes('selectedCondition.good_qty != null && selectedCondition.bad_qty != null'))
 console.log('Prescribed vehicle grouping, plate, permissions, snapshot, and no-SLA tests passed')

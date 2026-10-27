@@ -79,6 +79,7 @@ export default function App() {
   const [viewAsRoleCode, setViewAsRoleCode] = useState(null)
   const [customRoleList, setCustomRoleList] = useState([])
   const [previewApprovalAccess, setPreviewApprovalAccess] = useState(null)
+  const [toolIssueTarget, setToolIssueTarget] = useState(null)
   const routeRestoredRef = useRef(false)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access ?? []
@@ -113,7 +114,7 @@ export default function App() {
     ? (previewCustomRole.menuAccess ?? {})
     : customContractAccess?.menu_access ?? null
   const customCanView = (menu) => ['read', 'edit'].includes(customMenuAccess?.[menu] ?? 'none')
-  const canViewVehicles = effectiveIsSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope || customCanView('alat_kendaraan')
+  const canViewVehicles = effectiveIsSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope || isManagementUserRaw || customCanView('alat_kendaraan')
   const slaPrimaryModules = useMemo(
     () => {
       if (customMenuAccess) {
@@ -464,6 +465,7 @@ export default function App() {
     setSlaActiveModule('sla')
     setSlaVariableRejected(0)
     setFinRouteRequest(null)
+    setToolIssueTarget(null)
     writeRouteHash({ segments: contractId ? [contractId] : [], periode: null }, { push: true })
   }
 
@@ -483,6 +485,7 @@ export default function App() {
     setActiveContractId(null)
     setSlaActiveModule('sla')
     setSlaVariableRejected(0)
+    setToolIssueTarget(null)
     if (pageId !== 'analisis-finansial') setFinRouteRequest(null)
     setSlaRouteRequest(null)
     writeRouteHash({ segments: [pageId], periode: null }, { push: true })
@@ -491,7 +494,23 @@ export default function App() {
   const openApprovalNotification = (item) => {
     if (!effectiveApprovalAccess) return
     if (item.managementScopeKey) setSelectedManagementScopeKey(item.managementScopeKey)
+    if (item.source === 'alat') {
+      setApprovalTarget(null)
+      setToolIssueTarget({
+        issueId: item.id,
+        ulpId: item.unitId,
+        token: `alat:${item.id}:${Date.now()}`,
+      })
+      setActiveContractId('pelayanan-teknik')
+      setCurrentPage(null)
+      setSlaActiveModule('kendaraan-ulp')
+      setSlaRouteRequest({ module: 'kendaraan-ulp', periode: null, token: Date.now() })
+      setFinRouteRequest(null)
+      writeRouteHash({ segments: ['pelayanan-teknik', 'kendaraan-ulp'], periode: null }, { push: true })
+      return
+    }
     const contractCode = adminUp3Access?.contract_code ?? 'pelayanan-teknik'
+    setToolIssueTarget(null)
     setApprovalTarget({ ...item, token: `${item.source}:${item.id}:${Date.now()}` })
     setActiveContractId(contractCode)
     setCurrentPage(null)
@@ -567,6 +586,7 @@ export default function App() {
     setCurrentPage(null)
     setActiveContractId('pelayanan-teknik')
     setSlaActiveModule(moduleId)
+    setToolIssueTarget(null)
     setSlaRouteRequest({ module: moduleId, periode: null, token: Date.now() })
   }
 
@@ -672,6 +692,7 @@ export default function App() {
               customMenuAccess={customMenuAccess}
               viewAsRoleCode={previewActive ? viewAsRoleCode : null}
               viewAsLabel={previewLabel}
+              toolIssueTarget={toolIssueTarget}
               onSlaVariableRejectedChange={setSlaVariableRejected}
               onRouteChange={({ module, periode }) => {
                 setSlaActiveModule(module ?? 'sla')

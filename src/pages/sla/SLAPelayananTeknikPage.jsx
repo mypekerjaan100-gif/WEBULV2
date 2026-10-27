@@ -27,7 +27,7 @@ import SLAMasterOrganisasi from '../../components/sla/SLAMasterOrganisasi.jsx'
 import SLAMasterLokasi from '../../components/sla/SLAMasterLokasi.jsx'
 import SLAMasterJabatan from '../../components/sla/SLAMasterJabatan.jsx'
 import AlatKendaraanMaster from '../../components/sla/AlatKendaraanMaster.jsx'
-import UlpConditionReport from '../../components/sla/UlpConditionReport.jsx'
+import UlpToolInspection from '../../components/sla/UlpToolInspection.jsx'
 import SLADatabasePegawai from '../../components/sla/SLADatabasePegawai.jsx'
 import SLAMasterPenandatangan from '../../components/sla/SLAMasterPenandatangan.jsx'
 import SLAPengaturanSLA from '../../components/sla/SLAPengaturanSLA.jsx'
@@ -180,6 +180,7 @@ export default function SLAPelayananTeknikPage({
   customMenuAccess = null,
   viewAsRoleCode = null,
   viewAsLabel = '',
+  toolIssueTarget = null,
 }) {
   const [moduleId, setModuleId] = useState(() => {
     if (customMenuAccess) {
@@ -259,7 +260,7 @@ export default function SLAPelayananTeknikPage({
   const customMenuLevel = (menu) => customMenuAccess?.[menu] ?? 'none'
   const customCanRead = (menu) => ['read', 'edit'].includes(customMenuLevel(menu))
   const customCanEdit = (menu) => customMenuLevel(menu) === 'edit'
-  const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp || customCanRead('alat_kendaraan')
+  const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp || isManagement || customCanRead('alat_kendaraan')
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
   const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
@@ -1456,18 +1457,19 @@ export default function SLAPelayananTeknikPage({
           {orgMapError || 'Organisasi tidak tersedia.'}
         </StatePanel>
       ) : moduleId === 'kendaraan-ulp' ? (
-        <UlpConditionReport
-          key={`${orgMap.contractUuid}:${orgMap.up3Uuid}:${periodMonth}`}
+        <UlpToolInspection
+          key={`${orgMap.contractUuid}:${orgMap.up3Uuid}:${effectiveUnitId || 'all'}:${viewAsRoleCode ?? 'full'}`}
           contractUuid={orgMap.contractUuid}
           up3Uuid={orgMap.up3Uuid}
           ownUlpUuid={adminUlpAccess?.operational_unit_id ?? (isCustomRole ? selectedUnitUuid : null)}
-          canManage={isSuperAdmin || isAdminUlp || (isCustomRole && customCanEdit('alat_kendaraan'))}
-          canPickUlp={isSuperAdmin || isAdminUp3}
+          canPickUlp={isSuperAdmin || isAdminUp3 || isManagement}
+          canManagePlate={isSuperAdmin || isAdminUlp}
+          canInspect={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
+          canResolveIssue={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
           units={orgMap.units}
-          initialMonth={periodMonth}
-          onMonthChange={(month) => setPeriod(periodLabelFromMonth(month))}
-          onOpenStandards={isSuperAdmin || isAdminUp3 ? () => selectModule('alat-kendaraan') : undefined}
+          issueTarget={toolIssueTarget}
           onEditorStateChange={handleEditorStateChange}
+          onOpenStandards={isSuperAdmin || isAdminUp3 ? () => selectModule('alat-kendaraan') : undefined}
         />
       ) : moduleId === 'alat-kendaraan' && canViewAdminUp3Modules ? (
         <AlatKendaraanMaster
