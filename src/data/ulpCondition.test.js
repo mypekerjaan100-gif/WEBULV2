@@ -47,7 +47,7 @@ assert.doesNotMatch(sql, /delete\s+from/i)
 
 const component = readFileSync(new URL('../components/sla/UlpConditionReport.jsx', import.meta.url), 'utf8')
 assert.ok(component.includes('good_qty') && component.includes('bad_qty'))
-assert.ok(component.includes('Simpan Kondisi'))
+assert.ok(component.includes('Simpan Rekap'))
 assert.ok(component.includes('Tidak ada sinkronisasi indikator atau denda SLA'))
 assert.ok(component.includes('onEditorStateChange'))
 assert.ok(component.includes('saveLock.current'))
