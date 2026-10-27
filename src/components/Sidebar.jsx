@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/AppAuth.jsx'
 import Icon from './Icon.jsx'
 
-export default function Sidebar({ open, collapsed, onToggleCollapse, activeContractId, currentPage, onNavigate, onNavigatePage, onClose }) {
+export default function Sidebar({ open, collapsed, onToggleCollapse, activeContractId, currentPage, onNavigate, onNavigatePage, onNavigateModule, slaPrimaryModules = [], slaConfigurationModules = [], slaActiveModule = 'sla', slaModuleBadges = {}, onClose }) {
   const { authority } = useAuth()
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const allowedContractCodes = new Set(
@@ -25,6 +26,64 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
   const kontrakLainFiltered = kontrakLain.filter((c) => isSuperAdmin || allowedContractCodes.has(c.id))
   const actorEmail = authority?.actor?.email ?? authority?.actor?.user_email ?? ''
   const actorLabel = isSuperAdmin ? 'Super Admin' : organizationAccess[0]?.organization_role?.replaceAll('_',' ') ?? allowedContractCodes.has('pelayanan-teknik') ? 'Manajemen' : 'Pengguna'
+
+  const [pelayananOpen, setPelayananOpen] = useState(activeContractId === pelayananTeknik.id)
+  const [masterOpen, setMasterOpen] = useState(false)
+  useEffect(() => {
+    if (activeContractId === pelayananTeknik.id) setPelayananOpen(true)
+  }, [activeContractId])
+  useEffect(() => {
+    if (activeContractId === pelayananTeknik.id
+      && slaConfigurationModules.some((module) => module.id === slaActiveModule)) {
+      setMasterOpen(true)
+    }
+  }, [activeContractId, slaActiveModule, slaConfigurationModules])
+
+  const handlePelayananClick = () => {
+    if (collapsed) {
+      onNavigate(pelayananTeknik.id)
+      return
+    }
+    if (!pelayananOpen) {
+      setPelayananOpen(true)
+      if (activeContractId !== pelayananTeknik.id) onNavigate(pelayananTeknik.id)
+    } else {
+      setPelayananOpen(false)
+    }
+  }
+
+  const handleMasterClick = () => {
+    if (collapsed) {
+      const first = slaConfigurationModules[0]
+      if (first) onNavigateModule?.(first.id)
+      return
+    }
+    setMasterOpen((value) => !value)
+  }
+
+  const renderSlaSubmenu = (modules, id) => (
+    <div className="nav-submenu" id={id}>
+      {modules.map((module) => {
+        const active = activeContractId === pelayananTeknik.id && slaActiveModule === module.id
+        const badge = slaModuleBadges[module.id] ?? 0
+        return (
+          <button
+            key={module.id}
+            type="button"
+            className={`nav-submenu-item ${active ? 'nav-submenu-item-active' : ''}`}
+            aria-current={active ? 'page' : undefined}
+            onClick={() => onNavigateModule?.(module.id)}
+          >
+            <span className="nav-submenu-dot" aria-hidden="true" />
+            <span className="nav-submenu-label">{module.name}</span>
+            {badge > 0 && <span className="nav-count-badge">{badge}</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+  const masterGroupActive = activeContractId === pelayananTeknik.id
+    && slaConfigurationModules.some((module) => module.id === slaActiveModule)
 
   return (
     <aside className={`sidebar ${open ? 'sidebar-open' : ''} ${collapsed ? 'is-collapsed' : ''}`}>
@@ -69,12 +128,36 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
             <div className="nav-section-title">Operasional</div>
             <button
               type="button"
-              className={`nav-item ${activeContractId === pelayananTeknik.id ? 'nav-item-active' : ''}`}
-              onClick={() => onNavigate(pelayananTeknik.id)}
+              className={`nav-item nav-item-parent ${activeContractId === pelayananTeknik.id ? 'nav-item-group-active' : ''}`}
+              aria-expanded={pelayananOpen}
+              aria-controls="nav-submenu-pelayanan-teknik"
+              onClick={handlePelayananClick}
             >
               <span className="nav-icon"><Icon name={pelayananTeknik.icon} /></span>
               <span className="nav-item-label">{pelayananTeknik.title}</span>
+              <span className={`nav-chevron ${pelayananOpen && !collapsed ? 'is-open' : ''}`} aria-hidden="true">
+                <Icon name="chevron-right" size={13} />
+              </span>
             </button>
+            {pelayananOpen && !collapsed && renderSlaSubmenu(slaPrimaryModules, 'nav-submenu-pelayanan-teknik')}
+            {slaConfigurationModules.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className={`nav-item nav-item-parent ${masterGroupActive ? 'nav-item-group-active' : ''}`}
+                  aria-expanded={masterOpen}
+                  aria-controls="nav-submenu-master-pengaturan"
+                  onClick={handleMasterClick}
+                >
+                  <span className="nav-icon"><Icon name="layers" /></span>
+                  <span className="nav-item-label">Master &amp; Pengaturan</span>
+                  <span className={`nav-chevron ${masterOpen && !collapsed ? 'is-open' : ''}`} aria-hidden="true">
+                    <Icon name="chevron-right" size={13} />
+                  </span>
+                </button>
+                {masterOpen && !collapsed && renderSlaSubmenu(slaConfigurationModules, 'nav-submenu-master-pengaturan')}
+              </>
+            )}
           </>
         )}
 

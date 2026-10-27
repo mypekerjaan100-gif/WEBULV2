@@ -34,6 +34,14 @@ const modules = readFileSync(
   fileURLToPath(new URL('./slaPelayananTeknik.js', import.meta.url)),
   'utf8',
 )
+const app = readFileSync(
+  fileURLToPath(new URL('../App.jsx', import.meta.url)),
+  'utf8',
+)
+const sidebar = readFileSync(
+  fileURLToPath(new URL('../components/Sidebar.jsx', import.meta.url)),
+  'utf8',
+)
 let passed = 0
 
 function assert(condition, message) {
@@ -146,12 +154,14 @@ assert(page.includes("import UlpConditionReport from '../../components/sla/UlpCo
 assert(page.includes("moduleId === 'kendaraan-ulp' ? ("), 'Cabang modul kendaraan-ulp hilang')
 assert(page.includes('const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp'), 'Visibilitas kendaraan harus dibatasi peran')
 assert(page.includes("if (module.id === 'kendaraan-ulp') return canViewVehicles"), 'Filter modul kendaraan-ulp hilang')
-assert(page.includes("primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']"), 'Kendaraan ULP harus menjadi tab utama')
+assert(app.includes("SLA_PRIMARY_MODULE_IDS = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']"), 'Empat modul utama harus menjadi submenu sidebar')
+assert(sidebar.includes('slaPrimaryModules') && sidebar.includes('slaConfigurationModules'), 'Submenu sidebar Pelayanan Teknik hilang')
+assert(!page.includes('sla-module-navigation'), 'Navigasi tab horizontal lama harus dihapus')
 assert(page.includes('ownUlpUuid={adminUlpAccess?.operational_unit_id ?? null}'), 'ULP Admin ULP harus eksak')
 assert(page.includes('canManage={isSuperAdmin || isAdminUlp}'), 'Hak kelola kendaraan harus SA/Admin ULP')
 assert(page.includes('canPickUlp={isSuperAdmin || isAdminUp3}'), 'Pemantauan lintas ULP hanya untuk Super Admin/Admin UP3')
 assert(page.includes('const VEHICLE_TAB_DISABLED = false'), 'Tab Alat & Kendaraan harus aktif')
-assert(page.includes("disabled={VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp'}"), 'Tab kendaraan harus tidak dapat diklik')
+assert(sidebar.includes('slaActiveModule === module.id'), 'Submenu aktif harus mengikuti modul terpilih')
 assert(page.includes("VEHICLE_TAB_DISABLED && routeRequest.module === 'kendaraan-ulp'"), 'Rute langsung kendaraan harus diblokir')
 assert(page.includes("moduleId === 'kendaraan-ulp' && VEHICLE_TAB_DISABLED"), 'Modul kendaraan tidak boleh dirender saat dinonaktifkan')
 assert(page.includes('units={orgMap.units}'), 'Daftar unit harus memakai scope organisasi')

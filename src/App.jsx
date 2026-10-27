@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppLayout from './layout/AppLayout.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import ContractPage from './pages/ContractPage.jsx'
@@ -23,6 +23,7 @@ import {
 import { listManagementOperationalScopes } from './data/managementScopeRepository.js'
 
 const EMPTY_APPROVAL_NOTIFICATIONS = { scopeKey: null, count: 0, groups: [] }
+const SLA_PRIMARY_MODULE_IDS = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']
 
 function mergeApprovalNotifications(current, incoming) {
   const groups = incoming.groups.map((group) => {
@@ -70,6 +71,8 @@ export default function App() {
   const lastApprovalStart = useRef(0)
   // Permintaan sinkronisasi rute dari URL (refresh / Back-Forward).
   const [slaRouteRequest, setSlaRouteRequest] = useState(null)
+  const [slaActiveModule, setSlaActiveModule] = useState('sla')
+  const [slaVariableRejected, setSlaVariableRejected] = useState(0)
   const [finRouteRequest, setFinRouteRequest] = useState(null)
   const routeRestoredRef = useRef(false)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
@@ -78,6 +81,37 @@ export default function App() {
   const MANAGEMENT_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP','ASMAN_OPERASI','ASMAN_KEUANGAN']
   const FINANCIAL_ROLES = ['TEAM_LEADER','MANAGER_UNIT','MANAGER_UP']
   const isManagementUserRaw = !isSuperAdmin && organizationAccess.some((a) => MANAGEMENT_ROLES.includes(a.organization_role))
+  const hasAdminUp3Scope = contractAccess.some((access) =>
+    access.role === 'ADMIN_UP3' && access.contract_code === 'pelayanan-teknik' && access.operational_up3_id,
+  )
+  const hasAdminUlpScope = contractAccess.some((access) =>
+    access.role === 'ADMIN_ULP' && access.contract_code === 'pelayanan-teknik' && access.operational_up3_id,
+  )
+  const canViewAdminUp3Modules = isSuperAdmin || hasAdminUp3Scope || isManagementUserRaw
+  const canViewReadOnlyMasterLocations = hasAdminUlpScope
+  const canViewVehicles = isSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope
+  const slaPrimaryModules = useMemo(
+    () => pelayananTeknikModules.filter(
+      (module) => SLA_PRIMARY_MODULE_IDS.includes(module.id)
+        && (module.id !== 'kendaraan-ulp' || canViewVehicles),
+    ),
+    [canViewVehicles],
+  )
+  const slaConfigurationModules = useMemo(() => {
+    const modules = pelayananTeknikModules.filter((module) => (
+      !SLA_PRIMARY_MODULE_IDS.includes(module.id)
+      && (!module.adminOnly
+        || canViewAdminUp3Modules
+        || (module.id === 'master-lokasi' && canViewReadOnlyMasterLocations))
+    ))
+    if (canViewReadOnlyMasterLocations && !canViewAdminUp3Modules) {
+      return [
+        ...modules.filter((module) => module.id !== 'master-lokasi'),
+        ...modules.filter((module) => module.id === 'master-lokasi'),
+      ]
+    }
+    return modules
+  }, [canViewAdminUp3Modules, canViewReadOnlyMasterLocations])
   const canAccessFinancial = isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role))
   const adminUp3Access = !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
     ? contractAccess[0]
@@ -293,6 +327,7 @@ export default function App() {
     }
     setActiveContractId(nextContract)
     setCurrentPage(nextPage)
+    setSlaActiveModule(nextContract === 'pelayanan-teknik' ? (nextModule ?? 'sla') : 'sla')
     if (nextContract === 'pelayanan-teknik') {
       setSlaRouteRequest({ module: nextModule, periode: nextPeriode, token: Date.now() })
     }
@@ -331,6 +366,8 @@ export default function App() {
     setActiveContractId(contractId)
     setCurrentPage(null)
     setSlaRouteRequest(null)
+    setSlaActiveModule('sla')
+    setSlaVariableRejected(0)
     setFinRouteRequest(null)
     writeRouteHash({ segments: contractId ? [contractId] : [], periode: null }, { push: true })
   }
@@ -349,6 +386,8 @@ export default function App() {
     if (pageId !== 'pengguna-akses' && pageId !== 'analisis-finansial' && !isSuperAdmin) return
     setCurrentPage(pageId)
     setActiveContractId(null)
+    setSlaActiveModule('sla')
+    setSlaVariableRejected(0)
     if (pageId !== 'analisis-finansial') setFinRouteRequest(null)
     setSlaRouteRequest(null)
     writeRouteHash({ segments: [pageId], periode: null }, { push: true })
@@ -361,6 +400,7 @@ export default function App() {
     setApprovalTarget({ ...item, token: `${item.source}:${item.id}:${Date.now()}` })
     setActiveContractId(contractCode)
     setCurrentPage(null)
+    setSlaActiveModule('sla')
     setSlaRouteRequest(null)
     setFinRouteRequest(null)
     writeRouteHash({ segments: [contractCode], periode: null }, { push: true })
@@ -404,12 +444,27 @@ export default function App() {
     if (!isRealScopedUser) setUnitId(nextUnitId)
   }
 
+  const navigateSlaModule = (moduleId) => {
+    if (!moduleId) return
+    setCurrentPage(null)
+    setActiveContractId('pelayanan-teknik')
+    setSlaActiveModule(moduleId)
+    setSlaRouteRequest({ module: moduleId, periode: null, token: Date.now() })
+  }
+
   const activeContract = contracts.find((contract) =>
     contract.id === activeContractId && (isSuperAdmin || authorizedContractIds.includes(contract.id)),
   )
   const visibleApprovalNotifications = (adminUp3Access && isRealScopedUser && approvalNotifications.scopeKey === adminUp3ScopeKey) || (isManagementUser && approvalNotifications.scopeKey === managementScopeKey)
     ? approvalNotifications
     : null
+  const slaApprovalCounts = Object.fromEntries(
+    (visibleApprovalNotifications?.groups ?? []).map((group) => [group.id, group.count]),
+  )
+  const slaModuleBadges = {
+    'variable-cost': (slaApprovalCounts.variable ?? 0) + slaVariableRejected,
+    lembur: slaApprovalCounts.lembur ?? 0,
+  }
 
   const preview = {
     role: actualRole,
@@ -433,6 +488,11 @@ export default function App() {
         approvalNotificationError={approvalNotificationError}
         onRefreshApprovalNotifications={refreshApprovalNotifications}
         onOpenApprovalNotification={openApprovalNotification}
+        slaPrimaryModules={slaPrimaryModules}
+        slaConfigurationModules={slaConfigurationModules}
+        slaActiveModule={slaActiveModule}
+        slaModuleBadges={slaModuleBadges}
+        onNavigateModule={navigateSlaModule}
       >
         {currentPage === 'pengguna-akses' ? (
           <UserListPage onBack={() => navigatePage(null)} />
@@ -468,10 +528,14 @@ export default function App() {
               initialModule={slaRouteRequest?.module ?? null}
               initialPeriode={slaRouteRequest?.periode ?? null}
               routeRequest={slaRouteRequest}
-              onRouteChange={({ module, periode }) => writeRouteHash(
-                { segments: ['pelayanan-teknik', ...(module && module !== 'sla' ? [module] : [])], periode },
-                { push: false },
-              )}
+              onSlaVariableRejectedChange={setSlaVariableRejected}
+              onRouteChange={({ module, periode }) => {
+                setSlaActiveModule(module ?? 'sla')
+                writeRouteHash(
+                  { segments: ['pelayanan-teknik', ...(module && module !== 'sla' ? [module] : [])], periode },
+                  { push: false },
+                )
+              }}
             />
           ) : (
             <ContractPage contract={activeContract} onBack={() => navigate(null)} />

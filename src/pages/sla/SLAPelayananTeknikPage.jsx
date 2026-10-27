@@ -176,6 +176,7 @@ export default function SLAPelayananTeknikPage({
   initialPeriode = null,
   routeRequest = null,
   onRouteChange = null,
+  onSlaVariableRejectedChange,
 }) {
   const [moduleId, setModuleId] = useState(
     VEHICLE_TAB_DISABLED && initialModule === 'kendaraan-ulp' ? 'sla' : (initialModule ?? 'sla'),
@@ -492,6 +493,12 @@ export default function SLAPelayananTeknikPage({
       .catch(() => { if (!cancelled) setVariableRejectedCount(0) })
     return () => { cancelled = true }
   }, [isAdminUlp, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid])
+
+  useEffect(() => {
+    onSlaVariableRejectedChange?.(variableRejectedCount)
+  }, [variableRejectedCount, onSlaVariableRejectedChange])
+
+  useEffect(() => () => onSlaVariableRejectedChange?.(0), [onSlaVariableRejectedChange])
   const masterLocationUnits = (orgMap?.units ?? []).map((unit) => ({
     id: unit.uuid,
     type: unit.type,
@@ -675,10 +682,6 @@ export default function SLAPelayananTeknikPage({
           authorizedModules.find((module) => module.id === 'master-lokasi'),
         ].filter(Boolean)
       : authorizedModules
-  const primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']
-  const primaryModules = visibleModules.filter((module) => primaryModuleIds.includes(module.id))
-  const configurationModules = visibleModules.filter((module) => !primaryModuleIds.includes(module.id))
-  const configMenuRef = useRef(null)
 
   // Terapkan rute dari URL (refresh / Back-Forward); modul tak dikenal/diizinkan diabaikan.
   // Validasi modul menunggu orgMap karena izin modul admin bergantung padanya.
@@ -713,23 +716,6 @@ export default function SLAPelayananTeknikPage({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeRequest?.token, orgMapStatus])
-
-  useEffect(() => {
-    if (configurationModules.length === 0) return undefined
-    const closeOnOutsideClick = (event) => {
-      const menu = configMenuRef.current
-      if (menu?.open && !menu.contains(event.target)) menu.open = false
-    }
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape' && configMenuRef.current?.open) configMenuRef.current.open = false
-    }
-    document.addEventListener('pointerdown', closeOnOutsideClick)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsideClick)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [configurationModules.length])
 
   const lemburRefreshInFlight = useRef(false)
 
@@ -1029,32 +1015,6 @@ export default function SLAPelayananTeknikPage({
     ? 'Konsolidasi UP3'
     : currentNameOf(selectedUnit) ?? effectiveUnitId
 
-  const renderModuleButton = (module) => (
-    <button
-      key={module.id}
-      type="button"
-      className={`sla-module-nav-item ${moduleId === module.id ? 'sla-module-nav-item-active' : ''}`}
-      disabled={VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp'}
-      title={VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp' ? 'Alat & Kendaraan sementara dinonaktifkan' : undefined}
-      onClick={() => {
-        if (VEHICLE_TAB_DISABLED && module.id === 'kendaraan-ulp') return
-        if (!selectModule(module.id)) return
-        if (configMenuRef.current) configMenuRef.current.open = false
-      }}
-    >
-      {module.name}
-      {canManageUp3Operations && module.id === 'variable-cost' && (approvalCounts.variable ?? 0) > 0 && (
-        <span className="approval-count-badge">{approvalCounts.variable}</span>
-      )}
-      {canManageUp3Operations && module.id === 'lembur' && (approvalCounts.lembur ?? 0) > 0 && (
-        <span className="approval-count-badge">{approvalCounts.lembur}</span>
-      )}
-      {module.id === 'variable-cost' && isAdminUlp && variableRejectedCount > 0 && (
-        <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>{variableRejectedCount}</span>
-      )}
-    </button>
-  )
-
   return (
     <div className="page page-sla">
       <header className="pt-page-header">
@@ -1067,21 +1027,6 @@ export default function SLAPelayananTeknikPage({
         </button>
       </header>
 
-      <div className="sla-module-navigation">
-        <nav className="sla-module-nav" aria-label="Modul utama Pelayanan Teknik">
-          {primaryModules.map(renderModuleButton)}
-        </nav>
-        {configurationModules.length > 0 && (
-          <details className="sla-config-menu" ref={configMenuRef}>
-            <summary className={configurationModules.some((module) => module.id === moduleId) ? 'sla-config-menu-active' : ''}>
-              Master &amp; Pengaturan
-            </summary>
-            <div className="sla-config-menu-panel">
-              {configurationModules.map(renderModuleButton)}
-            </div>
-          </details>
-        )}
-      </div>
       {isManagement && managementScopeLabel && moduleId !== 'sla' && (
         <div className="sla-role-banner sla-role-banner-mgmt" style={{ marginTop: 8 }}>{managementScopeLabel}</div>
       )}

@@ -9,26 +9,23 @@ function assert(condition, message) {
 
 const pageUrl = new URL('../pages/sla/SLAPelayananTeknikPage.jsx', import.meta.url)
 const page = readFileSync(fileURLToPath(pageUrl), 'utf8')
+const sidebarUrl = new URL('../components/Sidebar.jsx', import.meta.url)
+const sidebar = readFileSync(fileURLToPath(sidebarUrl), 'utf8')
 
-// Dropdown Master & Pengaturan memakai <details> + ref.
-assert(page.includes('const configMenuRef = useRef(null)'), 'Ref dropdown Master & Pengaturan hilang')
-assert(page.includes('<details className="sla-config-menu" ref={configMenuRef}>'), 'Ref harus terpasang pada dropdown')
+// Navigasi utama Pelayanan Teknik kini berada di sidebar sebagai submenu.
+assert(sidebar.includes('slaPrimaryModules'), 'Submenu utama Pelayanan Teknik hilang')
+assert(sidebar.includes('slaConfigurationModules'), 'Submenu Master & Pengaturan hilang')
+assert(sidebar.includes('nav-submenu-item'), 'Item submenu sidebar hilang')
+assert(sidebar.includes('aria-expanded={pelayananOpen}'), 'Status buka/tutup submenu Pelayanan Teknik hilang')
+assert(sidebar.includes('aria-expanded={masterOpen}'), 'Status buka/tutup Master & Pengaturan hilang')
+assert(sidebar.includes('onNavigateModule?.(module.id)'), 'Klik submenu harus memilih modul')
 
-// Klik di sembarang tempat di luar dropdown menutupnya.
-assert(page.includes("document.addEventListener('pointerdown'"), 'Listener klik luar dropdown hilang')
-assert(page.includes('!menu.contains(event.target)'), 'Klik dalam panel tidak boleh menutup dropdown')
-assert(page.includes('menu.open = false'), 'Klik luar harus menutup dropdown')
+// Tab horizontal dan dropdown lama tidak boleh tersisa di halaman.
+assert(!page.includes('sla-module-navigation'), 'Tab horizontal lama harus dihapus dari halaman')
+assert(!page.includes('sla-config-menu'), 'Dropdown Master & Pengaturan lama harus dihapus dari halaman')
+assert(!page.includes('configMenuRef'), 'Ref dropdown lama harus dihapus dari halaman')
 
-// Memilih menu menutup dropdown.
-assert(page.includes('configMenuRef.current.open = false'), 'Memilih menu harus menutup dropdown')
-
-// Tombol Escape menutup dropdown dan listener dibersihkan.
-assert(page.includes("document.addEventListener('keydown'"), 'Listener Escape hilang')
-assert(page.includes("event.key === 'Escape'"), 'Escape harus menutup dropdown')
-assert(page.includes("document.removeEventListener('pointerdown'"), 'Cleanup listener pointerdown hilang')
-assert(page.includes("document.removeEventListener('keydown'"), 'Cleanup listener keydown hilang')
-
-console.log(`Config menu behavior tests passed: ${passed}`)
+console.log(`Sidebar module navigation tests passed: ${passed}`)
 
 // Dropdown Pengaturan Variable memakai pola yang sama: <details> + ref,
 // listener klik luar, Escape, dan menutup saat menu dipilih.
