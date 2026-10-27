@@ -53,6 +53,10 @@ export function setPrescribedVehiclePlate(slot, plate) {
   return rpc('ops_set_prescribed_vehicle_plate', { p_slot_id: slot.id, p_plate: plate.trim(), p_expected_revision: slot.revision })
 }
 
+export function correctPrescribedVehiclePlate(slot, plate, reason) {
+  return rpc('ops_correct_prescribed_vehicle_plate', { p_slot_id: slot.id, p_plate: plate.trim(), p_expected_revision: slot.revision, p_reason: reason.trim() })
+}
+
 export function getUlpConditionReport(context) {
   return rpc('ops_get_vehicle_condition_report', {
     ...scope(context), p_ulp_id: context.ulpId, p_period_month: period(context.month),

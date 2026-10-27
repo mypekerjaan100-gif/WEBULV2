@@ -5,7 +5,7 @@ import {
   summarizeConditions, summarizeFleet, summarizeVehicle,
 } from '../../data/ulpConditionDomain.js'
 import {
-  getUlpConditionReport, listUlpConditionOverview, saveUlpVehicleCondition, setPrescribedVehiclePlate,
+  correctPrescribedVehiclePlate, getUlpConditionReport, listUlpConditionOverview, saveUlpVehicleCondition, setPrescribedVehiclePlate,
 } from '../../data/ulpConditionRepository.js'
 import AlkesModal from './AlkesModal.jsx'
 
@@ -57,6 +57,7 @@ export default function UlpConditionReport({
   const [selectedVehicleId, setSelectedVehicleId] = useState(null)
   const [discardPrompt, setDiscardPrompt] = useState(false)
   const [fillPrompt, setFillPrompt] = useState(false)
+  const [plateEdit, setPlateEdit] = useState(null)
   const [vehicleSearch, setVehicleSearch] = useState('')
   const [vehicleFilter, setVehicleFilter] = useState('all')
   const request = useRef(0)
@@ -112,6 +113,9 @@ export default function UlpConditionReport({
     setPlates({})
     setHistorical(null)
     setSelectedVehicleId(null)
+    setDiscardPrompt(false)
+    setFillPrompt(false)
+    setPlateEdit(null)
     setModalError('')
     setModalMessage('')
     if (!contractUuid || !up3Uuid || (!isOverview && !ulpId)) {
@@ -208,6 +212,7 @@ export default function UlpConditionReport({
     setModalMessage('')
     setDiscardPrompt(false)
     setFillPrompt(false)
+    setPlateEdit(null)
   }
   const resetVehicleEdits = () => {
     if (!selectedVehicle) return
@@ -217,6 +222,7 @@ export default function UlpConditionReport({
     setModalMessage('')
     setDiscardPrompt(false)
     setFillPrompt(false)
+    setPlateEdit(null)
     setSelectedVehicleId(null)
   }
   const closeVehicle = (force = false) => {
@@ -229,6 +235,7 @@ export default function UlpConditionReport({
     else {
       setDiscardPrompt(false)
       setFillPrompt(false)
+      setPlateEdit(null)
       setModalError('')
       setModalMessage('')
       setSelectedVehicleId(null)
@@ -255,6 +262,60 @@ export default function UlpConditionReport({
         : row) }))
       setPlates((prev) => ({ ...prev, [vehicle.id]: saved.plate_display }))
       setModalMessage(`Nopol ${saved.plate_display} tersimpan. Lanjutkan pengisian kondisi kendaraan dan alatnya.`)
+    } catch (saveError) {
+      if (token === request.current) setModalError(saveError.message)
+    } finally {
+      saveLock.current = false
+      setSaving(false)
+    }
+  }
+  const openPlateEdit = () => {
+    if (!editable || saveLock.current || !selectedVehicle?.plate_display) return
+    setPlateEdit({ plate: savedVehicle?.plate_display || selectedVehicle.plate_display, reason: '' })
+    setModalError('')
+    setModalMessage('')
+  }
+  const updatePlateEdit = (patch) => {
+    setPlateEdit((prev) => (prev ? { ...prev, ...patch } : prev))
+    setModalError('')
+    setModalMessage('')
+  }
+  const savePlateCorrection = async () => {
+    if (!plateEdit || !editable || saveLock.current) return
+    const plate = plateEdit.plate.trim()
+    const reason = plateEdit.reason.trim()
+    const normalized = plate.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (normalized.length < 2 || normalized.length > 12) {
+      setModalError('Isi nomor polisi yang valid (2 sampai 12 huruf/angka).')
+      return
+    }
+    if (!reason) {
+      setModalError('Tuliskan alasan koreksi nomor polisi.')
+      return
+    }
+    saveLock.current = true
+    setSaving(true)
+    setModalError('')
+    setModalMessage('')
+    const token = request.current
+    try {
+      const saved = await correctPrescribedVehiclePlate(selectedVehicle, plate, reason)
+      if (token !== request.current) return
+      const fixed = saved?.slot || {}
+      const reportsRevised = saved?.reports_revised || []
+      const reportUpdate = reportsRevised.find((entry) => entry.report_id === bundle?.report?.id)
+      setBundle((prev) => ({
+        ...prev,
+        report: reportUpdate ? { ...prev.report, revision: reportUpdate.revision } : prev.report,
+        vehicles: prev.vehicles.map((row) => row.id === fixed.id
+          ? { ...row, plate_display: fixed.plate_display, plate_normalized: fixed.plate_normalized, revision: fixed.revision }
+          : row),
+      }))
+      setPlates((prev) => ({ ...prev, [fixed.id]: fixed.plate_display }))
+      setPlateEdit(null)
+      setModalMessage(reportsRevised.length
+        ? `Nopol dikoreksi menjadi ${fixed.plate_display}. Nopol pada ${reportsRevised.length} laporan bulanan tersimpan ikut diperbarui, kondisi dan status tidak berubah.`
+        : `Nopol dikoreksi menjadi ${fixed.plate_display}. Tidak ada laporan tersimpan yang perlu diperbarui.`)
     } catch (saveError) {
       if (token === request.current) setModalError(saveError.message)
     } finally {
@@ -428,6 +489,26 @@ export default function UlpConditionReport({
               <div><span>Template</span><strong>{selectedVehicle.template_name || '-'}</strong></div>
               <div><span>Versi</span><strong>Versi {selectedVehicle.template_version}</strong></div>
             </div>
+            {selectedVehicle.plate_display && editable && !plateEdit && (
+              <div className="uc-plate-entry uc-plate-entry--filled">
+                <div className="uc-plate-current"><span>Nomor Polisi</span><strong>{selectedVehicle.plate_display}</strong></div>
+                <button type="button" className="sla-btn" disabled={saving || vehicleItemsDirty} title={vehicleItemsDirty ? 'Simpan kondisi yang sedang diisi terlebih dahulu.' : undefined} onClick={openPlateEdit}>Edit Nopol</button>
+                <p>Nopol salah ketik dapat dikoreksi di sini. Nopol pada laporan bulanan tersimpan juga akan diperbarui oleh sistem.</p>
+              </div>
+            )}
+            {selectedVehicle.plate_display && editable && plateEdit && (
+              <div className="uc-plate-entry uc-plate-entry--edit">
+                <label htmlFor={`plate-edit-${selectedVehicle.id}`}>Nomor Polisi *<input id={`plate-edit-${selectedVehicle.id}`} maxLength={30} autoComplete="off" data-autofocus value={plateEdit.plate} placeholder="Contoh: KB 1234 XX" onChange={(event) => updatePlateEdit({ plate: event.target.value })} /></label>
+                <div className="uc-plate-reason">
+                  <label htmlFor={`plate-reason-${selectedVehicle.id}`}>Alasan Koreksi *<textarea id={`plate-reason-${selectedVehicle.id}`} maxLength={500} rows={2} placeholder="Contoh: salah ketik huruf akhir" value={plateEdit.reason} onChange={(event) => updatePlateEdit({ reason: event.target.value })} /></label>
+                  <div className="alkes-modal-actions">
+                    <button type="button" className="sla-btn" disabled={saving} onClick={() => setPlateEdit(null)}>Batal</button>
+                    <button type="button" className="sla-btn sla-btn-primary" disabled={saving || !plateEdit.plate.trim() || !plateEdit.reason.trim()} onClick={savePlateCorrection}>{saving ? 'Menyimpan...' : 'Simpan Koreksi'}</button>
+                  </div>
+                </div>
+                <p>Nopol baru menggantikan nopol pada penetapan ini; laporan tersimpan yang memuat nopol lama ikut diperbarui. Lokasi, template, kondisi, dan status tidak berubah.</p>
+              </div>
+            )}
             {!selectedVehicle.plate_display && editable && (
               <div className="uc-plate-entry">
                 <label htmlFor={`plate-${selectedVehicle.id}`}>Nomor Polisi *<input data-autofocus id={`plate-${selectedVehicle.id}`} maxLength={30} autoComplete="off" value={plates[selectedVehicle.id] || ''} placeholder="Contoh: KB 1234 XX" onChange={(event) => { setPlates((prev) => ({ ...prev, [selectedVehicle.id]: event.target.value })); setModalError(''); setModalMessage('') }} /></label>
