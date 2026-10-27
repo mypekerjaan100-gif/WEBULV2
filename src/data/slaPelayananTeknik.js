@@ -810,7 +810,7 @@ export const pelayananTeknikModules = [
   { id: 'master-organisasi', name: 'Master Organisasi', adminOnly: true },
   { id: 'master-lokasi', name: 'Master Lokasi', adminOnly: true },
   { id: 'master-jabatan', name: 'Master Jabatan', adminOnly: true },
-  { id: 'alat-kendaraan', name: 'Master Alat & Kendaraan' },
+  { id: 'alat-kendaraan', name: 'Master Alat & Kendaraan', adminOnly: true },
   { id: 'database-pegawai', name: 'Master Pegawai' },
   { id: 'pengaturan-sla', name: 'Pengaturan SLA', adminOnly: true },
   { id: 'pengaturan-lembur', name: 'Pengaturan Lembur', adminOnly: true },

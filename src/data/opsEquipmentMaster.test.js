@@ -94,6 +94,12 @@ const templateCostSql = readFileSync(fileURLToPath(new URL(
 assert(templateCostSql.includes('ops_list_template_costs'), 'Ringkasan biaya template hilang')
 assert(templateCostSql.includes('ops_can_read_master'), 'Scope baca ringkasan biaya hilang')
 
+const masterReadSql = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20261027110000_ops_master_read_exclude_ulp.sql',
+  import.meta.url,
+)), 'utf8')
+assert(masterReadSql.includes("cm.contract_role <> 'ADMIN_ULP'"), 'Master tidak boleh terbaca oleh Admin ULP')
+
 const repoUrl = new URL('./opsEquipmentRepository.js', import.meta.url)
 const repo = readFileSync(fileURLToPath(repoUrl), 'utf8')
 for (const fn of [

@@ -1472,7 +1472,7 @@ export default function SLAPelayananTeknikPage({
           onOpenStandards={isSuperAdmin || isAdminUp3 ? () => selectModule('alat-kendaraan') : undefined}
           onEditorStateChange={handleEditorStateChange}
         />
-      ) : moduleId === 'alat-kendaraan' ? (
+      ) : moduleId === 'alat-kendaraan' && canViewAdminUp3Modules ? (
         <AlatKendaraanMaster
           key={`${orgMap?.contractUuid}:${orgMap?.up3Uuid}`}
           contractUuid={orgMap?.contractUuid ?? null}

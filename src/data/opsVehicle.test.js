@@ -137,7 +137,7 @@ for (const className of ['ops-vehicle-form-section', 'ops-vehicle-preview', 'ops
 
 // Integrasi tab utama & halaman
 assert(modules.includes("{ id: 'kendaraan-ulp', name: 'Alat & Kendaraan' }"), 'Tab utama Alat & Kendaraan hilang')
-assert(modules.includes("{ id: 'alat-kendaraan', name: 'Master Alat & Kendaraan' }"), 'Master Alat & Kendaraan harus terpisah')
+assert(modules.includes("{ id: 'alat-kendaraan', name: 'Master Alat & Kendaraan', adminOnly: true }"), 'Master Alat & Kendaraan harus terpisah dan hanya untuk admin')
 assert(
   modules.indexOf("id: 'lembur'") < modules.indexOf("id: 'kendaraan-ulp'"),
   'Tab Alat & Kendaraan harus tepat setelah Lembur',
