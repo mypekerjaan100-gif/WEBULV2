@@ -25,6 +25,7 @@ import {
   REPLACEMENT_TYPES,
 } from '../../data/overtimeReplacementL2.js'
 import { splitOvertimeExportTimes } from '../../data/overtimeExport.js'
+import { selectOvertimeHistoryForDisplay } from '../../data/overtimeHistoryPresentation.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 import EvidenceUploadCard from './EvidenceUploadCard.jsx'
@@ -2251,13 +2252,14 @@ export default function SLALembur({
     ? detailActivityRecords.filter(r=> r.entryId===detailEntryId)
     : detailActivityRecords
   const detailRecords = detailEntryRecords.length > 0 ? detailEntryRecords : detailActivityRecords
+  const displayDetailHistory = selectOvertimeHistoryForDisplay(detailHistory, detailActivityId)
   const dedupedDetailHistory = (() => {
     const participantKeys = new Set(
-      detailHistory
+      displayDetailHistory
         .filter((h) => h.entry_id != null && ['APPROVED', 'REJECTED', 'CLOSED'].includes(h.event))
         .map((h) => `${h.event}|${h.occurred_at}`),
     )
-    return detailHistory.filter((h) => {
+    return displayDetailHistory.filter((h) => {
       if (h.entry_id != null) return true
       if (!['APPROVED', 'REJECTED', 'CLOSED'].includes(h.event)) return true
       return !participantKeys.has(`${h.event}|${h.occurred_at}`)
