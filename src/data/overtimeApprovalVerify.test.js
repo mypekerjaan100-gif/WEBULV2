@@ -48,4 +48,12 @@ assert(primitives.includes('export function ConfirmationDialog'), 'ConfirmationD
 assert(primitives.includes('dismissDisabled'), 'Modal harus bisa dikunci saat proses berjalan')
 assert(primitives.includes('showCloseButton'), 'Modal harus bisa menyembunyikan tombol X')
 
+// Efek fokus Modal tidak boleh bergantung identitas onClose/dismissDisabled:
+// parent yang merender ulang (misal tiap huruf di Textarea modal inspeksi
+// kendaraan) jangan sampai menjalankan ulang efek yang melepas fokus input.
+assert(primitives.includes('const onCloseRef = useRef(onClose)'), 'Modal harus menyimpan callback onClose terbaru di ref')
+assert(primitives.includes('const dismissDisabledRef = useRef(dismissDisabled)'), 'Modal harus menyimpan status dismiss terbaru di ref')
+assert(primitives.includes('}, [open])'), 'Efek fokus Modal hanya boleh bergantung pada open')
+assert(!primitives.includes("}, [open, onClose, dismissDisabled])"), 'Efek fokus Modal tidak boleh men-dep onClose/dismissDisabled (fokus input terlepas saat parent rerender)')
+
 console.log(`Overtime approval verify tests passed: ${passed}`)

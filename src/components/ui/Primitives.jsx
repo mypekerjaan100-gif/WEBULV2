@@ -208,20 +208,31 @@ export function StatePanel({ state = 'empty', title, children, action, className
 export function Modal({ open, onClose, title, size = 'medium', children, footer, className = '', closeOnBackdrop = true, showCloseButton = true, backdropClassName = '', describedBy, dismissDisabled = false }) {
   const titleId = useId()
   const dialogRef = useRef(null)
+  // Callback & status terbaru disimpan di ref agar efek fokus hanya bergantung
+  // pada `open`. Identitas onClose berubah setiap parent merender ulang (mis.
+  // satu huruf di Textarea modal inspeksi); jika di-dep, efek berjalan ulang,
+  // fokus kembali ke container dialog, dan fokus input aktif terlepas.
+  const onCloseRef = useRef(onClose)
+  const dismissDisabledRef = useRef(dismissDisabled)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+    dismissDisabledRef.current = dismissDisabled
+  })
 
   useEffect(() => {
     if (!open) return undefined
     const previous = document.activeElement
     dialogRef.current?.focus()
     const onKeyDown = (event) => {
-      if (event.key === 'Escape' && !dismissDisabled) onClose?.()
+      if (event.key === 'Escape' && !dismissDisabledRef.current) onCloseRef.current?.()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       previous?.focus?.()
     }
-  }, [open, onClose, dismissDisabled])
+  }, [open])
 
   if (!open) return null
 
