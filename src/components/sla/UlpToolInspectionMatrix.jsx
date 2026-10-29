@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import Icon from '../Icon.jsx'
 import {
   Alert,
   Button,
@@ -52,6 +53,38 @@ function ModalScope({ editor, vehicleLabel }) {
   )
 }
 
+function agePhrase(months, label = 'Umur') {
+  return months == null ? `${label} belum diketahui` : `${label} ${ageLabel(months)}`
+}
+
+function UnitDetailCard({ asset, highlightedIssueId }) {
+  const status = assetStatus(asset)
+  const issue = asset.open_issue
+  const age = issue ? issue.age_at_failure_months : asset.age_months
+  const life = issue ? issue.standard_life_months : asset.useful_life_months
+  return (
+    <div className={`tool-unit-card ${issue ? 'is-issue' : ''} ${issue && String(issue.id) === String(highlightedIssueId) ? 'is-highlighted' : ''}`}>
+      <div className="tool-unit-card-head">
+        <strong>Unit {asset.asset_sequence}</strong>
+        <span className={`tool-badge tool-badge-${status.tone}`}>{status.label}</span>
+      </div>
+      <span className="tool-muted">
+        {asset.latest_inspection ? formatDateTime(asset.latest_inspection.inspected_at) : 'Belum ada inspeksi'}
+      </span>
+      {asset.latest_inspection && (
+        <span className="tool-muted">{asset.latest_inspection.inspected_by_name || 'Petugas inspeksi'}</span>
+      )}
+      <span className="tool-muted">
+        {agePhrase(age)} · standar {life == null ? 'belum diisi' : ageLabel(life)}
+        {!issue && asset.remaining_months != null ? ` · sisa ${ageLabel(Math.max(0, asset.remaining_months))}` : ''}
+      </span>
+      {issue?.note && <span className="tool-unit-note">{issue.note}</span>}
+      {issue?.damaged_before_life && <span className="tool-warning">Rusak sebelum masa pakai</span>}
+      <EvidenceThumbs paths={asset.latest_inspection?.photo_paths || []} />
+    </div>
+  )
+}
+
 export default function UlpToolInspectionMatrix({
   items = [],
   assets = [],
@@ -80,16 +113,47 @@ export default function UlpToolInspectionMatrix({
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [expandedHistoryKey, setExpandedHistoryKey] = useState(null)
+  const [expandedUnitsKey, setExpandedUnitsKey] = useState(null)
+  const [query, setQuery] = useState('')
+  const [onlyAttention, setOnlyAttention] = useState(false)
   const quantityRefs = useRef(new Map())
+  const detailRefs = useRef(new Map())
   const editorInitRef = useRef(null)
-  const groups = groupConditionItems(items)
   const columnCount = showInspections ? 8 : 7
+
+  const groups = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return groupConditionItems(items)
+      .map(([category, rows]) => [
+        category,
+        rows.filter((item) => {
+          if (onlyAttention) {
+            const result = evaluateCondition(item)
+            const hasIssue = assets.some(
+              (asset) => asset.equipment_id === item.equipment_id && asset.open_issue,
+            )
+            if (!hasIssue && !['non_compliant', 'invalid'].includes(result.status)) return false
+          }
+          if (!needle) return true
+          return [item.name, item.specification, item.unit, category]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(needle))
+        }),
+      ])
+      .filter(([, rows]) => rows.length > 0)
+  }, [assets, items, onlyAttention, query])
+  const visibleItemCount = groups.reduce((total, [, rows]) => total + rows.length, 0)
   const editorItem = editor ? items.find((item) => item.key === editor.itemKey) || null : null
 
   useEffect(() => {
     onEditorStateChange?.({ dirty: Boolean(editor), busy: submitting })
     return () => onEditorStateChange?.({ dirty: false, busy: false })
   }, [editor, submitting, onEditorStateChange])
+
+  useEffect(() => {
+    if (!expandedUnitsKey) return
+    detailRefs.current.get(expandedUnitsKey)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [expandedUnitsKey])
 
   const formDirty = (() => {
     if (!editor) return false
@@ -236,44 +300,96 @@ export default function UlpToolInspectionMatrix({
     quantityRefs.current.get(next)?.focus()
   }
 
-  if (!groups.length) {
+  if (!items.length) {
     return <p className="tool-empty">Tidak ada peralatan pada template kendaraan ini.</p>
   }
 
   return (
-    <div className="tool-matrix-wrap">
-      <table className={`tool-matrix ${showInspections ? 'has-inspections' : 'no-inspections'}`}>
-        <thead>
-          <tr>
-            <th>Peralatan</th>
-            <th>Jumlah dalam Kontrak</th>
-            <th>Ada di ULP</th>
-            <th>Baik</th>
-            <th>Rusak</th>
-            <th>%</th>
-            {showInspections && <th>Inspeksi per unit</th>}
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {groups.map(([category, rows]) => (
-            <Fragment key={category}>
-              <tr className="tool-matrix-category">
-                <th colSpan={columnCount}>{category}<span>{rows.length} jenis</span></th>
-              </tr>
-              {rows.map((item) => {
+    <div className="tool-sheet">
+      <div className="tool-sheet-toolbar">
+        <div className="tool-sheet-search">
+          <Icon name="search" size={14} />
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Cari alat atau spesifikasi"
+            aria-label="Cari alat"
+          />
+          {query && (
+            <button type="button" className="tool-sheet-clear" onClick={() => setQuery('')} aria-label="Hapus pencarian">
+              <Icon name="close" size={12} />
+            </button>
+          )}
+        </div>
+        <label className={`tool-sheet-toggle ${onlyAttention ? 'is-active' : ''}`}>
+          <input type="checkbox" checked={onlyAttention} onChange={(event) => setOnlyAttention(event.target.checked)} />
+          <Icon name="filter" size={13} />
+          Hanya perlu perhatian
+        </label>
+        <span className="tool-sheet-count">{visibleItemCount} dari {items.length} alat</span>
+      </div>
+      <div className="tool-matrix-wrap">
+        <table className={`tool-matrix ${showInspections ? 'has-inspections' : 'no-inspections'}`} aria-label="Rekap peralatan dan inspeksi">
+          <thead>
+            <tr>
+              <th scope="col">
+                <span className="tool-matrix-th"><Icon name="operations" size={13} /> Peralatan</span>
+              </th>
+              <th scope="col" className="is-num tool-matrix-contract">
+                <span className="tool-matrix-th"><Icon name="layers" size={13} /> Jumlah dalam Kontrak</span>
+              </th>
+              <th scope="col" className="is-num tool-matrix-present">
+                <span className="tool-matrix-th"><Icon name="dashboard" size={13} /> Ada di ULP</span>
+              </th>
+              <th scope="col" className="is-num tool-matrix-qty">
+                <span className="tool-matrix-th"><Icon name="check-circle" size={13} />Baik</span>
+              </th>
+              <th scope="col" className="is-num tool-matrix-qty">
+                <span className="tool-matrix-th"><Icon name="alert-triangle" size={13} />Rusak</span>
+              </th>
+              <th scope="col" className="is-num">
+                <span className="tool-matrix-th"><Icon name="pie-chart" size={13} />%</span>
+              </th>
+              {showInspections && (
+                <th scope="col" className="tool-matrix-inspection">
+                  <span className="tool-matrix-th"><Icon name="shield" size={13} /> Inspeksi per unit</span>
+                </th>
+              )}
+              <th scope="col" className="tool-matrix-status">
+                <span className="tool-matrix-th"><Icon name="info" size={13} /> Status</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(([category, rows]) => (
+              <Fragment key={category}>
+                <tr className="tool-matrix-category">
+                  <th colSpan={columnCount}>{category}<span>{rows.length} jenis</span></th>
+                </tr>
+              {rows.map((item, rowIndex) => {
                 const result = evaluateCondition(item)
                 const unitAssets = assets.filter((asset) => asset.equipment_id === item.equipment_id)
                 const issueCount = unitAssets.filter((asset) => asset.open_issue).length
                 const itemHistory = history.filter((entry) => entry.equipment_name === item.name)
+                const percentage = result.percentage == null
+                  ? null
+                  : Math.max(0, Math.min(100, Number(result.percentage.toFixed(1))))
+                const percentageTone = percentage == null ? '' : percentage >= 100 ? '' : percentage >= 50 ? 'is-warning' : 'is-danger'
+                const unitsExpanded = expandedUnitsKey === item.key
                 return (
                   <Fragment key={item.key}>
-                    <tr className={`tool-matrix-row ${result.status === 'non_compliant' ? 'is-non-compliant' : ''}`}>
+                    <tr className={`tool-matrix-row ${result.status === 'non_compliant' ? 'is-non-compliant' : ''} ${rowIndex % 2 === 1 ? 'is-zebra' : ''}`}>
                       <td className="tool-matrix-tool">
-                        <strong>{item.name}</strong>
-                        <span className="tool-muted">{item.unit}{item.specification ? ` · ${item.specification}` : ''}</span>
+                        <div className="tool-name">
+                          <span className="tool-name-icon"><Icon name="operations" size={13} /></span>
+                          <div className="tool-name-body">
+                            <strong>{item.name}</strong>
+                            <span className="tool-muted">{item.unit}{item.specification ? ` · ${item.specification}` : ''}</span>
+                          </div>
+                        </div>
                         <details className="uc-note">
-                          <summary>Catatan{item.note ? ' terisi' : ''}</summary>
+                          <summary><Icon name="info" size={11} /> Catatan{item.note ? ' terisi' : ''}</summary>
                           {canManage ? (
                             <textarea
                               aria-label={`Catatan ${item.name}`}
@@ -284,9 +400,9 @@ export default function UlpToolInspectionMatrix({
                           ) : <p>{item.note || 'Tidak ada catatan.'}</p>}
                         </details>
                       </td>
-                      <td className="tool-matrix-number">{item.required_qty}</td>
-                      <td className="tool-matrix-number">{item.required_qty}</td>
-                      <td className="tool-matrix-number">
+                      <td className="tool-matrix-number tool-matrix-contract"><span className="tool-qty-value">{item.required_qty}</span></td>
+                      <td className="tool-matrix-number tool-matrix-present"><span className="tool-qty-value">{item.required_qty}</span></td>
+                      <td className="tool-matrix-number tool-matrix-qty">
                         {canManage ? (
                           <input
                             ref={(node) => {
@@ -303,9 +419,9 @@ export default function UlpToolInspectionMatrix({
                             onChange={(event) => onQuantityChange?.(item, 'good_qty', event.target.value)}
                             onKeyDown={(event) => moveQuantityFocus(event, item, 'good_qty')}
                           />
-                        ) : (item.good_qty ?? '-')}
+                        ) : <span className="tool-qty-value">{item.good_qty ?? '-'}</span>}
                       </td>
-                      <td className="tool-matrix-number">
+                      <td className="tool-matrix-number tool-matrix-qty">
                         {canManage ? (
                           <input
                             ref={(node) => {
@@ -322,79 +438,131 @@ export default function UlpToolInspectionMatrix({
                             onChange={(event) => onQuantityChange?.(item, 'bad_qty', event.target.value)}
                             onKeyDown={(event) => moveQuantityFocus(event, item, 'bad_qty')}
                           />
-                        ) : (item.bad_qty ?? '-')}
+                        ) : <span className="tool-qty-value">{item.bad_qty ?? '-'}</span>}
                       </td>
-                      <td className="tool-matrix-number">{result.percentage == null ? '-' : `${Number(result.percentage.toFixed(1))}%`}</td>
+                      <td className="tool-matrix-number tool-matrix-percent">
+                        {percentage == null ? (
+                          <span className="tool-percent-value is-muted">-</span>
+                        ) : (
+                          <span className="tool-percent">
+                            <span className="tool-percent-track" aria-hidden="true">
+                              <span className={`tool-percent-fill ${percentageTone}`} style={{ width: `${percentage}%` }} />
+                            </span>
+                            <span className="tool-percent-value">{percentage}%</span>
+                          </span>
+                        )}
+                      </td>
                       {showInspections && (
                         <td className="tool-matrix-inspection">
                           {(inspectionStatus === 'idle' || inspectionStatus === 'loading') && <span className="tool-muted">Memuat rincian unit…</span>}
                           {inspectionStatus === 'error' && <span className="tool-muted">Rincian unit tidak tersedia.</span>}
                           {inspectionStatus === 'ready' && (
-                            <div className="tool-matrix-units">
+                            <>
                               {unitAssets.map((asset) => {
-                              const status = assetStatus(asset)
-                              const issue = asset.open_issue
-                              const age = issue ? issue.age_at_failure_months : asset.age_months
-                              const life = issue ? issue.standard_life_months : asset.useful_life_months
-                              return (
-                                <div
-                                  className={`tool-unit-card ${issue ? 'is-issue' : ''} ${issue && String(issue.id) === String(highlightedIssueId) ? 'is-highlighted' : ''}`}
-                                  key={asset.id}
+                                const status = assetStatus(asset)
+                                const issue = asset.open_issue
+                                return (
+                                  <div className="tool-unit-summary" key={asset.id}>
+                                    <span className="tool-unit-id">Unit {asset.asset_sequence}</span>
+                                    <span className={`tool-unit-state tool-unit-state--${status.tone}`}>{status.label}</span>
+                                    <span className="tool-unit-summary-actions">
+                                      {issue && canResolveIssue && !future && (
+                                        <button type="button" className="tool-action-btn is-warning" disabled={submitting} onClick={() => openResolve(item, asset)}>
+                                          <Icon name="refresh-cw" size={12} /> Serah Terima
+                                        </button>
+                                      )}
+                                      {!issue && canInspect && !future && (
+                                        <button type="button" className="tool-action-btn" disabled={submitting} onClick={() => openInspect(item, asset)}>
+                                          <Icon name="shield" size={12} /> Inspeksi
+                                        </button>
+                                      )}
+                                      {issue && !canResolveIssue && <span className="tool-unit-hint"><Icon name="clock" size={11} /> Issue terbuka</span>}
+                                      {!issue && !canInspect && <span className="tool-unit-hint"><Icon name="shield" size={11} /> Hanya lihat</span>}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                              {!unitAssets.length && <span className="tool-muted">Belum ada unit fisik.</span>}
+                              {unitAssets.length > 0 && (
+                                <button
+                                  type="button"
+                                  className={`tool-expand-btn ${unitsExpanded ? 'is-open' : ''}`}
+                                  aria-expanded={unitsExpanded}
+                                  onClick={() => setExpandedUnitsKey((value) => value === item.key ? null : item.key)}
                                 >
-                                  <div className="tool-unit-card-head">
-                                    <strong>Unit {asset.asset_sequence}</strong>
-                                    <span className={`tool-badge tool-badge-${status.tone}`}>{status.label}</span>
-                                  </div>
-                                  <span className="tool-muted">
-                                    {asset.latest_inspection ? formatDateTime(asset.latest_inspection.inspected_at) : 'Belum ada inspeksi'}
-                                  </span>
-                                  {asset.latest_inspection && (
-                                    <span className="tool-muted">{asset.latest_inspection.inspected_by_name || 'Petugas inspeksi'}</span>
-                                  )}
-                                  <span className="tool-muted">
-                                    Umur {ageLabel(age)} · standar {life == null ? 'belum diisi' : ageLabel(life)}
-                                    {!issue && asset.remaining_months != null ? ` · sisa ${ageLabel(Math.max(0, asset.remaining_months))}` : ''}
-                                  </span>
-                                  {issue?.note && <span className="tool-unit-note">{issue.note}</span>}
-                                  {issue?.damaged_before_life && <span className="tool-warning">Rusak sebelum masa pakai</span>}
-                                  <EvidenceThumbs paths={asset.latest_inspection?.photo_paths || []} />
-                                  <div className="tool-unit-card-actions">
-                                    {issue && canResolveIssue && !future && (
-                                      <button type="button" className="sla-btn" disabled={submitting} onClick={() => openResolve(item, asset)}>Serah Terima</button>
-                                    )}
-                                    {!issue && canInspect && !future && (
-                                      <button type="button" className="sla-btn" disabled={submitting} onClick={() => openInspect(item, asset)}>Inspeksi</button>
-                                    )}
-                                    {issue && !canResolveIssue && <span className="tool-muted">Issue terbuka</span>}
-                                    {!issue && !canInspect && <span className="tool-muted">Hanya lihat</span>}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                            {!unitAssets.length && <span className="tool-muted">Belum ada unit fisik.</span>}
-                            </div>
+                                  <Icon name="chevron-right" size={11} />
+                                  {unitsExpanded ? 'Tutup rincian unit' : 'Rincian umur & bukti'}
+                                </button>
+                              )}
+                            </>
                           )}
                         </td>
                       )}
                       <td className="tool-matrix-status">
-                        <ConditionBadge status={result.status} />
-                        {result.status === 'non_compliant' && (
-                          <small className="uc-row-reason">{Number(item.bad_qty) > 0 ? 'Ada kondisi rusak' : 'Jumlah baik kurang'}</small>
-                        )}
-                        {result.status === 'invalid' && <small className="uc-row-reason">{result.issue || 'Periksa jumlah kondisi.'}</small>}
-                        {isDefaultVehicle && <small className="uc-row-reason">Default rekap · belum disimpan bulan ini</small>}
-                        {showInspections && issueCount > 0 && <small className="uc-row-reason">{issueCount} issue unit terbuka</small>}
-                        {showInspections && itemHistory.length > 0 && (
-                          <button
-                            type="button"
-                            className="tool-link-button"
-                            onClick={() => setExpandedHistoryKey((value) => value === item.key ? null : item.key)}
-                          >
-                            Riwayat penggantian ({itemHistory.length})
-                          </button>
-                        )}
+                        <div className="tool-status-block">
+                          <ConditionBadge status={result.status} />
+                          {result.status === 'non_compliant' && (
+                            <span className="tool-status-note is-danger">
+                              <Icon name="alert-triangle" size={11} />
+                              {Number(item.bad_qty) > 0 ? 'Ada kondisi rusak' : 'Jumlah baik kurang'}
+                            </span>
+                          )}
+                          {result.status === 'invalid' && (
+                            <span className="tool-status-note is-danger">
+                              <Icon name="x-circle" size={11} />
+                              {result.issue || 'Periksa jumlah kondisi.'}
+                            </span>
+                          )}
+                          {isDefaultVehicle && (
+                            <span className="tool-status-note">
+                              <Icon name="info" size={11} />
+                              Default rekap · belum disimpan bulan ini
+                            </span>
+                          )}
+                          {showInspections && issueCount > 0 && (
+                            <span className="tool-status-note is-warning">
+                              <Icon name="alert-triangle" size={11} />
+                              {issueCount} issue unit terbuka
+                            </span>
+                          )}
+                          {showInspections && itemHistory.length > 0 && (
+                            <button
+                              type="button"
+                              className="tool-link-button"
+                              onClick={() => setExpandedHistoryKey((value) => value === item.key ? null : item.key)}
+                            >
+                              <Icon name="refresh-cw" size={11} />
+                              Riwayat penggantian ({itemHistory.length})
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
+                    {showInspections && unitsExpanded && unitAssets.length > 0 && (
+                      <tr
+                        className="tool-matrix-detail-row"
+                        ref={(node) => {
+                          if (node) detailRefs.current.set(item.key, node)
+                          else detailRefs.current.delete(item.key)
+                        }}
+                      >
+                        <td colSpan={columnCount}>
+                          <div className="tool-matrix-detail">
+                            <div className="tool-matrix-detail-head">
+                              <strong>Rincian unit · {item.name}</strong>
+                              <button type="button" className="tool-matrix-detail-close" onClick={() => setExpandedUnitsKey(null)}>
+                                Tutup rincian
+                              </button>
+                            </div>
+                            <div className="tool-matrix-units">
+                              {unitAssets.map((asset) => (
+                                <UnitDetailCard key={asset.id} asset={asset} highlightedIssueId={highlightedIssueId} />
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {expandedHistoryKey === item.key && itemHistory.length > 0 && (
                       <tr className="tool-matrix-history-row">
                         <td colSpan={columnCount}>
@@ -406,7 +574,7 @@ export default function UlpToolInspectionMatrix({
                                   <span>Rusak {formatDateTime(entry.opened_at)} · diganti {formatDateTime(entry.resolved_at)}</span>
                                 </div>
                                 <div>
-                                  <span className="tool-muted">Umur saat rusak {ageLabel(entry.age_at_failure_months)} · standar {entry.standard_life_months == null ? 'belum diisi' : ageLabel(entry.standard_life_months)}</span>
+                                  <span className="tool-muted">{agePhrase(entry.age_at_failure_months, 'Umur saat rusak')} · standar {entry.standard_life_months == null ? 'belum diisi' : ageLabel(entry.standard_life_months)}</span>
                                   {entry.damaged_before_life && <span className="tool-warning">Rusak sebelum masa pakai</span>}
                                   {entry.resolution_note && <span className="tool-note">{entry.resolution_note}</span>}
                                   {entry.inspection_photo_paths?.length > 0 && <span className="tool-muted">Bukti kerusakan</span>}
@@ -425,8 +593,16 @@ export default function UlpToolInspectionMatrix({
               })}
             </Fragment>
           ))}
+          {!groups.length && (
+            <tr>
+              <td className="tool-sheet-empty" colSpan={columnCount}>
+                <Icon name="search" size={15} /> Tidak ada alat yang cocok dengan pencarian atau filter.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
+      </div>
       <Modal
         open={Boolean(editor)}
         onClose={requestEditorClose}
@@ -498,7 +674,7 @@ export default function UlpToolInspectionMatrix({
               <ModalScope editor={editor} vehicleLabel={vehicleLabel} />
               <div className="tool-issue-scope">
                 <span>Ditemukan {formatDateTime(editor.asset.open_issue?.opened_at)}</span>
-                <span>Umur saat rusak {ageLabel(editor.asset.open_issue?.age_at_failure_months)} · standar {editor.asset.open_issue?.standard_life_months == null ? 'belum diisi' : ageLabel(editor.asset.open_issue.standard_life_months)}</span>
+                <span>{agePhrase(editor.asset.open_issue?.age_at_failure_months, 'Umur saat rusak')} · standar {editor.asset.open_issue?.standard_life_months == null ? 'belum diisi' : ageLabel(editor.asset.open_issue.standard_life_months)}</span>
                 {editor.asset.open_issue?.damaged_before_life && <span className="tool-warning">Rusak sebelum masa pakai standar</span>}
                 {editor.asset.open_issue?.note && <span>{editor.asset.open_issue.note}</span>}
               </div>

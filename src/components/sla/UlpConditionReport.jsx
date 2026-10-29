@@ -602,7 +602,7 @@ export default function UlpConditionReport({
             <div className="alkes-modal-section-head">
               <div>
                 <h3>Peralatan &amp; Inspeksi</h3>
-                <p>Satu baris per alat. Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Ada di ULP mengikuti jumlah kontrak. Inspeksi per unit terbuka dari tombol Inspeksi pada baris alat; rekap jumlah disimpan dari tombol bawah.</p>
+                <p>Satu baris per alat. Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Ada di ULP mengikuti jumlah kontrak. Tombol Inspeksi membuka form per unit; umur, petugas, catatan, dan bukti foto ada di tautan Rincian umur &amp; bukti. Rekap jumlah disimpan dari tombol bawah.</p>
               </div>
               <div className="uc-tool-section-actions">
                 <span className="sla-table-hint">{selectedToolSummary.filled}/{selectedToolSummary.total} alat terisi · {selectedToolSummary.failed} perlu perhatian</span>
