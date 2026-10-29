@@ -13035,6 +13035,45 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .vehicle-photo-slot-clear:hover { border-color: var(--color-primary); }
 
+/* Modal hasil inspeksi: lencana kondisi + tombol muat ulang per foto */
+.vehicle-result-badge {
+  display: inline-flex;
+  width: max-content;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.vehicle-result-badge--good { color: #176b49; background: #eaf5ef; }
+
+.vehicle-result-badge--damaged { color: #a12c33; background: #fceced; }
+
+:root[data-theme='dark'] .vehicle-result-badge--good { color: #9ed9b7; background: #173d32; }
+
+:root[data-theme='dark'] .vehicle-result-badge--damaged { color: #f4adb3; background: #482934; }
+
+.vehicle-photo-retry {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vehicle-photo-retry span { opacity: .75; font-size: 10px; word-break: break-word; }
+
+.vehicle-photo-retry:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-text); }
+
 @media (max-width: 560px) {
   .vehicle-photo-grid { grid-template-columns: 1fr; }
 }

@@ -12,6 +12,7 @@ import Icon from '../Icon.jsx'
 import UlpToolInspectionMatrix from './UlpToolInspectionMatrix.jsx'
 import UlpToolUnitPanel from './UlpToolUnitPanel.jsx'
 import VehicleInspectionModal from './VehicleInspectionModal.jsx'
+import VehicleInspectionResultModal from './VehicleInspectionResultModal.jsx'
 
 function Status({ value }) {
   return <span className={`uc-status uc-status--${value || 'unfilled'}`}>{CONDITION_LABELS[value] || 'Belum Diisi'}</span>
@@ -78,6 +79,7 @@ export default function UlpConditionReport({
   const [panelEditor, setPanelEditor] = useState({ dirty: false, busy: false })
   const [vehicleInspections, setVehicleInspections] = useState([])
   const [vehicleInspectionOpen, setVehicleInspectionOpen] = useState(false)
+  const [vehicleResultOpen, setVehicleResultOpen] = useState(false)
   const [vehicleInspectionBusy, setVehicleInspectionBusy] = useState({ dirty: false, busy: false })
   const [vehicleInspectionReloadToken, setVehicleInspectionReloadToken] = useState(0)
   const request = useRef(0)
@@ -229,6 +231,7 @@ export default function UlpConditionReport({
     setModalError('')
     setModalMessage('')
     setVehicleInspectionOpen(false)
+    setVehicleResultOpen(false)
     setVehicleInspectionBusy({ dirty: false, busy: false })
     if (!contractUuid || !up3Uuid) {
       setError('Scope ULP belum tersedia. Muat ulang halaman atau hubungi administrator.')
@@ -489,10 +492,11 @@ export default function UlpConditionReport({
 
   const handleVehicleInspectionSaved = () => {
     setVehicleInspectionOpen(false)
+    setVehicleResultOpen(false)
     setVehicleInspectionBusy({ dirty: false, busy: false })
     setVehicleInspectionReloadToken((value) => value + 1)
     setModalError('')
-    setModalMessage('Inspeksi kendaraan tersimpan sebagai riwayat inspeksi.')
+    setModalMessage('Inspeksi kendaraan tersimpan sebagai riwayat. Gunakan Lihat Hasil Inspeksi untuk melihat hasil dan fotonya.')
   }
 
   const cards = grouped.map(({ vehicle }) => {
@@ -570,6 +574,17 @@ export default function UlpConditionReport({
                   ? `Inspeksi terakhir ${timestamp(selectedLastInspection.inspected_at)} · ${selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · ${selectedLastInspection.inspected_by_name || 'Petugas'}`
                   : 'Belum diinspeksi'}
               </span>
+              {selectedLastInspection && (
+                <button
+                  type="button"
+                  className="sla-btn uc-vehicle-inspect-btn"
+                  disabled={saving}
+                  onClick={() => { setModalError(''); setModalMessage(''); setVehicleResultOpen(true) }}
+                >
+                  <Icon name="search" size={14} />
+                  Lihat Hasil Inspeksi
+                </button>
+              )}
               {canInspect && !future && !historical && (
                 <button
                   type="button"
@@ -741,6 +756,13 @@ export default function UlpConditionReport({
             onClose={() => setVehicleInspectionOpen(false)}
             onSaved={handleVehicleInspectionSaved}
             onEditorStateChange={setVehicleInspectionBusy}
+          />
+        )}
+        {vehicleResultOpen && selectedVehicle && selectedLastInspection && (
+          <VehicleInspectionResultModal
+            inspection={selectedLastInspection}
+            vehicle={selectedVehicle}
+            onClose={() => setVehicleResultOpen(false)}
           />
         )}
       </div>

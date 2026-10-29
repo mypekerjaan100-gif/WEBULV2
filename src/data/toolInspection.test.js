@@ -24,6 +24,8 @@ const notifications = read('../data/approvalNotificationRepository.js')
 const previewGuard = read('../lib/previewWriteGuard.js')
 const vehicleMigration = read('../../supabase/migrations/20261029100000_ops_vehicle_inspections.sql')
 const vehicleModal = read('../components/sla/VehicleInspectionModal.jsx')
+const vehicleResult = read('../components/sla/VehicleInspectionResultModal.jsx')
+const style = read('../styles/index.css')
 
 // --- Fondasi data ---
 for (const table of ['ops_tool_assets', 'ops_tool_inspections', 'ops_tool_issues']) {
@@ -205,6 +207,24 @@ assert(vehicleModal.includes('datetime-local'), 'Isian tanggal & jam inspeksi hi
 assert(vehicleModal.includes('Catatan'), 'Kolom catatan bebas hilang')
 assert(vehicleModal.includes('window.confirm'), 'Menutup form yang masih diisi harus dikonfirmasi')
 assert(vehicleModal.includes('onEditorStateChange'), 'Status dirty/busy modal harus diumumkan')
+
+// --- Tampilan hasil inspeksi kendaraan ---
+assert(repo.includes('function getVehicleInspectionPhotoUrl'), 'Helper signed URL foto inspeksi kendaraan hilang')
+assert(vehicleResult.includes("from './VehicleInspectionModal.jsx'"), 'Slot 4 foto harus dipakai ulang dari modal inspeksi, bukan digandakan')
+assert(vehicleResult.includes('getVehicleInspectionPhotoUrl'), 'Foto hasil harus dimuat lewat signed URL bucket privat')
+assert(vehicleResult.includes('target="_blank"'), 'Foto harus bisa dibuka ukuran penuh')
+assert(vehicleResult.includes('Muat ulang'), 'Foto gagal dimuat harus punya tombol coba lagi')
+assert(vehicleResult.includes('vehicle-photo-slot-label'), 'Slot hasil harus menampilkan label foto')
+assert(vehicleResult.includes('ui-icon-spin'), 'Status memuat foto harus terlihat')
+assert(vehicleResult.includes("const damaged = inspection?.condition === 'DAMAGED'"), 'Lencana kondisi hasil harus Baik/Rusak')
+assert(vehicleResult.includes("note ? note : 'Tidak ada catatan.'"), 'Catatan kosong harus jelas di modal hasil')
+
+assert(report.includes('VehicleInspectionResultModal'), 'Modal hasil inspeksi kendaraan harus dirender di detail kendaraan')
+assert(report.includes('Lihat Hasil Inspeksi'), 'Tombol lihat hasil inspeksi hilang')
+assert(report.includes('melihat hasil dan fotonya'), 'Pesan tersimpan harus mengarah ke Lihat Hasil Inspeksi')
+
+assert(style.includes('.vehicle-result-badge--good') && style.includes('.vehicle-result-badge--damaged'), 'Gaya lencana kondisi hasil inspeksi hilang')
+assert(style.includes('.vehicle-photo-retry'), 'Gaya tombol muat ulang foto inspeksi hilang')
 
 assert(report.includes('VehicleInspectionModal'), 'Modal inspeksi kendaraan harus dirender di detail kendaraan')
 assert(report.includes('listVehicleLastInspections'), 'Inspeksi terakhir harus dimuat per scope ULP')
