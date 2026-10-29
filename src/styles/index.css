@@ -13035,6 +13035,31 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .vehicle-photo-slot-clear:hover { border-color: var(--color-primary); }
 
+/* Preview besar hanya pada hasil inspeksi, bukan pada form unggah. */
+.ui-modal.ui-modal-vehicle-result { width: min(100%, 1100px); }
+
+.ui-modal-vehicle-result .ui-modal-content {
+  display: grid;
+  gap: 14px;
+}
+
+.vehicle-result-grid { gap: 14px; }
+
+.vehicle-result-grid .vehicle-photo-slot { min-width: 0; }
+
+.vehicle-result-grid .vehicle-photo-slot-frame { height: clamp(280px, 28vw, 320px); }
+
+.vehicle-result-grid .vehicle-photo-slot-frame > a {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.vehicle-result-grid .vehicle-photo-slot-frame img {
+  display: block;
+  object-fit: contain;
+}
+
 /* Modal hasil inspeksi: lencana kondisi + tombol muat ulang per foto */
 .vehicle-result-badge {
   display: inline-flex;
@@ -13073,6 +13098,11 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .vehicle-photo-retry span { opacity: .75; font-size: 10px; word-break: break-word; }
 
 .vehicle-photo-retry:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-text); }
+
+@media (max-width: 720px) {
+  .vehicle-result-grid { grid-template-columns: 1fr; }
+  .vehicle-result-grid .vehicle-photo-slot-frame { height: clamp(240px, 60vw, 320px); }
+}
 
 @media (max-width: 560px) {
   .vehicle-photo-grid { grid-template-columns: 1fr; }
@@ -14676,4 +14706,3 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   .tool-plate-form { width: 100%; }
   .tool-plate-form input { flex: 1 1 100%; }
 }
-

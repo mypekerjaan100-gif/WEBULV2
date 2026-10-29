@@ -226,6 +226,16 @@ assert(report.includes('melihat hasil dan fotonya'), 'Pesan tersimpan harus meng
 assert(style.includes('.vehicle-result-badge--good') && style.includes('.vehicle-result-badge--damaged'), 'Gaya lencana kondisi hasil inspeksi hilang')
 assert(style.includes('.vehicle-photo-retry'), 'Gaya tombol muat ulang foto inspeksi hilang')
 
+// Preview hasil besar dan utuh, tanpa mengubah preview form unggah.
+assert(vehicleResult.includes('className="ui-modal-vehicle-result"'), 'Modal hasil harus punya kelas khusus untuk lebar preview')
+assert(vehicleResult.includes('className="vehicle-photo-grid vehicle-result-grid"'), 'Grid hasil harus terpisah dari grid form unggah')
+assert(/\.ui-modal\.ui-modal-vehicle-result\s*\{\s*width: min\(100%, 1100px\);\s*\}/.test(style), 'Modal hasil harus responsif dengan lebar maksimum 1100px')
+assert(/\.vehicle-result-grid \.vehicle-photo-slot-frame\s*\{\s*height: clamp\(280px, 28vw, 320px\);\s*\}/.test(style), 'Preview hasil harus setinggi 280–320px pada desktop')
+assert(/\.vehicle-result-grid \.vehicle-photo-slot-frame > a\s*\{\s*display: flex;\s*width: 100%;\s*height: 100%;\s*\}/.test(style), 'Tautan foto hasil harus memenuhi kotak preview')
+assert(/\.vehicle-result-grid \.vehicle-photo-slot-frame img\s*\{[^}]*object-fit: contain;/.test(style), 'Foto hasil harus ditampilkan utuh, tidak terpotong')
+assert(/@media \(max-width: 720px\)\s*\{\s*\.vehicle-result-grid\s*\{\s*grid-template-columns: 1fr;/.test(style), 'Grid hasil harus menjadi satu kolom pada layar kecil')
+assert(/\.vehicle-photo-slot-frame\s*\{[^}]*height: 92px;/.test(style), 'Ukuran preview form unggah tidak boleh ikut berubah')
+
 assert(report.includes('VehicleInspectionModal'), 'Modal inspeksi kendaraan harus dirender di detail kendaraan')
 assert(report.includes('listVehicleLastInspections'), 'Inspeksi terakhir harus dimuat per scope ULP')
 assert(report.includes('Belum diinspeksi'), 'Keterangan belum diinspeksi hilang')

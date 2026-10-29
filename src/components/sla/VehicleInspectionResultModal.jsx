@@ -51,6 +51,7 @@ export default function VehicleInspectionResultModal({ inspection, vehicle, onCl
     <Modal
       open
       size="large"
+      className="ui-modal-vehicle-result"
       title={`Hasil Inspeksi · ${vehicle?.plate_display || vehicle?.label || 'Kendaraan'}`}
       onClose={onClose}
       footer={(
@@ -74,7 +75,7 @@ export default function VehicleInspectionResultModal({ inspection, vehicle, onCl
         <span><Icon name="users" size={12} /> Petugas: {inspection?.inspected_by_name || 'Petugas'}</span>
         <span><Icon name="file-text" size={12} /> Catatan: {note ? note : 'Tidak ada catatan.'}</span>
       </div>
-      <div className="vehicle-photo-grid">
+      <div className="vehicle-photo-grid vehicle-result-grid">
         {VEHICLE_PHOTO_SLOTS.map((slot) => {
           const entry = photos[slot.key]
           const path = paths[slot.key]
