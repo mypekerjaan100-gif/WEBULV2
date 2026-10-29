@@ -337,7 +337,7 @@ export default function UlpToolInspectionMatrix({
                 <span className="tool-matrix-th"><Icon name="operations" size={13} /> Peralatan</span>
               </th>
               <th scope="col" className="is-num tool-matrix-contract">
-                <span className="tool-matrix-th"><Icon name="layers" size={13} /> Jumlah dalam Kontrak</span>
+                <span className="tool-matrix-th"><Icon name="layers" size={13} /> Kontrak</span>
               </th>
               <th scope="col" className="is-num tool-matrix-present">
                 <span className="tool-matrix-th"><Icon name="dashboard" size={13} /> Ada di ULP</span>

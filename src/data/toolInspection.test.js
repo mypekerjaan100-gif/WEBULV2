@@ -93,7 +93,7 @@ assert(evidence.includes('prepareToolEvidence'), 'Kompresi bukti hilang')
 assert(evidence.includes("'image/jpeg'") && evidence.includes("'image/png'") && evidence.includes("'image/webp'"), 'Format bukti harus dibatasi')
 
 // --- UI rekap + inspeksi dalam satu baris alat ---
-assert(matrix.includes('Jumlah dalam Kontrak'), 'Kolom jumlah kontrak hilang')
+assert(matrix.includes(' Kontrak</span>') && report.includes('Jumlah Baik + Rusak harus sama dengan jumlah kontrak'), 'Kolom jumlah kontrak hilang')
 assert(matrix.includes('Ada di ULP'), 'Kolom ada di ULP hilang')
 assert(matrix.includes('>Baik<') && matrix.includes('>Rusak<'), 'Kolom Baik/Rusak hilang')
 assert(matrix.includes('{item.required_qty}'), 'Nilai kontrak harus ditampilkan')
