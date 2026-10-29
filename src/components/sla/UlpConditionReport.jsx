@@ -101,6 +101,17 @@ export default function UlpConditionReport({
   const plateDirty = Boolean(canManagePlateNow && selectedVehicle
     && (plates[selectedVehicle.id] || '').trim() !== (savedVehicle?.plate_display || ''))
   const dirty = vehicleItemsDirty || plateDirty
+  const vehiclePageState = !selectedVehicle
+    ? ''
+    : saving
+      ? 'Menyimpan...'
+      : panelEditor.busy
+        ? 'Menyimpan inspeksi...'
+        : !editable
+          ? historical ? 'Mode riwayat baca saja' : canManagePlateNow ? 'Nopol dapat dikelola; kondisi hanya baca.' : 'Hanya baca'
+          : !selectedVehicle.plate_display
+            ? 'Nopol belum diisi. Admin ULP perlu melengkapinya sebelum kondisi disimpan.'
+            : dirty || panelEditor.dirty ? 'Ada perubahan belum disimpan' : selectedIsDefault ? 'Default bulan ini 100%' : 'Tidak ada perubahan'
   const selectedToolVehicle = toolBundle.vehicles.find((vehicle) => vehicle.id === selectedVehicleId) || null
   const selectedToolAssets = selectedToolVehicle?.assets || []
   const selectedToolHistory = toolBundle.history.filter((entry) => entry.vehicle_id === selectedVehicleId)
@@ -602,11 +613,18 @@ export default function UlpConditionReport({
             <div className="alkes-modal-section-head">
               <div>
                 <h3>Peralatan &amp; Inspeksi</h3>
-                <p>Satu baris per alat. Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Ada di ULP mengikuti jumlah kontrak. Tombol Inspeksi membuka form per unit; umur, petugas, catatan, dan bukti foto ada di tautan Rincian umur &amp; bukti. Rekap jumlah disimpan dari tombol bawah.</p>
+                <p>Satu baris per alat. Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Ada di ULP mengikuti jumlah kontrak. Tombol Inspeksi membuka form per unit; umur, petugas, catatan, dan bukti foto ada di tautan Rincian umur &amp; bukti. Rekap disimpan dari tombol Simpan Rekap pada header bagian ini.</p>
               </div>
               <div className="uc-tool-section-actions">
-                <span className="sla-table-hint">{selectedToolSummary.filled}/{selectedToolSummary.total} alat terisi · {selectedToolSummary.failed} perlu perhatian</span>
-                {editable && <button type="button" className="sla-btn" disabled={saving} onClick={() => setFillPrompt(true)}>Isi Semua 100%</button>}
+                <div className="uc-page-state">
+                  <span className="sla-table-hint">{selectedToolSummary.filled}/{selectedToolSummary.total} alat terisi · {selectedToolSummary.failed} perlu perhatian</span>
+                  <span className={`uc-page-state-note ${saving || panelEditor.busy ? 'is-busy' : (dirty || panelEditor.dirty) && editable ? 'is-dirty' : ''}`}>{vehiclePageState}</span>
+                </div>
+                <div className="alkes-modal-actions">
+                  {editable && <button type="button" className="sla-btn" disabled={saving} onClick={() => setFillPrompt(true)}>Isi Semua 100%</button>}
+                  <button type="button" className="sla-btn" disabled={saving || panelEditor.busy} onClick={() => closeVehicle()}>{editable ? 'Batal' : 'Tutup'}</button>
+                  {editable && <button type="button" className="sla-btn sla-btn-primary" disabled={saving || panelEditor.busy || !dirty || !selectedVehicle.plate_display} onClick={saveVehicle}>{saving ? 'Menyimpan...' : 'Simpan Rekap'}</button>}
+                </div>
               </div>
             </div>
             {fillPrompt && (
@@ -666,15 +684,6 @@ export default function UlpConditionReport({
             </div>
           )}
         </div>
-        <footer className="alkes-modal-footer uc-page-footer">
-          <div className="uc-modal-footer">
-            <span>{saving ? 'Menyimpan...' : panelEditor.busy ? 'Menyimpan inspeksi...' : !editable ? (historical ? 'Mode riwayat baca saja' : canManagePlateNow ? 'Nopol dapat dikelola; kondisi hanya baca.' : 'Hanya baca') : !selectedVehicle.plate_display ? 'Nopol belum diisi. Admin ULP perlu melengkapinya sebelum kondisi disimpan.' : (dirty || panelEditor.dirty) ? 'Ada perubahan belum disimpan' : selectedIsDefault ? 'Default bulan ini 100%' : 'Tidak ada perubahan'}</span>
-            <div className="alkes-modal-actions">
-              <button type="button" className="sla-btn" disabled={saving || panelEditor.busy} onClick={() => closeVehicle()}>{editable ? 'Batal' : 'Tutup'}</button>
-              {editable && <button type="button" className="sla-btn sla-btn-primary" disabled={saving || panelEditor.busy || !dirty || !selectedVehicle.plate_display} onClick={saveVehicle}>{saving ? 'Menyimpan...' : 'Simpan Rekap'}</button>}
-            </div>
-          </div>
-        </footer>
       </div>
     ) : loading ? <div className="uc-empty" role="status">Memuat penetapan dan laporan kendaraan...</div> : isOverview ? <div className="uc-overview">
       <div className="uc-section-title"><h3>Ringkasan {conditionMonthLabel(month)}</h3><span>{overview.length} ULP</span></div>

@@ -116,7 +116,7 @@ assert(evidenceUi.includes('PhotoPicker') && evidenceUi.includes('EvidenceThumbs
 assert(report.includes('UlpToolInspectionMatrix'), 'Matriks inspeksi harus dipakai di halaman detail')
 assert(report.includes('uc-vehicle-page'), 'Detail kendaraan harus menjadi halaman, bukan modal')
 assert(report.includes('Kembali ke daftar kendaraan'), 'Halaman detail harus punya tombol kembali')
-assert(report.includes('uc-page-footer') && report.includes('Simpan Rekap'), 'Halaman detail harus punya footer simpan')
+assert(report.includes('uc-page-footer') === false && report.includes('Simpan Rekap'), 'Aksi simpan harus di header bagian, tanpa footer yang membeku')
 assert(report.includes('AlkesModal') === false, 'Detail kendaraan tidak boleh dirender sebagai modal lagi')
 assert(report.includes('vehicleLabel={selectedVehicle.plate_display'), 'Mode inspeksi harus tahu nopol kendaraan')
 assert(report.includes('inspectionStatus={toolStatus}'), 'Status rincian unit harus diteruskan')

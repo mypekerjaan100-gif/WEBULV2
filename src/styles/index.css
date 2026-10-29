@@ -11169,6 +11169,10 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .uc-alert { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--surface-subtle); font-size: 12px; line-height: 1.6; }
 .uc-alert--error { color: var(--state-error); border-color: currentColor; }
 .uc-tool-section-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.uc-page-state { display: grid; gap: 2px; justify-items: end; text-align: right; }
+.uc-page-state-note { color: var(--color-text-muted); font-size: 10px; font-weight: 600; line-height: 1.5; }
+.uc-page-state-note.is-dirty { color: var(--warning); }
+.uc-page-state-note.is-busy { color: var(--info); }
 .uc-fill-prompt { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 12px 14px; border: 1px solid var(--color-primary); border-radius: 9px; background: var(--color-surface); }
 .uc-fill-prompt > div:first-child { display: grid; gap: 3px; flex: 1 1 320px; }
 .uc-fill-prompt strong { font-size: 12px; }
@@ -12836,16 +12840,6 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   gap: 14px;
 }
 
-.uc-page-footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 6;
-  padding: 12px 16px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 -8px 18px rgba(16, 24, 40, .08);
-}
-
 @media (max-width: 900px) {
   .uc-vehicle-page { padding: 10px 0 14px; gap: 10px; }
   .uc-page-head { padding: 12px; }
@@ -13377,6 +13371,12 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
     width: 100%;
   }
 
+  .uc-page-state {
+    justify-items: start;
+    text-align: left;
+    flex: 1 1 100%;
+  }
+
   .uc-fill-prompt {
     align-items: stretch;
     flex-direction: column;
@@ -13557,7 +13557,7 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .tool-matrix-wrap {
   max-width: 100%;
-  max-height: 64vh;
+  max-height: clamp(320px, calc(100dvh - 460px), 84vh);
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--color-border);
