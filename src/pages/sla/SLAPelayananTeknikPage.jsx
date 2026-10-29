@@ -1062,7 +1062,6 @@ export default function SLAPelayananTeknikPage({
       <header className="pt-page-header">
         <div>
           <h1 className="page-title">Pelayanan Teknik</h1>
-          <p className="page-description">Kelola pelaporan dan monitoring pekerjaan secara terintegrasi.</p>
         </div>
         <button type="button" className="back-button pt-back-button" onClick={() => { if (canLeaveEditor()) onBack?.() }}>
           <Icon name="arrow-left" size={16} /> Dashboard
