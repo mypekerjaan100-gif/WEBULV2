@@ -67,3 +67,41 @@ export async function getToolEvidenceUrl(path) {
   if (error) throw new Error(error.message || 'Foto bukti gagal dibuka.')
   return data?.signedUrl ?? ''
 }
+
+// Inspeksi kendaraan: riwayat terpisah per kendaraan (slot penugasan),
+// dengan 4 slot foto wajib di bucket ops-vehicle-inspections.
+export async function listVehicleLastInspections({ contractId, up3Id, ulpId }) {
+  const data = await rpc('ops_get_vehicle_last_inspections', {
+    ...scope({ contractId, up3Id }),
+    p_ulp_id: ulpId,
+  })
+  return data ?? []
+}
+
+export async function submitVehicleInspection({ slotId, inspectedAt, condition, note, photoPaths }) {
+  return rpc('ops_submit_vehicle_inspection', {
+    p_slot_id: slotId,
+    p_inspected_at: inspectedAt,
+    p_condition: condition,
+    p_note: note ?? '',
+    p_photo_paths: photoPaths,
+  })
+}
+
+export async function uploadVehicleInspectionPhoto({ contractId, up3Id, ulpId, vehicleId, slotKey, file }) {
+  const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
+  const path = `${contractId}/${up3Id}/${ulpId}/${vehicleId}/${slotKey}-${crypto.randomUUID()}.${extension}`
+  const { error } = await supabase.storage
+    .from('ops-vehicle-inspections')
+    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
+  if (error) throw new Error(error.message || 'Foto inspeksi kendaraan gagal diunggah.')
+  return path
+}
+
+export async function getVehicleInspectionPhotoUrl(path) {
+  const { data, error } = await supabase.storage
+    .from('ops-vehicle-inspections')
+    .createSignedUrl(path, 3600)
+  if (error) throw new Error(error.message || 'Foto inspeksi kendaraan gagal dibuka.')
+  return data?.signedUrl ?? ''
+}

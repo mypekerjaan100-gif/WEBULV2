@@ -22,6 +22,8 @@ const page = read('../pages/sla/SLAPelayananTeknikPage.jsx')
 const app = read('../App.jsx')
 const notifications = read('../data/approvalNotificationRepository.js')
 const previewGuard = read('../lib/previewWriteGuard.js')
+const vehicleMigration = read('../../supabase/migrations/20261029100000_ops_vehicle_inspections.sql')
+const vehicleModal = read('../components/sla/VehicleInspectionModal.jsx')
 
 // --- Fondasi data ---
 for (const table of ['ops_tool_assets', 'ops_tool_inspections', 'ops_tool_issues']) {
@@ -153,5 +155,62 @@ assert(notifications.includes("id: 'alat'") && notifications.includes('listOpenT
 assert(app.includes("item.source === 'alat'"), 'Navigasi notifikasi alat hilang')
 assert(app.includes("setToolIssueTarget"), 'Target issue alat hilang')
 assert(previewGuard.includes('resolve'), 'RPC penyelesaian harus diblokir saat pratinjau')
+
+// --- Inspeksi kendaraan (role K3) ---
+for (const name of ['ops_submit_vehicle_inspection', 'ops_get_vehicle_last_inspections']) {
+  assert(vehicleMigration.includes(`function public.${name}`), `RPC inspeksi kendaraan ${name} hilang`)
+}
+for (const name of [
+  'ops_vehicle_can_read_inspections',
+  'ops_vehicle_can_submit_inspection',
+  'ops_validate_vehicle_photo_paths',
+  'ops_vehicle_inspection_photos_object_valid',
+]) {
+  assert(vehicleMigration.includes(`function public.${name}`), `Helper inspeksi kendaraan ${name} hilang`)
+}
+assert(vehicleMigration.includes('create table if not exists public.ops_vehicle_inspections'), 'Tabel inspeksi kendaraan hilang')
+assert(vehicleMigration.includes("condition text not null check (condition in ('GOOD', 'DAMAGED'))"), 'Kondisi kendaraan harus GOOD/DAMAGED')
+assert(vehicleMigration.includes('note text not null default \'\' check (length(note) <= 2000)'), 'Catatan inspeksi kendaraan hilang')
+assert(vehicleMigration.includes("'ops-vehicle-inspections', 'ops-vehicle-inspections'"), 'Bucket foto inspeksi kendaraan hilang')
+assert(vehicleMigration.includes('ops_vehicle_inspection_select') && vehicleMigration.includes('ops_vehicle_inspection_insert'), 'Policy foto kendaraan hilang')
+assert(vehicleMigration.includes("'alat.inspect'"), 'Inspeksi kendaraan harus memakai izin K3 alat.inspect')
+for (const slot of ['SIDE_RIGHT', 'SIDE_LEFT', 'FRONT', 'REAR']) {
+  assert(vehicleMigration.includes(`'${slot}'`), `Slot foto ${slot} hilang`)
+}
+assert(vehicleMigration.includes('512000'), 'Batas 500 KB per foto harus ditegakkan di server')
+assert(vehicleMigration.includes("o.metadata ->> 'size'"), 'Ukuran foto harus dicek dari metadata penyimpanan')
+assert(vehicleMigration.includes('Vehicle inspections are append-only'), 'Riwayat inspeksi kendaraan harus append-only')
+assert(vehicleMigration.includes("date_trunc('month', (p_inspected_at at time zone 'Asia/Pontianak'))"), 'Periode inspeksi harus mengikuti waktu Pontianak')
+assert(vehicleMigration.includes('s.effective_month <= v_month and (s.end_month is null or v_month < s.end_month)'), 'Kendaraan tidak aktif pada periode inspeksi harus ditolak')
+assert(vehicleMigration.includes('Kondisi kendaraan harus Baik atau Rusak'), 'Validasi kondisi kendaraan hilang')
+assert(vehicleMigration.includes('Waktu inspeksi tidak boleh melewati waktu sekarang'), 'Waktu inspeksi tidak boleh masa depan')
+assert(vehicleMigration.includes('distinct on (slot_id)'), 'Inspeksi terakhir harus satu per kendaraan')
+assert(vehicleMigration.includes('public.profiles p on p.id = v.inspected_by'), 'Nama petugas inspeksi kendaraan harus diisi')
+
+assert(repo.includes("rpc('ops_submit_vehicle_inspection'") && repo.includes("rpc('ops_get_vehicle_last_inspections'"), 'Repository inspeksi kendaraan hilang')
+assert(repo.includes("from('ops-vehicle-inspections')"), 'Unggahan foto kendaraan harus memakai bucket khusus')
+assert(repo.includes('slotKey'), 'Jalur berkas foto harus memuat kunci slot')
+
+assert(evidence.includes('prepareVehicleEvidence'), 'Kompresi foto inspeksi kendaraan hilang')
+assert(evidence.includes('VEHICLE_TARGET_BYTES = 500 * 1024'), 'Target 500 KB foto kendaraan hilang')
+assert(evidence.includes('bawah 500 KB'), 'Pesan batas 500 KB harus jelas')
+
+assert(vehicleModal.includes("key: 'SIDE_RIGHT'") && vehicleModal.includes('Samping kanan'), 'Slot samping kanan hilang')
+assert(vehicleModal.includes("key: 'SIDE_LEFT'") && vehicleModal.includes('Samping kiri'), 'Slot samping kiri hilang')
+assert(vehicleModal.includes("key: 'FRONT'") && vehicleModal.includes('Tampak depan'), 'Slot tampak depan hilang')
+assert(vehicleModal.includes("key: 'REAR'") && vehicleModal.includes('Tampak belakang'), 'Slot tampak belakang hilang')
+assert(vehicleModal.includes('Simpan Inspeksi'), 'Aksi simpan inspeksi kendaraan hilang')
+assert(vehicleModal.includes('prepareVehicleEvidence'), 'Foto wajib dikompresi saat dipilih')
+assert(vehicleModal.includes('datetime-local'), 'Isian tanggal & jam inspeksi hilang')
+assert(vehicleModal.includes('Catatan'), 'Kolom catatan bebas hilang')
+assert(vehicleModal.includes('window.confirm'), 'Menutup form yang masih diisi harus dikonfirmasi')
+assert(vehicleModal.includes('onEditorStateChange'), 'Status dirty/busy modal harus diumumkan')
+
+assert(report.includes('VehicleInspectionModal'), 'Modal inspeksi kendaraan harus dirender di detail kendaraan')
+assert(report.includes('listVehicleLastInspections'), 'Inspeksi terakhir harus dimuat per scope ULP')
+assert(report.includes('Belum diinspeksi'), 'Keterangan belum diinspeksi hilang')
+assert(report.includes('Inspeksi Kendaraan'), 'Tombol inspeksi kendaraan hilang')
+assert(report.includes('camera'), 'Ikon kamera inspeksi hilang')
+assert(report.includes('vehicleInspectionBusy'), 'Status modal inspeksi kendaraan harus digabung ke editor state halaman')
 
 console.log(`toolInspection.test.js: ${passed} assertions passed`)

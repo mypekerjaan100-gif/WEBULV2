@@ -40,6 +40,7 @@ const ICONS = {
   'chevron-down': <><path d="m6 9 6 6 6-6" /></>,
   pencil: <><path d="M21.17 6.81a2.12 2.12 0 0 0-3-3L4.84 17.14a2 2 0 0 0-.5.83L3 22l4.03-1.34a2 2 0 0 0 .83-.5z" /><path d="m15 5 4 4" /></>,
   save: <><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" /><path d="M7 3v4a1 1 0 0 0 1 1h7" /></>,
+  camera: <><path d="M14.5 4h-5L7.2 6.4H4a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8.4a2 2 0 0 0-2-2h-3.2L14.5 4z" /><circle cx="12" cy="13" r="3.4" /></>,
 }
 
 export default function Icon({ name, size = 18, className = '' }) {

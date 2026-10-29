@@ -7,10 +7,11 @@ import {
 import {
   correctPrescribedVehiclePlate, getUlpConditionReport, listUlpConditionOverview, saveUlpVehicleCondition, setPrescribedVehiclePlate,
 } from '../../data/ulpConditionRepository.js'
-import { getToolInspectionBundle } from '../../data/toolInspectionRepository.js'
+import { getToolInspectionBundle, listVehicleLastInspections } from '../../data/toolInspectionRepository.js'
 import Icon from '../Icon.jsx'
 import UlpToolInspectionMatrix from './UlpToolInspectionMatrix.jsx'
 import UlpToolUnitPanel from './UlpToolUnitPanel.jsx'
+import VehicleInspectionModal from './VehicleInspectionModal.jsx'
 
 function Status({ value }) {
   return <span className={`uc-status uc-status--${value || 'unfilled'}`}>{CONDITION_LABELS[value] || 'Belum Diisi'}</span>
@@ -75,6 +76,10 @@ export default function UlpConditionReport({
   const [toolReloadToken, setToolReloadToken] = useState(0)
   const [highlightIssueId, setHighlightIssueId] = useState(null)
   const [panelEditor, setPanelEditor] = useState({ dirty: false, busy: false })
+  const [vehicleInspections, setVehicleInspections] = useState([])
+  const [vehicleInspectionOpen, setVehicleInspectionOpen] = useState(false)
+  const [vehicleInspectionBusy, setVehicleInspectionBusy] = useState({ dirty: false, busy: false })
+  const [vehicleInspectionReloadToken, setVehicleInspectionReloadToken] = useState(0)
   const request = useRef(0)
   const saveLock = useRef(false)
   const discardRef = useRef(null)
@@ -119,6 +124,7 @@ export default function UlpConditionReport({
   const selectedOpenIssues = toolBundle.openIssues.filter((issue) => issue.vehicle_id === selectedVehicleId)
   const focusedToolVehicle = toolBundle.vehicles.find((vehicle) => vehicle.id === focusedToolVehicleId) || null
   const focusedToolHistory = toolBundle.history.filter((entry) => entry.vehicle_id === focusedToolVehicleId)
+  const selectedLastInspection = vehicleInspections.find((row) => row.slot_id === selectedVehicleId) || null
 
   const applyBundle = (data) => {
     const displayItems = applyMonthlyConditionDefaults(data.items || [])
@@ -173,6 +179,18 @@ export default function UlpConditionReport({
   }, [contractUuid, up3Uuid, ulpId, isOverview, toolReloadToken])
 
   useEffect(() => {
+    let active = true
+    if (isOverview || !contractUuid || !up3Uuid || !ulpId) {
+      setVehicleInspections([])
+      return undefined
+    }
+    listVehicleLastInspections({ contractId: contractUuid, up3Id: up3Uuid, ulpId })
+      .then((rows) => { if (active) setVehicleInspections(rows || []) })
+      .catch(() => { if (active) setVehicleInspections([]) })
+    return () => { active = false }
+  }, [contractUuid, up3Uuid, ulpId, isOverview, vehicleInspectionReloadToken])
+
+  useEffect(() => {
     if (!bundle || !highlightIssueId) return
     const issue = toolBundle.openIssues.find((row) => String(row.id) === String(highlightIssueId))
     if (!issue) return
@@ -186,9 +204,12 @@ export default function UlpConditionReport({
   }, [bundle, toolBundle.openIssues, highlightIssueId])
 
   useEffect(() => {
-    onEditorStateChange?.({ dirty: dirty || panelEditor.dirty, busy: saving || panelEditor.busy })
+    onEditorStateChange?.({
+      dirty: dirty || panelEditor.dirty || vehicleInspectionBusy.dirty,
+      busy: saving || panelEditor.busy || vehicleInspectionBusy.busy,
+    })
     return () => onEditorStateChange?.({ dirty: false, busy: false })
-  }, [dirty, saving, panelEditor, onEditorStateChange])
+  }, [dirty, saving, panelEditor, vehicleInspectionBusy, onEditorStateChange])
 
   useEffect(() => {
     let active = true
@@ -207,6 +228,8 @@ export default function UlpConditionReport({
     setPlateEdit(null)
     setModalError('')
     setModalMessage('')
+    setVehicleInspectionOpen(false)
+    setVehicleInspectionBusy({ dirty: false, busy: false })
     if (!contractUuid || !up3Uuid) {
       setError('Scope ULP belum tersedia. Muat ulang halaman atau hubungi administrator.')
       setLoading(false)
@@ -237,11 +260,11 @@ export default function UlpConditionReport({
   }, [canPickUlp, contractUuid, overviewEnabled, up3Uuid, ulpId, month, isOverview, reloadToken])
 
   useEffect(() => {
-    if (!dirty && !saving && !panelEditor.dirty && !panelEditor.busy) return undefined
+    if (!dirty && !saving && !panelEditor.dirty && !panelEditor.busy && !vehicleInspectionBusy.dirty && !vehicleInspectionBusy.busy) return undefined
     const handler = (event) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty, saving, panelEditor])
+  }, [dirty, saving, panelEditor, vehicleInspectionBusy])
 
   useEffect(() => {
     if (!discardPrompt) return
@@ -464,6 +487,14 @@ export default function UlpConditionReport({
     }
   }
 
+  const handleVehicleInspectionSaved = () => {
+    setVehicleInspectionOpen(false)
+    setVehicleInspectionBusy({ dirty: false, busy: false })
+    setVehicleInspectionReloadToken((value) => value + 1)
+    setModalError('')
+    setModalMessage('Inspeksi kendaraan tersimpan sebagai riwayat inspeksi.')
+  }
+
   const cards = grouped.map(({ vehicle }) => {
     const vehicleSummary = summarizeVehicle(vehicle, shownItems)
     const missing = vehicleSummary.unfilled + vehicleSummary.invalid
@@ -533,6 +564,23 @@ export default function UlpConditionReport({
                   ))}
                 </div>
               ) : <Status value={evaluateCondition(selectedCondition).status} />}
+              <span className="uc-vehicle-inspection-hint">
+                <Icon name="camera" size={12} />
+                {selectedLastInspection
+                  ? `Inspeksi terakhir ${timestamp(selectedLastInspection.inspected_at)} · ${selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · ${selectedLastInspection.inspected_by_name || 'Petugas'}`
+                  : 'Belum diinspeksi'}
+              </span>
+              {canInspect && !future && !historical && (
+                <button
+                  type="button"
+                  className="sla-btn uc-vehicle-inspect-btn"
+                  disabled={saving}
+                  onClick={() => { setModalError(''); setModalMessage(''); setVehicleInspectionOpen(true) }}
+                >
+                  <Icon name="camera" size={14} />
+                  Inspeksi Kendaraan
+                </button>
+              )}
             </div>
           ) : <p className="uc-assignment-empty">Data kondisi kendaraan tidak tersedia pada laporan ini.</p>}
           <details className="uc-vehicle-ref" open={plateEdit ? true : undefined}>
@@ -684,6 +732,17 @@ export default function UlpConditionReport({
             </div>
           )}
         </div>
+        {vehicleInspectionOpen && selectedVehicle && (
+          <VehicleInspectionModal
+            contractUuid={contractUuid}
+            up3Uuid={up3Uuid}
+            ulpId={ulpId}
+            vehicle={selectedVehicle}
+            onClose={() => setVehicleInspectionOpen(false)}
+            onSaved={handleVehicleInspectionSaved}
+            onEditorStateChange={setVehicleInspectionBusy}
+          />
+        )}
       </div>
     ) : loading ? <div className="uc-empty" role="status">Memuat penetapan dan laporan kendaraan...</div> : isOverview ? <div className="uc-overview">
       <div className="uc-section-title"><h3>Ringkasan {conditionMonthLabel(month)}</h3><span>{overview.length} ULP</span></div>
