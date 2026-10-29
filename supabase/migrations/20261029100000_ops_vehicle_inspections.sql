@@ -11,6 +11,7 @@ create or replace function public.ops_vehicle_inspection_photos_object_valid(p_p
 returns boolean
 language plpgsql
 immutable
+set search_path to 'public', 'pg_temp'
 as $$
 declare
   v_keys constant text[] := array['SIDE_RIGHT', 'SIDE_LEFT', 'FRONT', 'REAR'];
@@ -290,3 +291,22 @@ begin
   return v_result;
 end;
 $$;
+
+-- RPC/gate helper hanya untuk user masuk; anon tidak boleh memanggil langsung,
+-- mengikuti proteksi RPC inspeksi alat. Cabut juga grant default PUBLIC
+-- (mas-if-nya `from anon` saja tidak cukup) lalu beri grant eksplisit.
+revoke execute on function public.ops_vehicle_can_read_inspections(uuid, uuid, uuid) from public, anon;
+revoke execute on function public.ops_vehicle_can_submit_inspection(uuid, uuid, uuid) from public, anon;
+revoke execute on function public.ops_vehicle_can_read_evidence_object(text) from public, anon;
+revoke execute on function public.ops_vehicle_can_upload_evidence_object(text) from public, anon;
+revoke execute on function public.ops_validate_vehicle_photo_paths(uuid, uuid, uuid, uuid, jsonb) from public, anon;
+revoke execute on function public.ops_submit_vehicle_inspection(uuid, timestamptz, text, text, jsonb) from public, anon;
+revoke execute on function public.ops_get_vehicle_last_inspections(uuid, uuid, uuid) from public, anon;
+
+grant execute on function public.ops_vehicle_can_read_inspections(uuid, uuid, uuid) to authenticated, service_role;
+grant execute on function public.ops_vehicle_can_submit_inspection(uuid, uuid, uuid) to authenticated, service_role;
+grant execute on function public.ops_vehicle_can_read_evidence_object(text) to authenticated, service_role;
+grant execute on function public.ops_vehicle_can_upload_evidence_object(text) to authenticated, service_role;
+grant execute on function public.ops_validate_vehicle_photo_paths(uuid, uuid, uuid, uuid, jsonb) to authenticated, service_role;
+grant execute on function public.ops_submit_vehicle_inspection(uuid, timestamptz, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.ops_get_vehicle_last_inspections(uuid, uuid, uuid) to authenticated, service_role;
