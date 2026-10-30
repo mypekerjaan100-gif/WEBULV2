@@ -278,7 +278,8 @@ summary:focus-visible {
 .sidebar-logo-frame {
   width: 148px;
   height: 73px;
-  display: block;
+  display: flex;
+  align-items: center;
   overflow: visible;
   flex: 0 0 auto;
 }
@@ -287,6 +288,7 @@ summary:focus-visible {
   width: 148px;
   height: auto;
   display: block;
+  flex-shrink: 0;
   object-fit: contain;
 }
 
@@ -331,9 +333,9 @@ summary:focus-visible {
   overflow: hidden;
 }
 .app-shell.sidebar-collapsed .sidebar-logo {
-  width: 128px;
+  width: auto;
+  height: 32px;
   max-width: none;
-  transform: translate(-6px, -15px);
 }
 .app-shell.sidebar-collapsed .sidebar-collapse-btn {
   top: auto;
@@ -4687,6 +4689,7 @@ summary:focus-visible {
 
   .app-shell.sidebar-collapsed .sidebar-logo {
     width: 148px;
+    height: auto;
     transform: none;
   }
 

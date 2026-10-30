@@ -92,7 +92,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
     <aside className={`sidebar ${open ? 'sidebar-open' : ''} ${collapsed ? 'is-collapsed' : ''}`}>
       <div className="sidebar-brand">
         <span className="sidebar-logo-frame">
-          <img src="/logo-pln-nusa-daya.png" alt="PLN Nusa Daya" className="sidebar-logo" />
+          <img src="/plns%20PNG.png" alt="PLN Services" className="sidebar-logo" />
         </span>
         <button type="button" className="sidebar-collapse-btn" onClick={onToggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
           <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} size={16} />
