@@ -80,10 +80,10 @@ export default function SLAIndicatorTable({
     />
   )
 
-  const autoCell = (value) => (
+  const autoCell = (value, incomplete = false) => (
     <div className="sla-auto-cell">
       <span>{formatValue(value)}</span>
-      <span className="sla-badge sla-badge-variable-cost">Otomatis</span>
+      <span className="sla-badge sla-badge-variable-cost">{incomplete ? 'Belum lengkap' : 'Otomatis'}</span>
     </div>
   )
 
@@ -127,7 +127,7 @@ export default function SLAIndicatorTable({
       return numInput(value, false, (next) => updateEntry(indicator.id, field, next))
     }
     if (isVc) {
-      return autoCell(value)
+      return autoCell(value, entryOf(indicator.id).incomplete)
     }
     return <span className="sla-readonly">{formatValue(value)}</span>
   }

@@ -45,7 +45,8 @@ import {
   slaSignatureGroups,
   variableCostPoints,
 } from '../../data/slaPelayananTeknik.js'
-import { listRejectedEntries, setManualSlaTarget } from '../../data/variableCostRepository.js'
+import { setManualSlaTarget } from '../../data/variableCostRepository.js'
+import { aggregateLinkedSlaValues } from '../../data/variableMonthlyActuals.js'
 import {
   fetchSlaEntries,
   fetchSlaIndicators,
@@ -168,7 +169,6 @@ export default function SLAPelayananTeknikPage({
   managementScopes = [],
   selectedManagementScopeKey = '',
   onManagementScopeChange,
-  approvalNotifications = { count: 0, groups: [] },
   approvalTarget = null,
   onApprovalTargetHandled,
   onApprovalChange,
@@ -176,7 +176,6 @@ export default function SLAPelayananTeknikPage({
   initialPeriode = null,
   routeRequest = null,
   onRouteChange = null,
-  onSlaVariableRejectedChange,
   customMenuAccess = null,
   viewAsRoleCode = null,
   viewAsLabel = '',
@@ -209,13 +208,13 @@ export default function SLAPelayananTeknikPage({
   const [orgMapStatus, setOrgMapStatus] = useState('loading')
   const [orgMapError, setOrgMapError] = useState('')
   const [variableSlaTargets, setVariableSlaTargets] = useState({})
-  const [variableRejectedCount, setVariableRejectedCount] = useState(0)
   const [slaManualSaveMessage, setSlaManualSaveMessage] = useState('')
   const [slaManualSaveError, setSlaManualSaveError] = useState('')
   const [slaManualSaving, setSlaManualSaving] = useState(false)
   const [slaLoadStatus, setSlaLoadStatus] = useState('loading')
   const [slaLoadError, setSlaLoadError] = useState('')
   const [slaReloadToken, setSlaReloadToken] = useState(0)
+  const handleVariableSaved = useCallback(() => setSlaReloadToken((value) => value + 1), [])
   const [databaseIndicators, setDatabaseIndicators] = useState([])
   const [savedEntriesByUnit, setSavedEntriesByUnit] = useState({})
   const [savedTargets, setSavedTargets] = useState({})
@@ -263,13 +262,12 @@ export default function SLAPelayananTeknikPage({
   const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp || isManagement || customCanRead('alat_kendaraan')
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
-  const approvalCounts = Object.fromEntries((approvalNotifications.groups ?? []).map((group) => [group.id, group.count]))
   const moduleEditorState = useRef({ dirty: false, busy: false })
   const handleEditorStateChange = useCallback((state) => { moduleEditorState.current = state }, [])
   const canLeaveEditor = () => {
     const { dirty, busy } = moduleEditorState.current
     if (busy) return false
-    return !dirty || window.confirm('Perubahan Alat & Kendaraan belum disimpan. Tinggalkan form?')
+    return !dirty || window.confirm('Perubahan belum disimpan. Tinggalkan form?')
   }
   const selectModule = (nextModule) => {
     if (nextModule === moduleId) return true
@@ -288,8 +286,6 @@ export default function SLAPelayananTeknikPage({
       if (!selectModule('lembur')) return
       const targetPeriod = slaPeriods.find((label) => periodKeyFromLabel(label) === approvalTarget.periodMonth) ?? periodLabelFromMonth(approvalTarget.periodMonth)
       if (targetPeriod) setPeriod(targetPeriod)
-    } else if (approvalTarget.source === 'variable' || approvalTarget.source === 'feeder') {
-      selectModule('variable-cost')
     }
   }, [canManageUp3Operations, approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -507,20 +503,6 @@ export default function SLAPelayananTeknikPage({
   const selectedUnit = units.find((unit) => unit.id === effectiveUnitId)
   const isUp3View = effectiveUnitId === up3Id
 
-  useEffect(() => {
-    if (!isAdminUlp || !orgMap?.contractUuid || !orgMap?.up3Uuid || !selectedUnitUuid) { setVariableRejectedCount(0); return }
-    let cancelled = false
-    listRejectedEntries({ contractId: orgMap.contractUuid, up3Id: orgMap.up3Uuid, unitId: selectedUnitUuid })
-      .then((rows) => { if (!cancelled) setVariableRejectedCount((rows ?? []).length) })
-      .catch(() => { if (!cancelled) setVariableRejectedCount(0) })
-    return () => { cancelled = true }
-  }, [isAdminUlp, orgMap?.contractUuid, orgMap?.up3Uuid, selectedUnitUuid])
-
-  useEffect(() => {
-    onSlaVariableRejectedChange?.(variableRejectedCount)
-  }, [variableRejectedCount, onSlaVariableRejectedChange])
-
-  useEffect(() => () => onSlaVariableRejectedChange?.(0), [onSlaVariableRejectedChange])
   const masterLocationUnits = (orgMap?.units ?? []).map((unit) => ({
     id: unit.uuid,
     type: unit.type,
@@ -661,11 +643,19 @@ export default function SLAPelayananTeknikPage({
           nextTargets[indicatorId] = target
         })
         const nextVariableTargets = {}
+        const activeUlpOrgUnits = ulpOrgUnits.filter((unit) => unit.status === 'Aktif')
         indicatorRows.forEach((row) => {
           if (!variableCostPoints.has(row.point_code) || row.input_mode !== 'VARIABLE_COST') return
           const indicatorTarget = nextTargets[row.legacy_key] ?? { up3: null, ulp: null, ulpTargets: {} }
-          const values = ulpOrgUnits.map((unit) => indicatorTarget.ulpTargets[unit.legacyKey ?? unit.uuid]).filter((value) => value != null)
+          const values = activeUlpOrgUnits.map((unit) => indicatorTarget.ulpTargets[unit.legacyKey ?? unit.uuid]).filter((value) => value != null)
           indicatorTarget.up3 = values.length ? values.reduce((sum, value) => sum + Number(value), 0) : null
+          consolidated[row.legacy_key] = {
+            unit: row.measurement_unit,
+            ...aggregateLinkedSlaValues(
+              activeUlpOrgUnits.map((unit) => nextEntries[unit.legacyKey ?? unit.uuid]?.[row.legacy_key]),
+              values.length === activeUlpOrgUnits.length ? indicatorTarget.up3 : null,
+            ),
+          }
           nextTargets[row.legacy_key] = indicatorTarget
           nextVariableTargets[row.point_code] = isUp3View
             ? indicatorTarget.up3
@@ -1383,12 +1373,9 @@ export default function SLAPelayananTeknikPage({
             orgMap={orgMap}
             role={role}
             unitId={effectiveUnitId}
-            up3Id={up3Id}
-            onRejectedCountChange={setVariableRejectedCount}
-            approvalCounts={approvalCounts}
-            approvalTarget={canManageUp3Operations ? approvalTarget : null}
-            onApprovalTargetHandled={onApprovalTargetHandled}
-            onApprovalChange={onApprovalChange}
+            canInputMonthly={isAdminUlp && !previewActive}
+            onEditorStateChange={handleEditorStateChange}
+            onSaved={handleVariableSaved}
             isManagementReadOnly={(isManagement && !canManageUp3Operations) || (isCustomRole && !customCanEdit('variable_cost'))}
             canManageKonstruksiMonthly={canManageUp3Operations}
             canViewVariableFinancial={canManageUp3Operations}

@@ -74,7 +74,6 @@ export default function App() {
   // Permintaan sinkronisasi rute dari URL (refresh / Back-Forward).
   const [slaRouteRequest, setSlaRouteRequest] = useState(null)
   const [slaActiveModule, setSlaActiveModule] = useState('sla')
-  const [slaVariableRejected, setSlaVariableRejected] = useState(0)
   const [finRouteRequest, setFinRouteRequest] = useState(null)
   const [viewAsRoleCode, setViewAsRoleCode] = useState(null)
   const [customRoleList, setCustomRoleList] = useState([])
@@ -463,7 +462,6 @@ export default function App() {
     setCurrentPage(null)
     setSlaRouteRequest(null)
     setSlaActiveModule('sla')
-    setSlaVariableRejected(0)
     setFinRouteRequest(null)
     setToolIssueTarget(null)
     writeRouteHash({ segments: contractId ? [contractId] : [], periode: null }, { push: true })
@@ -484,7 +482,6 @@ export default function App() {
     setCurrentPage(pageId)
     setActiveContractId(null)
     setSlaActiveModule('sla')
-    setSlaVariableRejected(0)
     setToolIssueTarget(null)
     if (pageId !== 'analisis-finansial') setFinRouteRequest(null)
     setSlaRouteRequest(null)
@@ -600,7 +597,6 @@ export default function App() {
     (visibleApprovalNotifications?.groups ?? []).map((group) => [group.id, group.count]),
   )
   const slaModuleBadges = {
-    'variable-cost': (slaApprovalCounts.variable ?? 0) + slaVariableRejected,
     lembur: slaApprovalCounts.lembur ?? 0,
   }
 
@@ -682,7 +678,6 @@ export default function App() {
               managementScopes={managementScopes}
               selectedManagementScopeKey={selectedManagementScope?.key ?? ''}
               onManagementScopeChange={setSelectedManagementScopeKey}
-              approvalNotifications={visibleApprovalNotifications ?? EMPTY_APPROVAL_NOTIFICATIONS}
               approvalTarget={approvalTarget}
               onApprovalTargetHandled={() => setApprovalTarget(null)}
               onApprovalChange={refreshApprovalNotifications}
@@ -693,7 +688,6 @@ export default function App() {
               viewAsRoleCode={previewActive ? viewAsRoleCode : null}
               viewAsLabel={previewLabel}
               toolIssueTarget={toolIssueTarget}
-              onSlaVariableRejectedChange={setSlaVariableRejected}
               onRouteChange={({ module, periode }) => {
                 setSlaActiveModule(module ?? 'sla')
                 writeRouteHash(

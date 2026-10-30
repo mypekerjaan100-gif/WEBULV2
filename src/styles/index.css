@@ -7779,6 +7779,53 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   min-width: 700px;
 }
 
+.vc-monthly-input {
+  width: 138px;
+  min-width: 110px;
+}
+
+.vc-monthly-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  white-space: normal;
+}
+
+.vc-monthly-save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 12px 0;
+}
+
+.vc-monthly-summary {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  max-width: 580px;
+}
+
+.vc-monthly-summary h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.vc-monthly-summary dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+}
+
+.vc-monthly-summary dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+}
+
 .vc-rekap-table {
   min-width: 900px;
 }
@@ -7800,11 +7847,6 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   transition: background-color 0.12s;
 }
 
-/* ---------- VC sheet sync (manual refresh, professional status) ---------- */
-.vc-sheet-bar {
-  align-items: center;
-}
-
 .vc-unit-static {
   min-height: 36px;
   display: inline-flex;
@@ -7812,53 +7854,6 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   color: var(--color-text);
   font-size: 13px;
   font-weight: 600;
-}
-
-.vc-sync-zone {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.vc-sync-status {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-}
-
-.vc-refresh-btn {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: 9px;
-  background: var(--color-surface);
-  color: var(--pln-blue);
-  cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
-}
-
-.vc-refresh-btn:hover:not(:disabled) {
-  border-color: var(--pln-blue);
-  background: var(--pln-blue-soft, #eef6fc);
-}
-
-.vc-refresh-btn:active:not(:disabled) {
-  transform: scale(0.94);
-}
-
-.vc-refresh-btn:disabled {
-  cursor: wait;
-  opacity: 0.7;
-}
-
-.vc-refresh-btn:focus-visible {
-  outline: 2px solid var(--pln-blue);
-  outline-offset: 2px;
 }
 
 /* ---------- VC skeleton shimmer ---------- */
@@ -7876,24 +7871,6 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 @keyframes vc-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-
-.vc-detail-period {
-  margin: 0 0 12px;
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-
-.vc-detail-loading {
-  padding: 12px 0 4px;
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  color: var(--color-text);
-}
-
-.vc-detail-loading > strong {
-  font-size: 14px;
 }
 
 .vc-skeleton-table {

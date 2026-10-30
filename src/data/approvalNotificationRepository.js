@@ -1,6 +1,4 @@
-import { variableCostIndicators } from './slaPelayananTeknik.js'
 import { listOvertimeReplacements, listOvertimeWork } from './overtimeReplacementRepository.js'
-import { getShortLabel, listFeeders, listSubmittedEntries } from './variableCostRepository.js'
 import { listOpenToolIssues } from './toolInspectionRepository.js'
 
 const NOTIFICATION_SOURCE_TIMEOUT_MS = 10000
@@ -23,25 +21,6 @@ function activityName(row) {
 }
 
 const APPROVAL_SOURCES = [
-  {
-    id: 'variable',
-    label: 'Variable Cost',
-    load: async ({ contractId, up3Id, units }) => {
-      const rows = await listSubmittedEntries({ contractId, up3Id })
-      return rows.map((row) => {
-        const indicator = row.sla_indicators ?? variableCostIndicators.find((item) => item.id === row.indicator_id)
-        return {
-          id: row.id,
-          source: 'variable',
-          unitId: row.unit_id,
-          unitName: unitName(units, row.unit_id),
-          title: getShortLabel(indicator),
-          date: row.work_date?.slice(0, 10) ?? null,
-          sortAt: row.created_at ?? row.work_date,
-        }
-      })
-    },
-  },
   {
     id: 'lembur',
     label: 'Lembur',
@@ -86,22 +65,6 @@ const APPROVAL_SOURCES = [
         })
       }
       return items
-    },
-  },
-  {
-    id: 'feeder',
-    label: 'Master Penyulang',
-    load: async ({ contractId, up3Id, units }) => {
-      const rows = await listFeeders({ contractId, up3Id })
-      return rows.filter((row) => row.status === 'PENDING').map((row) => ({
-        id: row.id,
-        source: 'feeder',
-        unitId: row.unit_id,
-        unitName: unitName(units, row.unit_id),
-        title: row.name,
-        date: row.proposed_at?.slice(0, 10) ?? null,
-        sortAt: row.proposed_at,
-      }))
     },
   },
   {

@@ -489,6 +489,41 @@ export async function listVariableActualRevenue({ contractId, up3Id, periodMonth
   })
 }
 
+export async function listVariableMonthlyActuals({ contractId, up3Id, periodMonth, unitId }) {
+  return rpc('list_variable_monthly_actuals', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_period_month: periodMonth,
+    p_unit_id: unitId ?? null,
+  }, 'VARIABLE_MONTHLY_READ')
+}
+
+export async function saveVariableMonthlyActuals({ contractId, up3Id, unitId, versionId, periodMonth, values }) {
+  return rpc('save_variable_monthly_actuals', {
+    p_contract_id: contractId,
+    p_up3_id: up3Id,
+    p_unit_id: unitId,
+    p_sla_version_id: versionId,
+    p_period_month: periodMonth,
+    p_values: values.map((value) => ({
+      indicator_code: value.indicatorCode,
+      work_order: value.workOrder,
+      realization: value.realization,
+      expected_revision: value.expectedRevision,
+    })),
+  }, 'VARIABLE_MONTHLY_SAVE')
+}
+
+export async function listVariableMonthlyHistory({ contractId, up3Id, unitId, periodMonth, indicatorCode }) {
+  const { data, error } = await supabase.from('variable_cost_monthly_history')
+    .select('id,old_work_order,new_work_order,old_realization,new_realization,revision,changed_at,changed_by')
+    .eq('contract_id', contractId).eq('up3_id', up3Id).eq('unit_id', unitId)
+    .eq('period_month', periodMonth).eq('indicator_code', indicatorCode)
+    .order('revision', { ascending: false }).limit(100)
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
 export async function listVariableRevenueTargets({ contractId, up3Id, periodMonth, unitId }) {
   return rpc('list_variable_revenue_targets', {
     p_contract_id: contractId,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchIndicators, getFinancialComparisonDashboard, getFinancialComparisonTrend, listVariableUnitPrices, periodLabelToMonth } from '../../data/variableCostRepository.js'
-import { fetchSpreadsheetSummary, realizationForUnit, SPREADSHEET_INDICATOR_CODES } from '../../data/spreadsheetVariableCost.js'
+import { getFinancialComparisonDashboard, getFinancialComparisonTrend, periodLabelToMonth } from '../../data/variableCostRepository.js'
+import { selectedMonthlyFinancialTotals as selectedTotals } from '../../data/variableMonthlyActuals.js'
 import { variableCostIndicators, slaPeriods } from '../../data/slaPelayananTeknik.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { REPLACEMENT_TYPES } from '../../data/overtimeReplacementL2.js'
@@ -9,35 +9,10 @@ import { Alert, DataTable, Button } from '../ui/Primitives.jsx'
 
 const ALL_UNITS = 'ALL'
 
-// 3.1a tidak ditagihkan, jadi tidak direkonsiliasi sebagai pendapatan.
-const SPREADSHEET_BILLABLE_CODES = SPREADSHEET_INDICATOR_CODES.filter((code) => code !== '3.1a')
-
-// Akhir periode YYYY-MM-01 -> YYYY-MM-DD hari terakhir (sama dengan Rekap).
-function periodEndOf(periodMonth) {
-  const match = String(periodMonth ?? '').match(/^(\d{4})-(0[1-9]|1[0-2])-01$/)
-  if (!match) return periodMonth
-  const end = new Date(Number(match[1]), Number(match[2]), 0)
-  return `${match[1]}-${match[2]}-${String(end.getDate()).padStart(2, '0')}`
-}
-
-// Daftar bulan tren (YYYY-MM-01) mundur dari bulan terpilih.
-function trendMonthList(endPeriodMonth, monthCount) {
-  const match = String(endPeriodMonth ?? '').match(/^(\d{4})-(0[1-9]|1[0-2])-01$/)
-  if (!match) return []
-  const months = []
-  const d = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1))
-  d.setUTCMonth(d.getUTCMonth() - (monthCount - 1))
-  for (let i = 0; i < monthCount; i++) {
-    months.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`)
-    d.setUTCMonth(d.getUTCMonth() + 1)
-  }
-  return months
-}
-
 function SnapshotSkeleton() {
   return (
     <div className="fin-ref-loading" aria-busy="true">
-      <p className="fin-ref-loading-status" role="status">Menyiapkan Dashboard Finansial… Memuat pendapatan, biaya, harga satuan, dan realisasi spreadsheet.</p>
+      <p className="fin-ref-loading-status" role="status">Menyiapkan Dashboard Finansial… Memuat pendapatan bulanan dan biaya.</p>
       <div className="fin-ref-kpis" aria-hidden="true">
         {[0, 1, 2, 3].map((item) => (
           <div key={item} className="fin-ref-kpi"><span className="vc-skeleton" style={{ width: '55%', height: 12 }} /><span className="vc-skeleton" style={{ width: '70%', height: 26 }} /><span className="vc-skeleton" style={{ width: '60%', height: 12 }} /></div>
@@ -106,38 +81,6 @@ function formatCompactRp(value) {
   return `Rp ${amount.toLocaleString('id-ID', { notation: 'compact', maximumFractionDigits: 1 })}`
 }
 
-function selectedTotals(snapshot, revenueCodes, costCodes, revenueOverrides = null) {
-  const revenueByCode = new Map((snapshot?.revenue_eligible_components ?? snapshot?.revenue_components ?? []).map((row) => [row.indicator_code, row]))
-  const costByCode = new Map((snapshot?.cost_components ?? []).map((row) => [row.cost_code, Number(row.amount ?? 0)]))
-  let revenue = 0
-  let revenueMissingPrice = 0
-  let revenueSheetMissing = 0
-  for (const code of revenueCodes) {
-    if (revenueOverrides && Object.prototype.hasOwnProperty.call(revenueOverrides, code)) {
-      const override = revenueOverrides[code]
-      revenue += Number(override.amount ?? 0)
-      revenueMissingPrice += Number(override.missingPrice ?? 0)
-      revenueSheetMissing += Number(override.sheetMissing ?? 0)
-    } else {
-      const row = revenueByCode.get(code)
-      // Kode tanpa baris server = realisasi nol yang terverifikasi (tidak ada transaksi APPROVED).
-      revenue += Number(row?.amount ?? 0)
-      revenueMissingPrice += Number(row?.missing_price_count ?? 0)
-    }
-  }
-  const cost = costCodes.reduce((sum, code) => sum + (costByCode.get(code) ?? 0), 0)
-  const complete = revenueMissingPrice === 0 && revenueSheetMissing === 0
-  return {
-    revenue,
-    cost,
-    margin: complete ? revenue - cost : null,
-    ratio: complete && revenue > 0 ? (cost / revenue) * 100 : null,
-    revenueMissingPrice,
-    revenueSheetMissing,
-    complete,
-  }
-}
-
 function formatTrendMonth(value) {
   if (!value) return '-'
   return new Date(`${String(value).slice(0, 10)}T00:00:00Z`).toLocaleDateString('id-ID', {
@@ -160,22 +103,10 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const [trendError, setTrendError] = useState('')
   const [revenuePickerOpen, setRevenuePickerOpen] = useState(false)
   const [costPickerOpen, setCostPickerOpen] = useState(false)
-  // Rekonsiliasi spreadsheet untuk bulan terpilih (sama dengan Rekap).
-  const [sheetSummaries, setSheetSummaries] = useState({})
-  const [sheetErrors, setSheetErrors] = useState({})
-  const [reconLoading, setReconLoading] = useState(true)
-  const [unitPrices, setUnitPrices] = useState([])
-  const [unitPriceError, setUnitPriceError] = useState('')
-  const [indicatorIdByCode, setIndicatorIdByCode] = useState(new Map())
   const [loadedSnapKey, setLoadedSnapKey] = useState('')
   const [loadedTrendKey, setLoadedTrendKey] = useState('')
-  // Rekonsiliasi spreadsheet per bulan tren: { [YYYY-MM-01]: { summaries, errors, prices, priceError } }.
-  const [trendRecon, setTrendRecon] = useState({})
-  const [trendReconLoading, setTrendReconLoading] = useState(true)
   const snapRequestId = useRef(0)
   const trendRequestId = useRef(0)
-  const reconRequestId = useRef(0)
-  const trendReconRequestId = useRef(0)
   const periodMonth = periodLabelToMonth(period)
   const pContract = orgMap?.contractUuid ?? null
   const pUp3 = orgMap?.up3Uuid ?? null
@@ -183,7 +114,6 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const prevScopeKey = useRef(scopeKey)
   const snapKey = `${pContract ?? ''}::${pUp3 ?? ''}::${periodMonth ?? ''}::${unitId}`
   const trendKey = `${snapKey}::${monthCount}`
-  const unitNames = useMemo(() => new Map((units ?? []).map((u) => [u.uuid ?? u.id, u.displayName ?? u.name])), [units])
 
   // Reset filter ULP saat scope kontrak/UP3 berubah.
   useEffect(() => {
@@ -226,41 +156,6 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
     return () => { cancelled = true }
   }, [pContract, pUp3, periodMonth, unitId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Harga akhir periode + realisasi spreadsheet + pemetaan indikator untuk rekonsiliasi.
-  useEffect(() => {
-    const cur = ++reconRequestId.current
-    if (!pContract || !pUp3 || !periodMonth) return () => { }
-    setReconLoading(true)
-    setSheetErrors({})
-    setUnitPriceError('')
-    let cancelled = false
-    const pricePromise = listVariableUnitPrices({ contractId: pContract, up3Id: pUp3, asOf: periodEndOf(periodMonth) })
-      .then((rows) => ({ rows: rows ?? [], error: '' }))
-      .catch((err) => ({ rows: [], error: err?.message || 'Gagal memuat harga satuan.' }))
-    const indicatorPromise = fetchIndicators({ contractId: pContract, up3Id: pUp3 })
-      .then((rows) => ({ rows: rows ?? [], error: '' }))
-      .catch(() => ({ rows: [], error: '' }))
-    const sheetPromises = SPREADSHEET_BILLABLE_CODES.map((code) => fetchSpreadsheetSummary({ indicator: code, period: periodMonth })
-      .then((summary) => ({ code, summary, error: '' }))
-      .catch((err) => ({ code, summary: null, error: err?.message || 'Data spreadsheet gagal dimuat.' })))
-    Promise.all([pricePromise, indicatorPromise, ...sheetPromises]).then(([priceResult, indicatorResult, ...results]) => {
-      if (cancelled || cur !== reconRequestId.current) return
-      setUnitPrices(priceResult.rows ?? [])
-      setUnitPriceError(priceResult.error ?? '')
-      setIndicatorIdByCode(new Map((indicatorResult.rows ?? []).map((row) => [row.point_code, row.id])))
-      const nextSummaries = {}
-      const nextErrors = {}
-      for (const item of results) {
-        if (item.summary) nextSummaries[item.code] = item.summary
-        if (item.error && !item.summary) nextErrors[item.code] = item.error
-      }
-      setSheetSummaries(nextSummaries)
-      setSheetErrors(nextErrors)
-      setReconLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [pContract, pUp3, periodMonth])
-
   // Tren historis (independen dari snapshot).
   useEffect(() => {
     const cur = ++trendRequestId.current
@@ -284,110 +179,22 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
     return () => { cancelled = true }
   }, [pContract, pUp3, periodMonth, unitId, monthCount]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Harga akhir masing-masing bulan + realisasi spreadsheet per bulan tren.
-  // Bulan yang gagal dimuat ditandai belum lengkap, bukan nol.
-  useEffect(() => {
-    const cur = ++trendReconRequestId.current
-    if (!pContract || !pUp3 || !periodMonth) return () => { }
-    const months = trendMonthList(periodMonth, monthCount)
-    if (!months.length) return () => { }
-    setTrendReconLoading(true)
-    let cancelled = false
-    const perMonth = months.map((m) => {
-      const pricePromise = listVariableUnitPrices({ contractId: pContract, up3Id: pUp3, asOf: periodEndOf(m) })
-        .then((rows) => ({ rows: rows ?? [], error: '' }))
-        .catch((err) => ({ rows: [], error: err?.message || 'Gagal memuat harga satuan.' }))
-      const sheetPromises = SPREADSHEET_BILLABLE_CODES.map((code) => fetchSpreadsheetSummary({ indicator: code, period: m })
-        .then((summary) => ({ code, summary, error: '' }))
-        .catch((err) => ({ code, summary: null, error: err?.message || 'Data spreadsheet gagal dimuat.' })))
-      return Promise.all([pricePromise, ...sheetPromises]).then(([priceResult, ...results]) => {
-        const summaries = {}
-        const errors = {}
-        for (const item of results) {
-          if (item.summary) summaries[item.code] = item.summary
-          if (item.error && !item.summary) errors[item.code] = item.error
-        }
-        return { month: m, summaries, errors, prices: priceResult.rows ?? [], priceError: priceResult.error ?? '' }
-      })
-    })
-    Promise.all(perMonth).then((all) => {
-      if (cancelled || cur !== trendReconRequestId.current) return
-      const next = {}
-      for (const item of all) next[item.month] = item
-      setTrendRecon(next)
-      setTrendReconLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [pContract, pUp3, periodMonth, monthCount])
-
-  // Override pendapatan spreadsheet untuk bulan terpilih: realisasi × harga akhir bulan.
-  const revenueOverrides = useMemo(() => {
-    const overrides = {}
-    if (!pContract || !pUp3 || !periodMonth) return overrides
-    const priceByIndicatorId = new Map((unitPrices ?? []).map((row) => [row.indicator_id, Number(row.unit_price)]))
-    const scopedUnitName = unitId === ALL_UNITS ? null : unitNames.get(unitId)
-    for (const code of SPREADSHEET_BILLABLE_CODES) {
-      const summaryData = sheetSummaries[code]
-      if (!summaryData) {
-        overrides[code] = { amount: 0, missingPrice: 0, sheetMissing: 1 }
-        continue
-      }
-      const indicatorId = indicatorIdByCode.get(code)
-      const price = indicatorId ? priceByIndicatorId.get(indicatorId) : null
-      if (price == null || Number.isNaN(price)) {
-        overrides[code] = { amount: 0, missingPrice: 1, sheetMissing: 0 }
-        continue
-      }
-      const realization = scopedUnitName ? realizationForUnit(summaryData, scopedUnitName) : Number(summaryData.realization ?? 0)
-      overrides[code] = { amount: Number(realization ?? 0) * price, missingPrice: 0, sheetMissing: 0 }
-    }
-    return overrides
-  }, [pContract, pUp3, periodMonth, sheetSummaries, unitPrices, indicatorIdByCode, unitId, unitNames])
-
-  const isSnapReady = !snapLoading && !reconLoading
+  const isSnapReady = !snapLoading
   const snapStale = loadedSnapKey !== '' && loadedSnapKey !== snapKey
   const showSnapResults = isSnapReady && !snapError && dashboard && !snapStale
-  const currentTotals = selectedTotals(dashboard, selectedRevenueCodes, selectedCostCodes, revenueOverrides)
+  const currentTotals = selectedTotals(dashboard, selectedRevenueCodes, selectedCostCodes)
   const revenueSelectedTotal = currentTotals.revenue
   const costSelectedTotal = currentTotals.cost
   const margin = currentTotals.margin
   const marginPercent = currentTotals.complete && revenueSelectedTotal > 0 ? (margin / revenueSelectedTotal) * 100 : null
   const costRatio = currentTotals.ratio
-  const revenueIncomplete = !currentTotals.complete || Object.keys(sheetErrors ?? {}).length > 0 || Boolean(unitPriceError)
+  const revenueIncomplete = !currentTotals.complete
   const hasSelection = selectedRevenueCodes.length > 0 && selectedCostCodes.length > 0
-  const figuresFinal = hasSelection && !revenueIncomplete
-  const trendProvisional = selectedRevenueCodes.some((code) => SPREADSHEET_BILLABLE_CODES.includes(code))
-
-  const monthlyTrend = useMemo(() => trend.map((snapshot) => {
-    const m = String(snapshot.period_month ?? '').slice(0, 10)
-    const recon = trendRecon[m]
-    let overrides = null
-    if (recon) {
-      overrides = {}
-      const priceByIndicatorId = new Map((recon.prices ?? []).map((row) => [row.indicator_id, Number(row.unit_price)]))
-      const scopedUnitName = unitId === ALL_UNITS ? null : unitNames.get(unitId)
-      for (const code of SPREADSHEET_BILLABLE_CODES) {
-        const summaryData = recon.summaries[code]
-        if (!summaryData) {
-          overrides[code] = { amount: 0, missingPrice: 0, sheetMissing: 1 }
-          continue
-        }
-        const indicatorId = indicatorIdByCode.get(code)
-        const price = indicatorId ? priceByIndicatorId.get(indicatorId) : null
-        if (price == null || Number.isNaN(price)) {
-          overrides[code] = { amount: 0, missingPrice: 1, sheetMissing: 0 }
-          continue
-        }
-        const realization = scopedUnitName ? realizationForUnit(summaryData, scopedUnitName) : Number(summaryData.realization ?? 0)
-        overrides[code] = { amount: Number(realization ?? 0) * price, missingPrice: 0, sheetMissing: 0 }
-      }
-    }
-    return {
-      periodMonth: snapshot.period_month,
-      label: formatTrendMonth(snapshot.period_month),
-      ...selectedTotals(snapshot, selectedRevenueCodes, selectedCostCodes, overrides),
-    }
-  }), [trend, trendRecon, selectedRevenueCodes, selectedCostCodes, indicatorIdByCode, unitId, unitNames])
+  const monthlyTrend = useMemo(() => trend.map((snapshot) => ({
+    periodMonth: snapshot.period_month,
+    label: formatTrendMonth(snapshot.period_month),
+    ...selectedTotals(snapshot, selectedRevenueCodes, selectedCostCodes),
+  })), [trend, selectedRevenueCodes, selectedCostCodes])
   const trendStale = loadedTrendKey !== '' && loadedTrendKey !== trendKey
   const showTrendResults = !trendLoading && !trendError && !trendStale
   const comparisonMax = Math.max(1, ...monthlyTrend.flatMap((row) => [row.revenue, row.cost, Math.abs(row.margin ?? 0)]))
@@ -411,7 +218,6 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
       if (index === monthlyTrend.length - 1 && current.length > 1) lineSegments.push(current)
     })
   }
-  const trendHasGap = monthlyTrend.some((row) => row.margin == null)
   const pointTop = (value) => {
     const y = marginY(value)
     if (y == null) return undefined
@@ -426,31 +232,21 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
   const clearCost = () => setSelectedCostCodes([])
   // Filter langsung diterapkan saat diubah; Terapkan menutup pemilih, Reset mengembalikan baseline.
   const applyFilters = () => { setRevenuePickerOpen(false); setCostPickerOpen(false) }
-  const resetFilters = () => { selectAllRevenue(); selectAllCost(); setUnitId(ALL_UNITS); setMonthCount(6); setRevenuePickerOpen(false); setCostPickerOpen(false) }
+  const resetFilters = () => { selectAllRevenue(); selectAllCost(); setUnitId(restrictedUnitId ?? ALL_UNITS); setMonthCount(6); setRevenuePickerOpen(false); setCostPickerOpen(false) }
 
   // Tampilan ringkasan dibangun dari kode terpilih (scaffold), bukan hanya baris server.
   const revenueServerByCode = new Map(((dashboard?.revenue_eligible_components ?? [])).map((r) => [r.indicator_code, r]))
   const revenueComponentsForDisplay = selectedRevenueCodes.map((code) => {
     const server = revenueServerByCode.get(code)
-    const override = Object.prototype.hasOwnProperty.call(revenueOverrides, code) ? revenueOverrides[code] : null
     const label = REVENUE_LABEL.get(code) ?? server?.indicator_name ?? code
-    if (override) {
-      return {
-        indicator_code: code,
-        indicator_name: label,
-        amount: override.amount,
-        missing_price_count: override.missingPrice,
-        sheet_missing_count: override.sheetMissing,
-        status: override.sheetMissing > 0 ? 'sheet-missing' : override.missingPrice > 0 ? 'price-missing' : 'ok',
-      }
-    }
     return {
       indicator_code: code,
       indicator_name: label,
       amount: Number(server?.amount ?? 0),
       missing_price_count: Number(server?.missing_price_count ?? 0),
-      sheet_missing_count: 0,
-      status: server ? (Number(server?.missing_price_count ?? 0) > 0 ? 'price-missing' : 'ok') : 'no-data',
+      configured_actual_count: Number(server?.configured_actual_count ?? 0),
+      missing_actual_count: Number(server?.missing_actual_count ?? 0),
+      status: !server || Number(server.missing_actual_count) > 0 ? 'actual-missing' : Number(server.missing_price_count) > 0 ? 'price-missing' : 'ok',
     }
   })
   const costServerByCode = new Map(((dashboard?.cost_components ?? [])).map((c) => [c.cost_code, c]))
@@ -594,12 +390,11 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
       </section>
 
       {snapError && <Alert tone="danger">{snapError}</Alert>}
-      {(snapLoading || reconLoading) && !snapError && <SnapshotSkeleton />}
+      {snapLoading && !snapError && <SnapshotSkeleton />}
       {showSnapResults && (
         <>
           {!hasSelection && <Alert tone="warning">Pilih minimal satu komponen Pendapatan dan satu komponen Biaya Operasional untuk melihat agregasi.</Alert>}
-          {hasSelection && revenueIncomplete && <Alert tone="warning">Data pendapatan belum lengkap (spreadsheet atau harga satuan belum tersedia). Margin dan rasio belum final.</Alert>}
-          {hasSelection && trendProvisional && <Alert tone="warning">Komponen spreadsheet memakai realisasi spreadsheet × harga akhir masing-masing bulan, sama seperti Rekap. Bulan yang spreadsheet-nya gagal dimuat ditandai belum lengkap, bukan nol.</Alert>}
+          {hasSelection && revenueIncomplete && <Alert tone="warning">Realisasi bulanan atau harga satuan belum lengkap. Total hanya mencakup pendapatan terkonfirmasi; margin dan rasio belum final.</Alert>}
 
           {/* KPI - 4 premium (bulan terpilih) */}
           <div className="fin-ref-kpis" aria-busy={false}>
@@ -654,7 +449,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
               </div>
 
               {trendError && <Alert tone="danger">{trendError}</Alert>}
-              {(trendLoading || trendReconLoading) ? <TrendSkeleton monthCount={monthCount} /> : !trendError && (
+              {trendLoading ? <TrendSkeleton monthCount={monthCount} /> : showTrendResults && (
               <div className="fin-trend-chart-body">
                 <div className="fin-ref-yaxis" aria-hidden="true">
                   {chartTicks.map((t) => <span key={t}>{t === 0 ? 'Rp 0' : formatCompactRp(comparisonMax * t)}</span>)}
@@ -720,7 +515,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
                   {selectedRevenueCodes.length > 0 && revenueComponentsForDisplay.map((r) => (
                     <span key={r.indicator_code} className="fin-ref-summary-row">
                       <span className="fin-ref-summary-name"><i className="dot rev sm" /> {r.indicator_name}</span>
-                      <strong>{r.status === 'sheet-missing' ? 'Menunggu spreadsheet' : r.status === 'price-missing' ? 'Harga belum tersedia' : r.status === 'no-data' ? 'Rp 0 (belum ada realisasi)' : formatRp(r.amount)}</strong>
+                      <strong>{r.status === 'actual-missing' ? (r.configured_actual_count > 0 ? `${formatRp(r.amount)} (parsial)` : 'Belum diinput') : r.status === 'price-missing' ? 'Harga belum tersedia' : formatRp(r.amount)}</strong>
                     </span>
                   ))}
                 </div>
@@ -754,7 +549,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
               <span>{monthlyTrend.length} periode • Nilai bulanan komponen terpilih</span>
             </div>
             {trendError && <Alert tone="danger">{trendError}</Alert>}
-            {(trendLoading || trendReconLoading) ? <TrendSkeleton monthCount={monthCount} /> : !trendError && (
+            {trendLoading ? <TrendSkeleton monthCount={monthCount} /> : showTrendResults && (
             <>
             <DataTable className="fin-ref-table" frameClassName="fin-ref-table-wrap" sticky>
               <thead>
@@ -795,7 +590,7 @@ export default function FinancialComparisonDashboard({ contractId, up3Id, period
                 <thead><tr><th>Kode</th><th>Komponen</th><th style={{ textAlign: 'right' }}>Pendapatan</th><th>Status</th></tr></thead>
                 <tbody>
                   {revenueComponentsForDisplay.map((r) => (
-                    <tr key={r.indicator_code}><td><strong>{r.indicator_code}</strong></td><td>{r.indicator_name}</td><td style={{ textAlign: 'right' }}>{r.status === 'sheet-missing' || r.status === 'price-missing' ? 'Belum lengkap' : formatRp(r.amount)}</td><td>{r.status === 'price-missing' ? <span className="ui-status-badge ui-status-warning">Harga belum lengkap</span> : r.status === 'sheet-missing' ? <span className="ui-status-badge ui-status-warning">Menunggu spreadsheet</span> : r.status === 'no-data' ? <span className="ui-status-badge">Belum ada realisasi</span> : <span className="ui-status-badge ui-status-success">Harga lengkap</span>}</td></tr>
+                    <tr key={r.indicator_code}><td><strong>{r.indicator_code}</strong></td><td>{r.indicator_name}</td><td style={{ textAlign: 'right' }}>{r.status === 'actual-missing' || r.status === 'price-missing' ? 'Belum lengkap' : formatRp(r.amount)}</td><td>{r.status === 'price-missing' ? <span className="ui-status-badge ui-status-warning">Harga belum lengkap</span> : r.status === 'actual-missing' ? <span className="ui-status-badge ui-status-warning">Realisasi belum lengkap</span> : <span className="ui-status-badge ui-status-success">Lengkap</span>}</td></tr>
                   ))}
                   {revenueComponentsForDisplay.length > 0 && <tr style={{ fontWeight: 700, background: 'var(--surface-subtle)' }}><td colSpan={2} style={{ textAlign: 'right' }}>TOTAL</td><td style={{ textAlign: 'right' }}>{revenueIncomplete ? 'Belum lengkap' : formatRp(revenueSelectedTotal)}</td><td /></tr>}
                 </tbody>

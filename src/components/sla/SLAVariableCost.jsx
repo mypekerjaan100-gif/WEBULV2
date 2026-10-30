@@ -1,141 +1,103 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { variableCostIndicators } from '../../data/slaPelayananTeknik.js'
-import { periodLabelToMonth, fetchMonthlyTargets, fetchUp3Targets, fetchMonthlyEntries, fetchApprovedVariableMonthlyEntries, fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, fetchIndicators, fetchActiveVersion, setVariableTarget, setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, listFeeders, listActiveFeeders, proposeFeeder, createFeederDirect, approveFeeder, rejectFeeder, deactivateFeeder, activateFeeder, deleteFeeder, formatFeederStatus, listDailyEntries, getVariableDetail, saveVariableEntry, submitVariableEntry, uploadVariableEvidence, getEvidencePreviewUrl, getShortLabel, listSubmittedEntries, listRejectedEntries, approveVariableEntry, rejectVariableEntry, listVariableActualRevenue, listVariableRevenueTargets, listVariableManualWo, setVariableManualWo, listVariableUnitPrices } from '../../data/variableCostRepository.js'
-import { fetchSpreadsheetSummary, fetchSpreadsheetDetail, isSpreadsheetSourced, normalizeSpreadsheetUlp, realizationForUnit, SPREADSHEET_INDICATOR_CODES } from '../../data/spreadsheetVariableCost.js'
-import { supabase } from '../../lib/supabaseClient.js'
+import {
+  periodLabelToMonth, fetchMonthlyTargets, fetchIndicators, fetchActiveVersion,
+  fetchKonstruksiMonthlyAmounts, fetchKonstruksiMonthlyTargets, setVariableTarget,
+  setKonstruksiMonthlyAmounts, setKonstruksiMonthlyTargets, getShortLabel,
+  listVariableMonthlyActuals, saveVariableMonthlyActuals, listVariableMonthlyHistory, getVariableFinancialDashboard,
+} from '../../data/variableCostRepository.js'
+import {
+  VARIABLE_MONTHLY_INDICATORS, monthlyDraftsFromRows, monthlyDraftIsDirty, monthlyChanges,
+  monthlyInputNumber, monthlyAchievement, aggregateMonthlyValues, sumMonthlyField,
+} from '../../data/variableMonthlyActuals.js'
 import MasterHargaSatuan from './MasterHargaSatuan.jsx'
 import TargetPendapatanVariable from './TargetPendapatanVariable.jsx'
 import VariableFinancialDashboard from './VariableFinancialDashboard.jsx'
-import { Alert, Button, DataTable, FilterBar, FilterField, StatePanel, StatusBadge, Tabs, ProcessModal } from '../ui/Primitives.jsx'
+import { Alert, Button, DataTable, FilterBar, FilterField, Modal, StatePanel, Tabs } from '../ui/Primitives.jsx'
 import Icon from '../Icon.jsx'
 
-const WORKFLOW_INDICATORS = variableCostIndicators.filter((indicator) => indicator.workflowEnabled)
-const STANDARD_8 = variableCostIndicators.filter((indicator) => indicator.slaLinked)
-const INPUT_INDICATORS = variableCostIndicators.filter((indicator) => indicator.ulpInputEnabled)
-const TEBANG_INDICATOR_IDS = variableCostIndicators.filter((indicator) => indicator.code?.startsWith('TEBANG_')).map((indicator) => indicator.id)
-const SPREADSHEET_CODES = SPREADSHEET_INDICATOR_CODES.filter((code) => variableCostIndicators.some((indicator) => (indicator.code ?? indicator.point) === code))
 const ALL_KEY = 'ALL'
+const STANDARD_8 = VARIABLE_MONTHLY_INDICATORS.filter((indicator) => indicator.slaLinked)
 const EMPTY_VALUE = '—'
 
-// Akhir periode YYYY-MM-01 -> YYYY-MM-DD hari terakhir (harga berlaku akhir bulan).
-function periodEndOf(periodMonth) {
-  const match = String(periodMonth ?? '').match(/^(\d{4})-(0[1-9]|1[0-2])-01$/)
-  if (!match) return periodMonth
-  const end = new Date(Number(match[1]), Number(match[2]), 0)
-  return `${match[1]}-${match[2]}-${String(end.getDate()).padStart(2, '0')}`
-}
-
-function formatRp(value) {
-  if (value == null || value === '') return '—'
-  const n = Number(value)
-  if (Number.isNaN(n)) return '—'
-  return `Rp ${n.toLocaleString('id-ID')}`
-}
-function formatSignedRp(value) {
-  if (value == null || value === '') return '—'
-  const n = Number(value)
-  if (Number.isNaN(n)) return '—'
-  return n < 0 ? `-Rp ${Math.abs(n).toLocaleString('id-ID')}` : `Rp ${n.toLocaleString('id-ID')}`
-}
 function formatNumber(value) {
-  if (value == null || value === '') return '—'
-  const n = Number(value)
-  if (Number.isNaN(n)) return '—'
-  return n.toLocaleString('id-ID')
+  return value == null || value === '' || !Number.isFinite(Number(value)) ? EMPTY_VALUE : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 4 })
+}
+function formatRp(value) {
+  if (value == null || !Number.isFinite(Number(value))) return EMPTY_VALUE
+  return `${Number(value) < 0 ? '-' : ''}Rp ${Math.abs(Number(value)).toLocaleString('id-ID', { maximumFractionDigits: 2 })}`
 }
 function formatPercent(value) {
-  if (value == null || value === '') return '—'
-  const n = Number(value)
-  if (Number.isNaN(n)) return '—'
-  return `${n.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+  return value == null ? EMPTY_VALUE : `${Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
 }
-function formatApprovalStatus(status) {
-  return status === 'SUBMITTED' ? 'Menunggu Persetujuan' : status === 'APPROVED' ? 'Disetujui' : status === 'REJECTED' ? 'Ditolak' : status ?? '—'
-}
-function formatSyncTime(value) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return `${date.toLocaleString('id-ID', { timeZone: 'Asia/Pontianak', hour: '2-digit', minute: '2-digit' })} WIB`
+function draftNumber(value) {
+  try { return monthlyInputNumber(value) } catch { return null }
 }
 
-export default function SLAVariableCost({ period, periods = [], onPeriodChange, orgMap, role, unitId, up3Id, onRejectedCountChange, approvalCounts = {}, approvalTarget, onApprovalTargetHandled, onApprovalChange, isManagementReadOnly = false, canManageKonstruksiMonthly = false, canViewVariableFinancial = false }) {
-  const isUp3Role = role === 'up3'
+export default function SLAVariableCost({
+  period, periods = [], onPeriodChange, orgMap, role, unitId,
+  canInputMonthly = false, isManagementReadOnly = false, canManageKonstruksiMonthly = false,
+  canViewVariableFinancial = false, onEditorStateChange, onSaved,
+}) {
   const contractId = orgMap?.contractUuid
   const up3Uuid = orgMap?.up3Uuid
   const units = orgMap?.units ?? []
-  const childUlps = units.filter((u) => u.type === 'ULP' && u.parentUuid === up3Uuid)
-  const adminUlpUnit = units.find((u) => u.uuid === unitId || u.legacyKey === unitId)
-  const isAdminUlpView = role === 'ulp'
-  const [selectedUlpLegacy, setSelectedUlpLegacy] = useState(() => isUp3Role ? ALL_KEY : (childUlps[0]?.legacyKey ?? childUlps[0]?.uuid ?? ''))
-  useEffect(() => {
-    if (isUp3Role && !selectedUlpLegacy) setSelectedUlpLegacy(ALL_KEY)
-    else if (childUlps.length && !selectedUlpLegacy) setSelectedUlpLegacy(childUlps[0]?.legacyKey ?? childUlps[0]?.uuid)
-  }, [childUlps.length]) // eslint-disable-line
-
-  const isConsolidated = isUp3Role && selectedUlpLegacy === ALL_KEY && !isAdminUlpView
-  const effectiveLegacy = isAdminUlpView ? (adminUlpUnit?.legacyKey ?? unitId) : (isConsolidated ? null : (isUp3Role ? selectedUlpLegacy : unitId))
-  const effectiveUnit = effectiveLegacy ? units.find((u) => u.legacyKey === effectiveLegacy || u.uuid === effectiveLegacy) : null
+  const childUlps = useMemo(() => (orgMap?.units ?? []).filter((unit) => unit.type === 'ULP' && unit.parentUuid === orgMap?.up3Uuid && (unit.status ?? 'Aktif') === 'Aktif'), [orgMap])
+  const unitIdsKey = childUlps.map((unit) => unit.uuid).join(',')
+  const isUp3Role = role === 'up3'
+  const [selectedUnitId, setSelectedUnitId] = useState(ALL_KEY)
+  const ownUnit = units.find((unit) => unit.uuid === unitId || unit.legacyKey === unitId)
+  const effectiveUnit = isUp3Role ? childUlps.find((unit) => unit.uuid === selectedUnitId) : ownUnit
+  const isConsolidated = isUp3Role && selectedUnitId === ALL_KEY
   const effectiveUnitUuid = effectiveUnit?.uuid ?? null
+  const canEditMonthly = canInputMonthly && role === 'ulp' && Boolean(effectiveUnitUuid) && !isManagementReadOnly
+  const canEditTargets = isUp3Role && !isManagementReadOnly
   const periodMonth = periodLabelToMonth(period)
-
-  const [targets, setTargets] = useState([])
-  const [up3Targets, setUp3Targets] = useState([])
-  const [entries, setEntries] = useState([])
-  const [konstruksiAmounts, setKonstruksiAmounts] = useState([])
-  const [financialRows, setFinancialRows] = useState([])
-  const [unitPrices, setUnitPrices] = useState([])
-  const [unitPriceError, setUnitPriceError] = useState('')
-  const [financialError, setFinancialError] = useState('')
-  const [financialTargets, setFinancialTargets] = useState([])
-  const [financialTargetError, setFinancialTargetError] = useState('')
-  const [indicators, setIndicators] = useState([])
+  const scopeKey = `${contractId ?? ''}:${up3Uuid ?? ''}:${periodMonth ?? ''}:${isConsolidated ? ALL_KEY : effectiveUnitUuid ?? ''}:${canViewVariableFinancial}`
+  const scopeKeyRef = useRef(scopeKey)
+  scopeKeyRef.current = scopeKey
+  const [activeTab, setActiveTab] = useState('rekap')
+  const [data, setData] = useState(null)
+  const [loadedKey, setLoadedKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeFeeders, setActiveFeeders] = useState([])
+  const [drafts, setDrafts] = useState({})
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const [saveError, setSaveError] = useState('')
+  const [saveMessage, setSaveMessage] = useState('')
+  const requestId = useRef(0)
+  const variableConfigMenuRef = useRef(null)
   const [drillIndicator, setDrillIndicator] = useState(null)
-  const [activeTab, setActiveTab] = useState('rekap')
-  const [activeVersionId, setActiveVersionId] = useState(null)
-  const [targetUnitId, setTargetUnitId] = useState(() => childUlps[0]?.uuid ?? '')
+  const [historyScope, setHistoryScope] = useState(null)
+  const [historyRows, setHistoryRows] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const historyRequestId = useRef(0)
+  const [targetUnitId, setTargetUnitId] = useState('')
   const [targetDrafts, setTargetDrafts] = useState({})
   const [targetBusyPoint, setTargetBusyPoint] = useState('')
   const [targetError, setTargetError] = useState('')
   const [targetMessage, setTargetMessage] = useState('')
-  const [konstruksiTargets, setKonstruksiTargets] = useState([])
   const [konstruksiDrafts, setKonstruksiDrafts] = useState({})
   const [konstruksiTargetDrafts, setKonstruksiTargetDrafts] = useState({})
   const [konstruksiBusy, setKonstruksiBusy] = useState(false)
   const [konstruksiError, setKonstruksiError] = useState('')
   const [konstruksiMessage, setKonstruksiMessage] = useState('')
-  const [rejectedList, setRejectedList] = useState([])
-  const [rejectedLoading, setRejectedLoading] = useState(false)
-  const [editingRejectionReason, setEditingRejectionReason] = useState('')
-  // Spreadsheet read-only (Apps Script) + WO manual ULP
-  const [sheetSummaries, setSheetSummaries] = useState({})
-  const [sheetLoading, setSheetLoading] = useState(false)
-  const [sheetErrors, setSheetErrors] = useState({})
-  const [sheetSyncedAt, setSheetSyncedAt] = useState('')
-  const [manualWoByIndicator, setManualWoByIndicator] = useState({})
-  const [woDrafts, setWoDrafts] = useState({})
-  const [woSavingUnit, setWoSavingUnit] = useState('')
-  const [woError, setWoError] = useState('')
-  const [woMessage, setWoMessage] = useState('')
-  // Modal proses: null | { mode: 'load'|'period'|'refresh'|'wo', status: 'loading'|'success'|'error', error }
-  const [processState, setProcessState] = useState(null)
-  const [woPendingUnit, setWoPendingUnit] = useState('')
-  const [woPendingIndicator, setWoPendingIndicator] = useState('')
-  const [sheetDetailOpen, setSheetDetailOpen] = useState(false)
-  const [sheetDetailIndicator, setSheetDetailIndicator] = useState(null)
-  const [sheetDetailUlp, setSheetDetailUlp] = useState('')
-  const [sheetDetailData, setSheetDetailData] = useState(null)
-  const [sheetDetailLoading, setSheetDetailLoading] = useState(false)
-  const monthlyRequestId = useRef(0)
-  const dailyRequestId = useRef(0)
-  const handledApprovalToken = useRef(null)
-  const approvalDetailRequestId = useRef(0)
-  const variableConfigMenuRef = useRef(null)
+  const isCurrent = loadedKey === scopeKey
+  const monthlyRows = isCurrent ? data?.monthly ?? [] : []
+  const financialUnitIds = isCurrent && data?.financial ? new Set(data.financial.units.map((unit) => unit.unit_id)) : null
+  const scopedUnits = isConsolidated ? childUlps.filter((unit) => !financialUnitIds || financialUnitIds.has(unit.uuid)) : effectiveUnit ? [effectiveUnit] : []
+  const scopedUnitIds = scopedUnits.map((unit) => unit.uuid)
+  const versionId = isCurrent ? data?.versionId : null
+  const monthlyDirty = canEditMonthly && isCurrent && monthlyDraftIsDirty(drafts, monthlyRows, effectiveUnitUuid)
+  const konstruksiOpen = drillIndicator?.code === '3.1c'
+  const konstruksiDirty = konstruksiOpen && canManageKonstruksiMonthly && scopedUnits.some((unit) =>
+    (konstruksiDrafts[unit.uuid] ?? '') !== String(data?.konstruksiAmounts.find((row) => row.unit_id === unit.uuid)?.amount_rp ?? '')
+    || (konstruksiTargetDrafts[unit.uuid] ?? '') !== String(data?.konstruksiTargets.find((row) => row.unit_id === unit.uuid)?.target_rp ?? ''))
+  const busy = saving || konstruksiBusy || Boolean(targetBusyPoint)
+  const dirty = monthlyDirty || konstruksiDirty
 
-  // Dropdown Pengaturan Variable: tutup saat klik di luar menu atau tekan Escape.
   useEffect(() => {
     const closeOnOutsideClick = (event) => {
       const menu = variableConfigMenuRef.current
@@ -152,1764 +114,303 @@ export default function SLAVariableCost({ period, periods = [], onPeriodChange, 
     }
   }, [])
 
+  useEffect(() => {
+    onEditorStateChange?.({ dirty, busy })
+    return () => onEditorStateChange?.({ dirty: false, busy: false })
+  }, [dirty, busy, onEditorStateChange])
+  useEffect(() => {
+    const handler = (event) => {
+      if (!dirty && !busy) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty, busy])
+  useEffect(() => {
+    if (!childUlps.some((unit) => unit.uuid === selectedUnitId)) setSelectedUnitId(ALL_KEY)
+    if (!childUlps.some((unit) => unit.uuid === targetUnitId)) setTargetUnitId(childUlps[0]?.uuid ?? '')
+  }, [unitIdsKey, selectedUnitId, targetUnitId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadMonthly = useCallback(async () => {
-    const requestId = ++monthlyRequestId.current
-    if (!contractId || !up3Uuid || !periodMonth) { setLoading(false); return }
-    if (isAdminUlpView && !effectiveUnitUuid) { setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUnitPrices([]); setUnitPriceError(''); setFinancialTargets([]); setFinancialTargetError(''); setUp3Targets([]); setActiveFeeders([]); setLoading(false); return }
-    setLoading(true); setError('')
+    const current = ++requestId.current
+    const key = scopeKey
+    setLoading(true); setError(''); setLoadedKey('')
+    if (!contractId || !up3Uuid || !periodMonth || (!isConsolidated && !effectiveUnitUuid)) {
+      setError('Scope kontrak, ULP, atau periode belum tersedia.'); setLoading(false)
+      return false
+    }
     try {
-      const versionId = await fetchActiveVersion({ contractId, up3Id: up3Uuid, periodMonth })
-      if (requestId !== monthlyRequestId.current) return
-      setActiveVersionId(versionId)
-      if (!versionId) {
-        setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUnitPrices([]); setUnitPriceError(''); setFinancialTargets([]); setFinancialTargetError(''); setIndicators([]); setUp3Targets([]); setActiveFeeders([])
-        return
-      }
-      const unitUuids = activeTab === 'target' && targetUnitId
-        ? [targetUnitId]
-        : isConsolidated ? childUlps.map((u) => u.uuid) : (effectiveUnitUuid ? [effectiveUnitUuid] : [])
-      const [t, e, tebang, ind, up3t, konstruksi, konstruksiTarget, financial, unitPriceData, revenueTargets] = await Promise.all([
-        unitUuids.length ? fetchMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
-        unitUuids.length ? fetchMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth, versionId }) : Promise.resolve([]),
-        unitUuids.length ? fetchApprovedVariableMonthlyEntries({ contractId, up3Id: up3Uuid, unitIds: unitUuids, indicatorIds: TEBANG_INDICATOR_IDS, periodMonth, versionId }) : Promise.resolve([]),
-        fetchIndicators({ contractId, up3Id: up3Uuid, versionId }).catch(() => []),
-        isConsolidated ? fetchUp3Targets({ contractId, up3Id: up3Uuid, periodMonth, versionId }).catch(() => []) : Promise.resolve([]),
-        canViewVariableFinancial && unitUuids.length ? fetchKonstruksiMonthlyAmounts({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
-        canViewVariableFinancial && unitUuids.length ? fetchKonstruksiMonthlyTargets({ contractId, up3Id: up3Uuid, unitIds: unitUuids, periodMonth }) : Promise.resolve([]),
-        canViewVariableFinancial && activeTab === 'rekap'
-          ? listVariableActualRevenue({ contractId, up3Id: up3Uuid, periodMonth, unitId: isConsolidated ? null : effectiveUnitUuid }).then((rows) => ({ rows, error: '' })).catch((err) => ({ rows: [], error: err.message || 'Gagal memuat pendapatan' }))
-          : Promise.resolve({ rows: [], error: '' }),
-        canViewVariableFinancial && activeTab === 'rekap'
-          ? listVariableUnitPrices({ contractId, up3Id: up3Uuid, asOf: periodEndOf(periodMonth) }).then((rows) => ({ rows, error: '' })).catch((err) => ({ rows: [], error: err.message || 'Gagal memuat harga satuan' }))
-          : Promise.resolve({ rows: [], error: '' }),
-        canViewVariableFinancial && activeTab === 'rekap'
-          ? listVariableRevenueTargets({ contractId, up3Id: up3Uuid, periodMonth, unitId: isConsolidated ? null : effectiveUnitUuid }).then((rows) => ({ rows, error: '' })).catch((err) => ({ rows: [], error: err.message || 'Gagal memuat Target Pendapatan' }))
-          : Promise.resolve({ rows: [], error: '' }),
+      const activeVersionId = await fetchActiveVersion({ contractId, up3Id: up3Uuid, periodMonth })
+      const targetUnitIds = isUp3Role ? unitIdsKey.split(',').filter(Boolean) : [effectiveUnitUuid]
+      const scopeUnitIds = isConsolidated ? targetUnitIds : [effectiveUnitUuid]
+      const scope = { contractId, up3Id: up3Uuid, periodMonth, unitId: isConsolidated ? null : effectiveUnitUuid }
+      const [monthly, targets, indicators, konstruksiAmounts, konstruksiTargets, financial] = await Promise.all([
+        listVariableMonthlyActuals(scope),
+        activeVersionId ? fetchMonthlyTargets({ ...scope, unitIds: targetUnitIds, versionId: activeVersionId }) : [],
+        activeVersionId ? fetchIndicators({ ...scope, versionId: activeVersionId }) : [],
+        canViewVariableFinancial ? fetchKonstruksiMonthlyAmounts({ ...scope, unitIds: scopeUnitIds }) : [],
+        canViewVariableFinancial ? fetchKonstruksiMonthlyTargets({ ...scope, unitIds: scopeUnitIds }) : [],
+        canViewVariableFinancial && activeVersionId
+          ? getVariableFinancialDashboard(scope).then((value) => ({ value, error: '' })).catch((err) => ({ value: null, error: err.message || 'Pendapatan gagal dimuat.' }))
+          : { value: null, error: '' },
       ])
-      if (requestId !== monthlyRequestId.current) return
-      setTargets(t ?? []); setEntries([...(e ?? []), ...(tebang ?? [])]); setKonstruksiAmounts(konstruksi ?? []); setKonstruksiTargets(konstruksiTarget ?? []); setIndicators(ind ?? []); setUp3Targets(up3t ?? [])
-      setFinancialRows(financial.rows ?? []); setFinancialError(financial.error ?? '')
-      setUnitPrices(unitPriceData.rows ?? []); setUnitPriceError(unitPriceData.error ?? '')
-      setFinancialTargets(revenueTargets.rows ?? []); setFinancialTargetError(revenueTargets.error ?? '')
-      if (effectiveUnitUuid && !isConsolidated) {
-        const af = await listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid }).catch(() => [])
-        setActiveFeeders(af ?? [])
-      } else if (isConsolidated) {
-        setActiveFeeders([])
-      } else setActiveFeeders([])
-    } catch (err) { if (requestId === monthlyRequestId.current) { setError(err.message || 'Gagal memuat data Variable Cost'); setTargets([]); setEntries([]); setKonstruksiAmounts([]); setKonstruksiTargets([]); setFinancialRows([]); setFinancialError(''); setUnitPrices([]); setUnitPriceError(''); setFinancialTargets([]); setFinancialTargetError(''); setUp3Targets([]) } }
-    finally { if (requestId === monthlyRequestId.current) setLoading(false) }
-  }, [contractId, up3Uuid, periodMonth, effectiveUnitUuid, isAdminUlpView, isConsolidated, activeTab, targetUnitId, canViewVariableFinancial, childUlps.map((u) => u.uuid).join(',')])
-
-  useEffect(() => { loadMonthly() }, [loadMonthly])
-
-  // --- Spreadsheet read-only dari Google Sheets, sinkron manual + WO manual ---
-  // mode: 'load' (buka halaman) | 'period' (ganti periode) | 'refresh' (ikon refresh)
-  const [sheetPeriods, setSheetPeriods] = useState({})
-  const sheetRequestRef = useRef(0)
-  const sheetLoadedPeriod = useRef('')
-  const loadSheetSummary = useCallback(async (mode = 'load') => {
-    if (!periodMonth) return
-    const requestId = ++sheetRequestRef.current
-    const showModal = mode !== 'silent'
-    if (showModal) {
-      setProcessState({ mode, status: 'loading', error: '' })
-    }
-    // Ganti periode / load awal: jangan tampilkan angka periode lama.
-    // Refresh manual: angka lama tetap tampil sampai data baru tiba.
-    if (mode === 'period' || mode === 'load') {
-      setSheetSummaries({})
-      setSheetPeriods({})
-    }
-    setSheetLoading(true)
-    setSheetErrors({})
-    try {
-      const settled = await Promise.allSettled(SPREADSHEET_CODES.map(async (indicatorCode) => {
-        const [summary, woRows] = await Promise.all([
-          fetchSpreadsheetSummary({ indicator: indicatorCode, period: periodMonth }),
-          contractId && up3Uuid
-            ? listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode }).catch(() => [])
-            : Promise.resolve([]),
-        ])
-        return { indicatorCode, summary, woRows: woRows ?? [] }
-      }))
-      if (requestId !== sheetRequestRef.current) return
-      const results = []
-      const nextErrors = {}
-      settled.forEach((item, index) => {
-        const indicatorCode = SPREADSHEET_CODES[index]
-        if (item.status === 'fulfilled') {
-          results.push(item.value)
-        } else {
-          nextErrors[indicatorCode] = item.reason?.message || 'Data gagal dimuat.'
-        }
-      })
-      const nextSummaries = {}
-      const nextPeriods = {}
-      const nextManualWo = {}
-      for (const item of results) {
-        nextSummaries[item.indicatorCode] = item.summary
-        nextPeriods[item.indicatorCode] = periodMonth
-        nextManualWo[item.indicatorCode] = item.woRows
-      }
-      setSheetSummaries(nextSummaries)
-      setSheetPeriods(nextPeriods)
-      setSheetErrors(nextErrors)
-      if (results.length > 0) sheetLoadedPeriod.current = periodMonth
-      setSheetSyncedAt(results.map((item) => item.summary?.syncedAt).filter(Boolean).sort().at(-1) ?? new Date().toISOString())
-      setManualWoByIndicator(nextManualWo)
-      setWoDrafts((current) => {
-        const next = { ...current }
-        for (const item of results) {
-          for (const row of item.woRows) {
-            const key = `${item.indicatorCode}:${row.unit_id}`
-            if (next[key] === undefined) next[key] = String(row.wo_value ?? '')
-          }
-        }
-        return next
-      })
-      if (showModal) {
-        // Load awal / ganti periode langsung tampil tanpa flash sukses.
-        // Refresh manual menampilkan konfirmasi singkat.
-        if (results.length === 0) {
-          const message = Object.values(nextErrors)[0] || 'Data gagal dimuat.'
-          setProcessState({ mode, status: 'error', error: message })
-        } else if (mode === 'refresh') {
-          setProcessState({ mode, status: 'success', error: '' })
-        } else {
-          setProcessState(null)
-        }
-      }
+      if (current !== requestId.current || scopeKeyRef.current !== key) return false
+      setData({ versionId: activeVersionId, monthly: monthly ?? [], targets, indicators, konstruksiAmounts, konstruksiTargets, financial: financial.value, financialError: financial.error })
+      setDrafts(monthlyDraftsFromRows(monthly ?? [], effectiveUnitUuid))
+      setKonstruksiDrafts(Object.fromEntries(scopeUnitIds.map((id) => [id, String(konstruksiAmounts.find((row) => row.unit_id === id)?.amount_rp ?? '')])))
+      setKonstruksiTargetDrafts(Object.fromEntries(scopeUnitIds.map((id) => [id, String(konstruksiTargets.find((row) => row.unit_id === id)?.target_rp ?? '')])))
+      setLoadedKey(key)
+      return true
     } catch (err) {
-      if (requestId !== sheetRequestRef.current) return
-      const message = err.message || 'Data gagal dimuat.'
-      setSheetErrors(Object.fromEntries(SPREADSHEET_CODES.map((code) => [code, message])))
-      if (showModal) {
-        setProcessState({ mode, status: 'error', error: message })
-      }
+      if (current === requestId.current && scopeKeyRef.current === key) setError(err.message || 'Data gagal dimuat.')
+      return false
     } finally {
-      if (requestId === sheetRequestRef.current) setSheetLoading(false)
+      if (current === requestId.current && scopeKeyRef.current === key) setLoading(false)
     }
-  }, [periodMonth, contractId, up3Uuid])
+  }, [scopeKey, contractId, up3Uuid, periodMonth, effectiveUnitUuid, isConsolidated, isUp3Role, unitIdsKey, canViewVariableFinancial])
 
   useEffect(() => {
-    if (activeTab !== 'rekap' || !periodMonth) return
-    if (sheetLoadedPeriod.current === periodMonth) return
-    loadSheetSummary(Object.keys(sheetSummaries).length ? 'period' : 'load')
-  }, [activeTab, periodMonth, loadSheetSummary]) // eslint-disable-line react-hooks/exhaustive-deps
+    setSaveError(''); setSaveMessage(''); setDrillIndicator(null); setHistoryScope(null)
+    historyRequestId.current += 1
+    loadMonthly()
+    return () => { requestId.current += 1 }
+  }, [loadMonthly])
 
-  const openSheetDetail = useCallback(async (indicator, ulpName, page = 1) => {
-    setSheetDetailIndicator(indicator)
-    setSheetDetailUlp(ulpName ?? '')
-    setSheetDetailOpen(true)
-    setSheetDetailLoading(true)
+  const confirmLeave = () => !busy && (!dirty || window.confirm('Perubahan Variable Cost belum disimpan. Tinggalkan perubahan?'))
+  const changeTab = (tab) => {
+    if (tab === activeTab || !confirmLeave()) return
+    setDrafts(monthlyDraftsFromRows(monthlyRows, effectiveUnitUuid))
+    setDrillIndicator(null); setActiveTab(tab)
+  }
+  const changePeriod = (next) => { if (next !== period && confirmLeave()) onPeriodChange?.(next) }
+  const refresh = () => { if (confirmLeave()) { setSaveMessage(''); setSaveError(''); loadMonthly() } }
+  const handleSaveMonthly = async () => {
+    if (savingRef.current || !canEditMonthly || !versionId || !isCurrent || loading) return
+    setSaveError(''); setSaveMessage('')
+    let values
+    try { values = monthlyChanges(drafts, monthlyRows, effectiveUnitUuid) } catch (err) { setSaveError(err.message); return }
+    if (!values.length) return
+    savingRef.current = true; setSaving(true)
+    const savedScopeKey = scopeKey
     try {
-      const data = await fetchSpreadsheetDetail({
-        indicator: indicator.code ?? indicator.point,
-        period: periodLabelToMonth(period),
-        ulp: ulpName ?? '',
-        page,
-        pageSize: 100,
-      })
-      setSheetDetailData(data)
+      await saveVariableMonthlyActuals({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, versionId, periodMonth, values })
+      onSaved?.()
+      if (scopeKeyRef.current !== savedScopeKey) return
+      const reloaded = await loadMonthly()
+      setSaveMessage(reloaded ? 'Input bulanan tersimpan dan langsung aktif. Indikator terkait SLA disinkronkan otomatis.' : 'Input bulanan sudah tersimpan, tetapi pembacaan ulang gagal. Muat ulang untuk memeriksa hasilnya.')
     } catch (err) {
-      setSheetDetailData({ success: false, error: err.message, rows: [], pagination: null })
+      if (scopeKeyRef.current === savedScopeKey) setSaveError(err.message || 'Gagal menyimpan input bulanan.')
     } finally {
-      setSheetDetailLoading(false)
-    }
-  }, [period])
-
-  const handleSaveManualWo = async (unitUuid, indicatorCode = '2.1a') => {
-    const draftKey = `${indicatorCode}:${unitUuid}`
-    const raw = woDrafts[draftKey] ?? ''
-    const value = raw === '' ? null : Number(raw)
-    if (value == null || !Number.isFinite(value) || value < 0) {
-      setWoError('WO harus berupa angka nol atau lebih.')
-      return
-    }
-    if (!contractId || !up3Uuid) {
-      setWoError('Scope kontrak/UP3 belum siap.')
-      return
-    }
-    setWoPendingUnit(unitUuid)
-    setWoPendingIndicator(indicatorCode)
-    setWoSavingUnit(draftKey)
-    setWoError('')
-    setWoMessage('')
-    setProcessState({ mode: 'wo', status: 'loading', error: '' })
-    try {
-      await setVariableManualWo({
-        contractId,
-        up3Id: up3Uuid,
-        unitId: unitUuid,
-        periodMonth,
-        indicatorCode,
-        woValue: value,
-      })
-      setWoMessage('WO tersimpan.')
-      const rows = await listVariableManualWo({ contractId, up3Id: up3Uuid, periodMonth, indicatorCode }).catch(() => [])
-      setManualWoByIndicator((current) => ({ ...current, [indicatorCode]: rows ?? [] }))
-      setProcessState({ mode: 'wo', status: 'success', error: '' })
-    } catch (err) {
-      const message = err.message || 'Gagal menyimpan WO.'
-      setWoError(message)
-      setProcessState({ mode: 'wo', status: 'error', error: message })
-    } finally {
-      setWoSavingUnit('')
+      savingRef.current = false; setSaving(false)
     }
   }
 
-  const PROCESS_TITLES = {
-    load: 'Memuat data',
-    period: 'Memuat periode',
-    refresh: 'Memperbarui data',
-    wo: 'Menyimpan WO',
-  }
-
-  const handleProcessRetry = () => {
-    if (!processState) return
-    if (processState.mode === 'wo' && woPendingUnit) {
-      handleSaveManualWo(woPendingUnit, woPendingIndicator || '2.1a')
-    } else {
-      loadSheetSummary(processState.mode === 'wo' ? 'refresh' : processState.mode)
-    }
-  }
-
-  const manualWoMapFor = (indicatorCode) => new Map((manualWoByIndicator[indicatorCode] ?? []).map((row) => [row.unit_id, Number(row.wo_value ?? 0)]))
-
-  const [feeders, setFeeders] = useState([])
-  const [feederLoading, setFeederLoading] = useState(false)
-  const [feederError, setFeederError] = useState('')
-  const [feederStatusFilter, setFeederStatusFilter] = useState('')
-  const [proposeName, setProposeName] = useState('')
-  const [proposeBusy, setProposeBusy] = useState(false)
-  const [directUlp, setDirectUlp] = useState(() => effectiveLegacy ?? ALL_KEY)
-  const [pendingList, setPendingList] = useState([])
-  const [pendingLoading, setPendingLoading] = useState(false)
-  const [pendingError, setPendingError] = useState('')
-  const [approvalDetail, setApprovalDetail] = useState(null)
-  const [approvalData, setApprovalData] = useState(null)
-  const [approvalDetailError, setApprovalDetailError] = useState('')
-  const [focusedFeederId, setFocusedFeederId] = useState(null)
-
-  // V3 daily input state
-  const [showInputPicker, setShowInputPicker] = useState(false)
-  const [selectedIndicator, setSelectedIndicator] = useState(null)
-  const [showForm, setShowForm] = useState(false)
-  const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0,10))
-  const [formFeeder, setFormFeeder] = useState('')
-  const [formLocation, setFormLocation] = useState('')
-  const [formWo, setFormWo] = useState('')
-  const [formRealisasi, setFormRealisasi] = useState('')
-  const [formPetugas, setFormPetugas] = useState([])
-  const [formKeterangan, setFormKeterangan] = useState('')
-  const [formFiles, setFormFiles] = useState([])
-  const [formError, setFormError] = useState('')
-  const [formBusy, setFormBusy] = useState(false)
-  const [editingEntryId, setEditingEntryId] = useState(null)
-  const [employees, setEmployees] = useState([])
-  const [dailyList, setDailyList] = useState([])
-  const [dailyLoading, setDailyLoading] = useState(false)
-  const [showDailyList, setShowDailyList] = useState(false)
-  const [dailyIndicator, setDailyIndicator] = useState(null)
-  const [dailyUnitId, setDailyUnitId] = useState(null)
-  const [detailEntry, setDetailEntry] = useState(null)
-  const [detailData, setDetailData] = useState(null)
-
-  const loadFeeders = useCallback(async () => {
-    if (!contractId || !up3Uuid) return
-    setFeederLoading(true); setFeederError('')
-    try {
-      const list = await listFeeders({ contractId, up3Id: up3Uuid, unitId: isAdminUlpView ? effectiveUnitUuid : (feederStatusFilter ? undefined : effectiveUnitUuid) })
-      let filtered = list
-      if (feederStatusFilter) filtered = filtered.filter((f) => f.status === feederStatusFilter)
-      if (!isAdminUlpView && effectiveUnitUuid && !isConsolidated) {
-        if (effectiveUnitUuid) filtered = filtered.filter((f) => f.unit_id === effectiveUnitUuid)
-      }
-      setFeeders(filtered)
-    } catch (err) { setFeederError(err.message) }
-    finally { setFeederLoading(false) }
-  }, [contractId, up3Uuid, effectiveUnitUuid, isAdminUlpView, feederStatusFilter, isConsolidated])
-
-  useEffect(() => { if (activeTab === 'penyulang') loadFeeders() }, [loadFeeders, activeTab])
-  useEffect(() => { setDirectUlp(effectiveLegacy ?? ALL_KEY) }, [effectiveLegacy])
-
-  const loadPending = useCallback(async () => {
-    if (!contractId || !up3Uuid) return
-    setPendingLoading(true); setPendingError('')
-    try {
-      const list = await listSubmittedEntries({ contractId, up3Id: up3Uuid })
-      setPendingList(list)
-    } catch (e) { setPendingError(e.message) }
-    finally { setPendingLoading(false) }
-  }, [contractId, up3Uuid])
-
-  useEffect(() => { if (activeTab === 'persetujuan') loadPending() }, [loadPending, activeTab])
-
-  const loadRejected = useCallback(async () => {
-    if (!isAdminUlpView || !contractId || !up3Uuid || !effectiveUnitUuid) { setRejectedList([]); if (onRejectedCountChange) onRejectedCountChange(0); return }
-    setRejectedLoading(true)
-    try {
-      const list = await listRejectedEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid })
-      setRejectedList(list ?? [])
-      if (onRejectedCountChange) onRejectedCountChange((list ?? []).length)
-    } catch { setRejectedList([]); if (onRejectedCountChange) onRejectedCountChange(0) }
-    finally { setRejectedLoading(false) }
-  }, [isAdminUlpView, contractId, up3Uuid, effectiveUnitUuid, onRejectedCountChange])
-
-  useEffect(() => { loadRejected() }, [loadRejected])
-  useEffect(() => { if (isAdminUlpView && activeTab === 'rekap') loadRejected() }, [activeTab, isAdminUlpView, loadRejected])
-
   useEffect(() => {
-    if (!targetUnitId || !childUlps.some((unit) => unit.uuid === targetUnitId)) {
-      setTargetUnitId(childUlps[0]?.uuid ?? '')
-    }
-  }, [targetUnitId, childUlps.map((unit) => unit.uuid).join(',')])
-
-  useEffect(() => {
-    if (activeTab !== 'target') return
+    if (activeTab !== 'target' || !isCurrent) return
     setTargetDrafts(Object.fromEntries(STANDARD_8.map((indicator) => {
-      const canonical = indicators.find((row) => row.point_code === indicator.point && row.sla_version_id === activeVersionId)
-      const target = targets.find((row) => row.unit_id === targetUnitId && row.indicator_id === canonical?.id)
-      return [indicator.point, target?.target_value ?? '']
+      const canonical = data?.indicators.find((row) => row.point_code === indicator.code)
+      return [indicator.code, String(data?.targets.find((row) => row.unit_id === targetUnitId && row.indicator_id === canonical?.id)?.target_value ?? '')]
     })))
-  }, [activeTab, activeVersionId, targetUnitId, targets, indicators])
-
-  useEffect(() => {
-    if (!effectiveUnitUuid || isConsolidated) { setEmployees([]); return }
-    // fetch employees for own ULP
-    supabase.from('employees').select('id').limit(1).then(() => {
-      // use employeeRepository via direct query for now: fetch via supabase view
-      supabase.from('employee_unit_history').select('employee_id').eq('unit_id', effectiveUnitUuid).then(() => {})
-    })
-    // fallback: fetch via employees table with join
-    const loadEmps = async () => {
-      try {
-        // Try to get employees assigned to this ULP via history
-        const { data: hist } = await supabase.from('employee_unit_history').select('employee_id').eq('unit_id', effectiveUnitUuid).is('effective_to', null)
-        const ids = (hist ?? []).map((h) => h.employee_id)
-        if (!ids.length) { setEmployees([]); return }
-        const { data: emps } = await supabase.from('employees').select('id,name').in('id', ids)
-        // filter only active via status history
-        const { data: statusRows } = await supabase.from('employee_status_history').select('employee_id,status').in('employee_id', ids)
-        const activeIds = new Set((statusRows ?? []).filter((s) => s.status === 'Aktif').map((s) => s.employee_id))
-        // if no status rows, assume all active
-        const filtered = (emps ?? []).filter((e) => activeIds.size === 0 || activeIds.has(e.id))
-        setEmployees(filtered)
-      } catch { setEmployees([]) }
-    }
-    loadEmps()
-  }, [effectiveUnitUuid, isConsolidated])
-
-  const handlePropose = async () => {
-    if (!proposeName.trim() || !effectiveUnitUuid) return
-    setProposeBusy(true)
-    try {
-      if (isAdminUlpView) {
-        await proposeFeeder({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, name: proposeName.trim() })
-      } else {
-        const targetUnit = units.find((u) => u.legacyKey === directUlp || u.uuid === directUlp)?.uuid ?? effectiveUnitUuid
-        if (!targetUnit) throw new Error('Pilih ULP tujuan')
-        await createFeederDirect({ contractId, up3Id: up3Uuid, unitId: targetUnit, name: proposeName.trim() })
-      }
-      setProposeName(''); await loadFeeders(); await loadMonthly()
-    } catch (err) { setFeederError(err.message) }
-    finally { setProposeBusy(false) }
-  }
-
-  const handleApprove = async (id) => { try { await approveFeeder(id); await loadFeeders(); await onApprovalChange?.(); setFocusedFeederId(null) } catch (e) { setFeederError(e.message) } }
-  const handleReject = async (id) => {
-    const reason = window.prompt('Alasan penolakan (wajib):')
-    if (!reason) return
-    try { await rejectFeeder(id, reason); await loadFeeders(); await onApprovalChange?.(); setFocusedFeederId(null) } catch (e) { setFeederError(e.message) }
-  }
-  const handleToggleActive = async (f) => {
-    try {
-      if (f.status === 'ACTIVE') await deactivateFeeder(f.id)
-      else if (f.status === 'INACTIVE') await activateFeeder(f.id)
-      await loadFeeders()
-    } catch (e) { setFeederError(e.message) }
-  }
-  const handleDelete = async (f) => {
-    if (!window.confirm(`Hapus Penyulang "${f.name}"?`)) return
-    try { await deleteFeeder(f.id); await loadFeeders() }
-    catch (e) { setFeederError(e.message.includes('deactivate') ? 'Penyulang sudah memiliki riwayat transaksi — tidak dapat dihapus permanen. Gunakan Nonaktifkan.' : e.message) }
-  }
-
-  const openApprovalDetail = async (row) => {
-    const requestId = ++approvalDetailRequestId.current
-    setApprovalDetail(row)
-    setApprovalData(null)
-    setApprovalDetailError('')
-    try {
-      const data = await getVariableDetail(row.id)
-      if (requestId !== approvalDetailRequestId.current) return
-      const ind = data.indicator ?? row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
-      setApprovalData({ ...data, indicator: ind, row })
-      if (data.entry.status !== 'SUBMITTED') onApprovalChange?.()
-    } catch (error) {
-      if (requestId === approvalDetailRequestId.current) setApprovalDetailError(error.message || 'Detail persetujuan gagal dimuat.')
-    }
-  }
-  useEffect(() => {
-    if (!approvalTarget?.token || approvalTarget.token === handledApprovalToken.current) return
-    if (approvalTarget.source === 'variable') {
-      handledApprovalToken.current = approvalTarget.token
-      setActiveTab('persetujuan')
-      openApprovalDetail({ id: approvalTarget.id, unit_id: approvalTarget.unitId })
-      onApprovalTargetHandled?.()
-    } else if (approvalTarget.source === 'feeder') {
-      handledApprovalToken.current = approvalTarget.token
-      const targetUnit = childUlps.find((unit) => unit.uuid === approvalTarget.unitId)
-      setSelectedUlpLegacy(targetUnit?.legacyKey ?? approvalTarget.unitId)
-      setFeederStatusFilter('')
-      setFocusedFeederId(approvalTarget.id)
-      setActiveTab('penyulang')
-      onApprovalTargetHandled?.()
-    }
-  }, [approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!focusedFeederId || !feeders.some((feeder) => feeder.id === focusedFeederId)) return
-    document.getElementById(`feeder-${focusedFeederId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [focusedFeederId, feeders])
-
-  const handleApproveTx = async (id) => {
-    try { await approveVariableEntry(id); setApprovalDetail(null); setApprovalData(null); await loadPending(); await loadMonthly(); await onApprovalChange?.() } catch (e) { setPendingError(e.message) }
-  }
-  const handleRejectTx = async (id) => {
-    const reason = window.prompt('Alasan penolakan (wajib):')
-    if (!reason?.trim()) return
-    try { await rejectVariableEntry(id, reason.trim()); setApprovalDetail(null); setApprovalData(null); await loadPending(); await loadMonthly(); await onApprovalChange?.() } catch (e) { setPendingError(e.message) }
-  }
+  }, [activeTab, data, targetUnitId, isCurrent])
 
   const handleSaveTarget = async (indicator) => {
+    if (busy || loading || !isCurrent || !canEditTargets) return
+    const canonical = data?.indicators.find((row) => row.point_code === indicator.code && row.variable_cost_profile === 'STANDARD')
+    const value = draftNumber(targetDrafts[indicator.code])
     setTargetError(''); setTargetMessage('')
-    const canonical = indicators.find((row) => row.point_code === indicator.point && row.sla_version_id === activeVersionId)
-    const value = Number(targetDrafts[indicator.point])
-    if (!activeVersionId) { setTargetError('Tidak ada versi SLA aktif untuk periode ini.'); return }
-    if (!canonical || canonical.variable_cost_profile !== 'STANDARD') { setTargetError('Indikator standar tidak tersedia pada versi SLA aktif.'); return }
-    if (targetDrafts[indicator.point] === '' || !Number.isFinite(value) || value < 0) { setTargetError('Target wajib berupa angka >= 0.'); return }
-    setTargetBusyPoint(indicator.point)
+    if (!canonical || value == null) { setTargetError('Target harus berupa angka nol atau lebih pada versi SLA aktif.'); return }
+    setTargetBusyPoint(indicator.code)
     try {
-      await setVariableTarget({
-        contractId,
-        up3Id: up3Uuid,
-        unitId: targetUnitId,
-        versionId: activeVersionId,
-        indicatorId: canonical.id,
-        periodMonth,
-        targetValue: value,
-      })
-      await loadMonthly()
-      setTargetMessage(`${getShortLabel(indicator)} tersimpan.`)
-    } catch (error) { setTargetError(error.message || 'Gagal menyimpan target.') }
+      await setVariableTarget({ contractId, up3Id: up3Uuid, unitId: targetUnitId, versionId, indicatorId: canonical.id, periodMonth, targetValue: value })
+      onSaved?.()
+      await loadMonthly(); setTargetMessage(`${getShortLabel(indicator)} tersimpan.`)
+    } catch (err) { setTargetError(err.message || 'Gagal menyimpan target.') }
     finally { setTargetBusyPoint('') }
   }
 
-  const konstruksiEditorUnits = isConsolidated ? childUlps : (effectiveUnit ? [effectiveUnit] : [])
-  const openKonstruksiDetail = (indicator) => {
-    const drafts = {}
-    const targetDraftsMap = {}
-    for (const unit of konstruksiEditorUnits) {
-      const row = konstruksiAmounts.find((entry) => entry.unit_id === unit.uuid)
-      drafts[unit.uuid] = row ? String(Math.trunc(Number(row.amount_rp))) : ''
-      const tRow = konstruksiTargets.find((entry) => entry.unit_id === unit.uuid)
-      targetDraftsMap[unit.uuid] = tRow ? String(Math.trunc(Number(tRow.target_rp))) : ''
+  const openDetail = (indicator) => {
+    setKonstruksiError(''); setKonstruksiMessage('')
+    if (indicator.code === '3.1c') {
+      setKonstruksiDrafts(Object.fromEntries(scopedUnits.map((unit) => [unit.uuid, String(data?.konstruksiAmounts.find((row) => row.unit_id === unit.uuid)?.amount_rp ?? '')])))
+      setKonstruksiTargetDrafts(Object.fromEntries(scopedUnits.map((unit) => [unit.uuid, String(data?.konstruksiTargets.find((row) => row.unit_id === unit.uuid)?.target_rp ?? '')])))
     }
-    setKonstruksiDrafts(drafts)
-    setKonstruksiTargetDrafts(targetDraftsMap)
-    setKonstruksiError('')
-    setKonstruksiMessage('')
     setDrillIndicator(indicator)
   }
+  const closeDetail = () => { if (confirmLeave()) setDrillIndicator(null) }
   const handleSaveKonstruksi = async () => {
-    const canonical = indicators.find((row) => row.point_code === '3.1c' && row.variable_cost_profile === 'KONSTRUKSI')
-    if (!canonical) { setKonstruksiError('Indikator Konstruksi tidak tersedia pada periode aktif.'); return }
-    const amountValues = konstruksiEditorUnits
-      .filter((unit) => konstruksiDrafts[unit.uuid] !== '')
-      .map((unit) => ({ unitId: unit.uuid, amountRp: Number(konstruksiDrafts[unit.uuid]) }))
-    const targetValues = konstruksiEditorUnits
-      .filter((unit) => konstruksiTargetDrafts[unit.uuid] !== '')
-      .map((unit) => ({ unitId: unit.uuid, targetRp: Number(konstruksiTargetDrafts[unit.uuid]) }))
-    if (!amountValues.length && !targetValues.length) {
-      setKonstruksiError('Isi minimal satu nominal Rupiah yang valid.')
-      return
-    }
-    if (amountValues.some((entry) => !Number.isFinite(entry.amountRp) || entry.amountRp < 0) || targetValues.some((entry) => !Number.isFinite(entry.targetRp) || entry.targetRp < 0)) {
-      setKonstruksiError('Nominal Rupiah harus angka >= 0.')
-      return
+    if (!canManageKonstruksiMonthly || busy || !isCurrent) return
+    const canonical = data?.indicators.find((row) => row.point_code === '3.1c' && row.variable_cost_profile === 'KONSTRUKSI')
+    if (!canonical) { setKonstruksiError('Indikator Konstruksi tidak tersedia pada versi aktif.'); return }
+    const amounts = scopedUnits.filter((unit) => konstruksiDrafts[unit.uuid] !== '').map((unit) => ({ unitId: unit.uuid, amountRp: Number(konstruksiDrafts[unit.uuid]) }))
+    const targets = scopedUnits.filter((unit) => konstruksiTargetDrafts[unit.uuid] !== '').map((unit) => ({ unitId: unit.uuid, targetRp: Number(konstruksiTargetDrafts[unit.uuid]) }))
+    if (!amounts.length && !targets.length) { setKonstruksiError('Isi minimal satu nominal Rupiah.'); return }
+    if ([...amounts.map((item) => item.amountRp), ...targets.map((item) => item.targetRp)].some((value) => !Number.isSafeInteger(value) || value < 0)) {
+      setKonstruksiError('Nominal Rupiah harus angka bulat nol atau lebih.'); return
     }
     setKonstruksiBusy(true); setKonstruksiError(''); setKonstruksiMessage('')
     try {
-      if (targetValues.length) {
-        await setKonstruksiMonthlyTargets({
-          contractId,
-          up3Id: up3Uuid,
-          periodMonth,
-          indicatorId: canonical.id,
-          values: targetValues,
-        })
-      }
-      if (amountValues.length) {
-        await setKonstruksiMonthlyAmounts({
-          contractId,
-          up3Id: up3Uuid,
-          periodMonth,
-          indicatorId: canonical.id,
-          values: amountValues,
-        })
-      }
-      await loadMonthly()
-      setKonstruksiMessage('Konstruksi tersimpan.')
-    } catch (error) {
-      setKonstruksiError(error.message || 'Gagal menyimpan Konstruksi.')
-    } finally {
-      setKonstruksiBusy(false)
-    }
+      // Keep the existing Konstruksi RPCs and nominal-monthly behavior unchanged.
+      if (targets.length) await setKonstruksiMonthlyTargets({ contractId, up3Id: up3Uuid, periodMonth, indicatorId: canonical.id, values: targets })
+      if (amounts.length) await setKonstruksiMonthlyAmounts({ contractId, up3Id: up3Uuid, periodMonth, indicatorId: canonical.id, values: amounts })
+      await loadMonthly(); setKonstruksiMessage('Konstruksi tersimpan.')
+    } catch (err) { setKonstruksiError(err.message || 'Gagal menyimpan Konstruksi. Periksa kembali target dan aktual sebelum mencoba lagi.') }
+    finally { setKonstruksiBusy(false) }
   }
-
-  // V3 helpers
-  const openInputPicker = () => { if (isConsolidated) return; setShowInputPicker(true) }
-  const chooseIndicator = (ind) => {
-    setSelectedIndicator(ind)
-    setShowInputPicker(false)
-    setFormDate(new Date().toISOString().slice(0,10))
-    setFormFeeder(''); setFormLocation(''); setFormWo(''); setFormRealisasi(''); setFormPetugas([]); setFormKeterangan(''); setFormFiles([]); setFormError(''); setEditingEntryId(null); setEditingRejectionReason('')
-    setShowForm(true)
-  }
-  const openDailyList = async (ind, rejectedOnly = false, unitOverride = null, approvedOnly = false, indicatorIdsOverride = null) => {
-    const requestId = ++dailyRequestId.current
-    const requestedUnitId = unitOverride ?? effectiveUnitUuid
-    if (!requestedUnitId || (isConsolidated && !unitOverride)) return
-    setDailyUnitId(requestedUnitId)
-    setDailyIndicator(ind)
-    setShowDailyList(true)
-    setDailyLoading(true)
+  const openHistory = async (indicator, unit) => {
+    const current = ++historyRequestId.current
+    setHistoryScope({ indicator, unit }); setHistoryRows([]); setHistoryError(''); setHistoryLoading(true)
     try {
-      const uuid = pointToUuids.get(ind.point) ?? ind.id
-      const indicatorRow = indicators.find((r) => r.point_code === ind.point || r.legacy_key === ind.id)
-      const indicatorIds = indicatorIdsOverride?.length ? indicatorIdsOverride : [indicatorRow?.id ?? uuid]
-      const [entryLists, revenue, unitFeeders] = await Promise.all([
-        Promise.all(indicatorIds.map((indicatorId) => listDailyEntries({ contractId, up3Id: up3Uuid, unitId: requestedUnitId, indicatorId, periodMonth }))),
-        canViewVariableFinancial
-          ? listVariableActualRevenue({ contractId, up3Id: up3Uuid, periodMonth, unitId: requestedUnitId }).then((rows) => ({ rows, error: '' })).catch((loadError) => ({ rows: [], error: loadError.message || 'Gagal memuat pendapatan' }))
-          : Promise.resolve({ rows: [], error: '' }),
-        listActiveFeeders({ contractId, up3Id: up3Uuid, unitId: requestedUnitId }).catch(() => []),
-      ])
-      if (requestId !== dailyRequestId.current) return
-      if (canViewVariableFinancial) { setFinancialRows(revenue.rows); setFinancialError(revenue.error) }
-      setActiveFeeders(unitFeeders)
-      let filtered = entryLists.flat()
-      if (rejectedOnly) filtered = filtered.filter((r) => r.status === 'REJECTED')
-      if (approvedOnly) filtered = filtered.filter((r) => r.status === 'APPROVED')
-      filtered.sort((a, b) => {
-        if (a.status === 'REJECTED' && b.status !== 'REJECTED') return -1
-        if (b.status === 'REJECTED' && a.status !== 'REJECTED') return 1
-        return new Date(b.work_date) - new Date(a.work_date)
-      })
-      setDailyList(filtered)
-    } catch (e) { if (requestId === dailyRequestId.current) setDailyList([]) }
-    finally { if (requestId === dailyRequestId.current) setDailyLoading(false) }
-  }
-  const openDashboardTransactions = (indicatorCode, requestedUnitId, indicatorIds) => {
-    const indicator = variableCostIndicators.find((item) => item.point === indicatorCode || item.code === indicatorCode)
-    if (!indicator) return
-    const requestedUnit = childUlps.find((unit) => unit.uuid === requestedUnitId)
-    setSelectedUlpLegacy(requestedUnit?.legacyKey ?? requestedUnitId)
-    setActiveTab('rekap')
-    openDailyList(indicator, false, requestedUnitId, true, indicatorIds)
-  }
-  const closeDailyList = () => {
-    dailyRequestId.current += 1
-    setShowDailyList(false)
-  }
-  const openDetail = async (entryId) => {
-    setDetailEntry(entryId)
-    try {
-      const data = await getVariableDetail(entryId)
-      setDetailData(data)
-    } catch (e) { setDetailData(null) }
-  }
-  const handleSaveDraft = async (shouldSubmit) => {
-    setFormError('')
-    if (!selectedIndicator) { setFormError('Pilih jenis kegiatan'); return }
-    if (!formDate) { setFormError('Tanggal wajib'); return }
-    if (!formFeeder) { setFormError('Penyulang wajib'); return }
-    if (!formLocation.trim()) { setFormError('Lokasi wajib'); return }
-    if (formWo === '' || Number(formWo) < 0 || !Number.isInteger(Number(formWo))) { setFormError('WO wajib angka bulat >=0'); return }
-    if (formRealisasi === '' || Number(formRealisasi) < 0 || !Number.isInteger(Number(formRealisasi))) { setFormError('Realisasi wajib angka bulat >=0'); return }
-    if (!formPetugas.length) { setFormError('Pilih minimal 1 petugas'); return }
-    // Resolve indicator UUID
-    const indicatorRow = indicators.find((r) => r.point_code === selectedIndicator.point || r.legacy_key === selectedIndicator.id)
-    const indicatorId = selectedIndicator.slaLinked ? indicatorRow?.id : selectedIndicator.id
-    const versionId = indicatorRow?.sla_version_id ?? activeVersionId
-    if (!indicatorId || !versionId) { setFormError('Indikator belum tersedia — Data tersinkron. Hubungi Admin.'); return }
-    setFormBusy(true)
-    try {
-      const saved = await saveVariableEntry({
-        entryId: editingEntryId,
-        contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid,
-        slaVersionId: versionId, indicatorId,
-        workDate: formDate, feederId: formFeeder,
-        locationAddress: formLocation, workOrder: Number(formWo), realization: Number(formRealisasi),
-        description: formKeterangan, employeeIds: formPetugas,
-      })
-      const entryId = saved.id ?? editingEntryId ?? saved?.id
-      // upload evidences if any
-      if (formFiles.length) {
-        for (const f of formFiles) {
-          await uploadVariableEvidence({ entryId, file: f })
-        }
-      }
-      if (shouldSubmit) {
-        // validate evidence after upload
-        await submitVariableEntry(entryId)
-      }
-      setShowForm(false); setSelectedIndicator(null); setEditingEntryId(null); setEditingRejectionReason('')
-      await loadMonthly()
-      await loadRejected()
-      if (dailyIndicator) {
-        const list = await listDailyEntries({ contractId, up3Id: up3Uuid, unitId: effectiveUnitUuid, indicatorId, periodMonth })
-        setDailyList(list)
-      }
-    } catch (e) { setFormError(e.message) }
-    finally { setFormBusy(false) }
-  }
-  const handleContinueDraft = async (row) => {
-    const data = await getVariableDetail(row.id)
-    const indicatorForRow = data.indicator ?? indicators.find((r) => r.id === data.entry.indicator_id) ?? null
-    const matchedInput = INPUT_INDICATORS.find((item) => item.id === data.entry.indicator_id) ?? (indicatorForRow ? INPUT_INDICATORS.find((item) => item.point === indicatorForRow.point_code || item.point === indicatorForRow.legacy_key) : null)
-    setSelectedIndicator(matchedInput ?? INPUT_INDICATORS.find((item) => item.point === dailyIndicator?.point) ?? INPUT_INDICATORS[0])
-    setFormDate(data.entry.work_date?.slice(0,10) ?? new Date().toISOString().slice(0,10))
-    setFormFeeder(data.entry.feeder_id ?? '')
-    setFormLocation(data.entry.location_address ?? '')
-    setFormWo(String(data.entry.work_order ?? ''))
-    setFormRealisasi(String(data.entry.realization ?? ''))
-    setFormPetugas((data.personnel ?? []).map((p) => p.employee_id))
-    setFormKeterangan(data.entry.description ?? '')
-    setFormFiles([]); setEditingEntryId(row.id); setEditingRejectionReason(data.entry.rejection_reason ?? ''); setShowForm(true)
-    setDailyList([]); setShowDailyList(false)
-  }
-  const handleRepairRejected = async (row) => {
-    await handleContinueDraft(row)
+      const rows = await listVariableMonthlyHistory({ contractId, up3Id: up3Uuid, unitId: unit.uuid, periodMonth, indicatorCode: indicator.code })
+      if (current === historyRequestId.current) setHistoryRows(rows)
+    } catch (err) { if (current === historyRequestId.current) setHistoryError(err.message || 'Riwayat gagal dimuat.') }
+    finally { if (current === historyRequestId.current) setHistoryLoading(false) }
   }
 
-  // Build point -> UUID map for grouping
-  const pointToUuids = new Map()
-  indicators.forEach((ind) => { if (ind.point_code) pointToUuids.set(ind.point_code, ind.id) })
-  variableCostIndicators.filter((indicator) => indicator.code?.startsWith('TEBANG_')).forEach((indicator) => {
-    if (indicator.point) pointToUuids.set(indicator.point, indicator.id)
-  })
-
-  function getConsolidatedValues(point) {
-    if (point === '3.1c') {
-      return { wo: 0, realisasi: konstruksiAmounts.reduce((sum, row) => sum + Number(row.amount_rp ?? 0), 0), achievement: null }
-    }
-    // For V2 with empty indicators table, fallback to sum across all entries for display correctness
-    // When indicators exist, filter by UUID matching point
-    const uuid = pointToUuids.get(point)
-    const relevant = uuid ? entries.filter((e) => e.indicator_id === uuid) : []
-    // If no mapping, treat as no data -> sum 0; do not invent
-    if (uuid && relevant.length === 0) return { wo: 0, realisasi: 0, achievement: null }
-    if (!uuid && entries.length === 0) return { wo: 0, realisasi: 0, achievement: null }
-    if (!uuid) {
-      // No indicator mapping: show consolidated sums as 0 to avoid fake per-point sums
-      return { wo: 0, realisasi: 0, achievement: null }
-    }
-    const wo = relevant.reduce((s, r) => s + Number(r.work_order ?? 0), 0)
-    const realisasi = relevant.reduce((s, r) => s + Number(r.realization ?? 0), 0)
-    // For Konstruksi, realization is revenue (already)
-    return { wo, realisasi }
+  const getTarget = (indicator, scopedUnitId = null) => {
+    if (!indicator.slaLinked) return null
+    const canonical = data?.indicators.find((row) => row.point_code === indicator.code)
+    if (scopedUnitId) return data?.targets.find((row) => row.unit_id === scopedUnitId && row.indicator_id === canonical?.id)?.target_value ?? null
+    // Consolidation uses the same ULP targets as SLA, limited to the authorized scope.
+    const values = scopedUnits.map((unit) => data?.targets.find((row) => row.unit_id === unit.uuid && row.indicator_id === canonical?.id)?.target_value)
+    return values.length && values.every((value) => value != null) ? values.reduce((sum, value) => sum + Number(value), 0) : null
   }
-
-  function getPerUlpValues(point) {
-    const uuid = pointToUuids.get(point)
-    return childUlps.map((ulp) => {
-      const row = entries.find((e) => e.unit_id === ulp.uuid && (uuid ? e.indicator_id === uuid : false))
-      // If no UUID mapping, no row
-      return { ulp, row }
-    })
+  const financialValue = (code, scopedUnitId = null) => scopedUnitId
+    ? data?.financial?.cells.find((row) => row.indicator_code === code && row.unit_id === scopedUnitId)
+    : data?.financial?.indicators.find((row) => row.indicator_code === code)
+  const renderRevenue = (indicator, scopedUnitId = null) => {
+    if (indicator.code === '3.1a') return 'Tidak Ditagihkan'
+    if (data?.financialError) return <span className="sla-blocked-note">Pendapatan gagal dimuat</span>
+    const financial = financialValue(indicator.code, scopedUnitId)
+    if (!financial) return EMPTY_VALUE
+    const missing = financial.actual_missing ? 1 : Number(financial.missing_actual_count ?? 0)
+    if (financial.actual_missing || (missing > 0 && !Number(financial.configured_actual_count))) return <span className="text-muted">Belum diisi</span>
+    return <>{Number(financial.missing_price_count) > 0 ? <span className="sla-blocked-note">Harga belum diatur</span> : formatRp(financial.actual_amount)}{missing > 0 && <small className="vc-monthly-note">Parsial · {missing} ULP belum diisi</small>}</>
   }
-
-  const targetByPoint = new Map()
-  const entryByPoint = new Map()
-  if (!isConsolidated && effectiveUnitUuid) {
-    WORKFLOW_INDICATORS.forEach((ind) => {
-      if (ind.point === '3.1c') return
-      const uuid = pointToUuids.get(ind.point)
-      if (!uuid) return
-      const target = targets.find((row) => row.unit_id === effectiveUnitUuid && row.indicator_id === uuid)
-      const entry = entries.find((row) => row.unit_id === effectiveUnitUuid && row.indicator_id === uuid)
-      if (target) targetByPoint.set(ind.point, target.target_value)
-      if (entry) entryByPoint.set(ind.point, entry)
-    })
-    const konstruksi = konstruksiAmounts.find((row) => row.unit_id === effectiveUnitUuid)
-    if (konstruksi) entryByPoint.set('3.1c', { realization: konstruksi.amount_rp })
-  }
-
-  function getFinancialValues(point, scopedUnitId = null) {
-    const sourceType = point === '3.1c' ? 'KONSTRUKSI' : 'UNIT_RATE'
-    const indicatorId = pointToUuids.get(point)
-    const rows = financialRows.filter((row) =>
-      row.source_type === sourceType
-      && (!scopedUnitId || row.unit_id === scopedUnitId)
-      && (sourceType === 'KONSTRUKSI' || row.indicator_id === indicatorId),
-    )
-    return {
-      revenue: rows.reduce((sum, row) => sum + Number(row.revenue_amount ?? 0), 0),
-      missing: rows.filter((row) => row.price_missing).length,
-    }
-  }
-
-  // Pendapatan indikator spreadsheet = realisasi spreadsheet × harga satuan
-  // efektif akhir periode. Harga sama untuk semua ULP dalam satu UP3.
-  const unitPriceByIndicatorId = new Map((unitPrices ?? []).map((row) => [row.indicator_id, Number(row.unit_price)]))
-  const priceForPoint = (point) => {
-    const uuid = pointToUuids.get(point)
-    if (!uuid) return null
-    const price = unitPriceByIndicatorId.get(uuid)
-    return price == null || Number.isNaN(price) ? null : price
-  }
-  const sheetUuidSet = new Set(SPREADSHEET_INDICATOR_CODES.map((code) => pointToUuids.get(code)).filter(Boolean))
-
-  function getSheetRevenue(point, scopedUnitId = null) {
-    const summary = sheetSummaries[point]
-    if (sheetErrors[point] && !summary) return { revenue: null, missingPrice: false, error: sheetErrors[point] }
-    if (!summary) return { revenue: null, missingPrice: false, error: '' }
-    const price = priceForPoint(point)
-    if (price == null) return { revenue: null, missingPrice: true, error: '' }
-    let realization = Number(summary.realization ?? 0)
-    if (scopedUnitId) {
-      const unit = childUlps.find((item) => item.uuid === scopedUnitId) ?? (effectiveUnitUuid === scopedUnitId ? effectiveUnit : null)
-      realization = realizationForUnit(summary, unit?.displayName)
-    }
-    return { revenue: realization * price, missingPrice: false, error: '' }
-  }
-
-  function renderSheetRevenue(point, scopedUnitId = null) {
-    if (point === '3.1a') return 'Tidak Ditagihkan'
-    if (sheetLoading && !sheetSummaries[point] && !sheetErrors[point]) return <span className="vc-skeleton" style={{ width: 72 }} />
-    const values = getSheetRevenue(point, scopedUnitId)
-    if (values.error) return <span className="sla-blocked-note">Data gagal dimuat</span>
-    if (unitPriceError) return <span className="sla-blocked-note">Harga gagal dimuat</span>
-    if (values.missingPrice) return <span className="sla-blocked-note">Harga belum diatur</span>
-    return formatRp(values.revenue ?? 0)
-  }
-
-  function renderFinancialValue(point, scopedUnitId = null) {
-    if (point === '3.1a') return 'Tidak Ditagihkan'
-    if (isSpreadsheetSourced(point)) return renderSheetRevenue(point, scopedUnitId)
-    if (financialError) return <span className="sla-blocked-note">Tidak tersedia</span>
-    const values = getFinancialValues(point, scopedUnitId)
-    if (values.missing > 0 && values.revenue === 0) return <span className="sla-blocked-note">Harga belum tersedia ({values.missing})</span>
-    return (
-      <div>
-        <div>{formatRp(values.revenue)}</div>
-        {values.missing > 0 && <div className="sla-blocked-note" style={{ fontSize: 11 }}>{values.missing} harga belum tersedia</div>}
-      </div>
-    )
-  }
-
-  function getRevenueTargetValues(point, scopedUnitId = null) {
-    if (point === '3.1c') {
-      const allowedUnitIds = scopedUnitId ? [scopedUnitId] : [...new Set(financialTargets.map((row) => row.unit_id))]
-      const configured = konstruksiTargets.filter((row) => allowedUnitIds.includes(row.unit_id))
-      return {
-        target: configured.reduce((sum, row) => sum + Number(row.target_rp ?? 0), 0),
-        missing: allowedUnitIds.filter((unitId) => !configured.some((row) => row.unit_id === unitId)).length,
-      }
-    }
-    const rows = financialTargets.filter((row) => row.indicator_code === point && (!scopedUnitId || row.unit_id === scopedUnitId))
-    return {
-      target: rows.filter((row) => row.target_amount != null).reduce((sum, row) => sum + Number(row.target_amount), 0),
-      missing: rows.filter((row) => row.target_amount == null).length,
-    }
-  }
-
-  function getFinancialComparison(point, scopedUnitId = null) {
-    const target = getRevenueTargetValues(point, scopedUnitId)
-    const actualValues = getFinancialValues(point, scopedUnitId)
-    const actual = actualValues.revenue
-    const complete = target.missing === 0 && actualValues.missing === 0 && !financialTargetError && !financialError
-    return {
-      ...target,
-      actual,
-      complete,
-      difference: complete ? actual - target.target : null,
-      achievement: complete && target.target > 0 ? (actual / target.target) * 100 : null,
-    }
-  }
-
-  function renderTransactionRevenue(entry, indicator = null) {
-    const point = indicator?.point_code ?? indicator?.point ?? dailyIndicator?.point
-    if (point === '3.1a') return 'Tidak Ditagihkan'
-    if (entry.status !== 'APPROVED') return <span className="text-muted">Belum termasuk</span>
-    if (financialError) return <span className="sla-blocked-note">Tidak tersedia</span>
-    const financial = financialRows.find((row) => row.entry_id === entry.id)
-    if (financial?.price_missing) return <span className="sla-blocked-note">Harga belum tersedia</span>
-    return financial?.revenue_amount == null ? EMPTY_VALUE : formatRp(financial.revenue_amount)
-  }
-
-  // Hindari hitung ganda: indikator spreadsheet memakai realisasi spreadsheet,
-  // bukan transaksi database untuk pekerjaan yang sama.
-  const dbPricedRows = financialRows.filter((row) => row.source_type === 'UNIT_RATE' && !sheetUuidSet.has(row.indicator_id))
-  const sheetRevenueScope = isConsolidated ? null : effectiveUnitUuid
-  const sheetRevenueValues = SPREADSHEET_INDICATOR_CODES.filter((code) => code !== '3.1a').map((code) => getSheetRevenue(code, sheetRevenueScope))
-  const sheetRevenueTotal = sheetRevenueValues.reduce((sum, values) => sum + (values.revenue ?? 0), 0)
-  const sheetMissingPriceCount = sheetRevenueValues.filter((values) => values.missingPrice).length
-  const pricedRevenue = dbPricedRows.filter((row) => row.revenue_amount != null).reduce((sum, row) => sum + Number(row.revenue_amount), 0) + sheetRevenueTotal
-  const konstruksiRevenue = financialRows.filter((row) => row.source_type === 'KONSTRUKSI').reduce((sum, row) => sum + Number(row.revenue_amount ?? 0), 0)
-  const missingPriceCount = dbPricedRows.filter((row) => row.price_missing).length + sheetMissingPriceCount
-  const pricedTargetAmount = financialTargets.filter((row) => row.target_amount != null).reduce((sum, row) => sum + Number(row.target_amount), 0)
-  const targetUnitIds = [...new Set(financialTargets.map((row) => row.unit_id))]
-  const scopedKonstruksiTargets = konstruksiTargets.filter((row) => targetUnitIds.includes(row.unit_id))
-  const konstruksiTargetAmount = scopedKonstruksiTargets.reduce((sum, row) => sum + Number(row.target_rp ?? 0), 0)
-  const configuredFinancialTargetCount = financialTargets.filter((row) => row.target_amount != null).length + scopedKonstruksiTargets.length
-  const missingTargetCount = financialTargets.filter((row) => row.target_amount == null).length + targetUnitIds.filter((unitId) => !scopedKonstruksiTargets.some((row) => row.unit_id === unitId)).length
-  const totalFinancialTarget = pricedTargetAmount + konstruksiTargetAmount
-  const totalFinancialActual = pricedRevenue + konstruksiRevenue
-  const financialTargetsComplete = missingTargetCount === 0 && missingPriceCount === 0 && !financialTargetError && !financialError
-  const totalFinancialDifference = financialTargetsComplete ? totalFinancialActual - totalFinancialTarget : null
-  const totalFinancialAchievement = financialTargetsComplete && totalFinancialTarget > 0 ? (totalFinancialActual / totalFinancialTarget) * 100 : null
-  const showRekapAction = isConsolidated || !isUp3Role || (canViewVariableFinancial && !isConsolidated)
-  const rekapColumnCount = 6 + (canViewVariableFinancial ? 1 : 0) + (showRekapAction ? 1 : 0)
-  const primaryTabs = [
-    { id: 'rekap', label: 'Rekap Bulanan' },
-    ...(canViewVariableFinancial ? [{ id: 'dashboard-finansial', label: 'Dashboard Finansial' }] : []),
-    ...(isUp3Role && !isManagementReadOnly ? [{ id: 'persetujuan', label: 'Persetujuan' }] : []),
-  ]
+  const renderMonthlyValue = (value, missing = 0) => <>{value == null ? <span className="text-muted">Belum diisi</span> : formatNumber(value)}{isConsolidated && missing > 0 && value != null && <small className="vc-monthly-note">{missing} ULP belum diisi</small>}</>
+  const summary = data?.financial?.summary
+  const scopeLabel = isConsolidated ? 'Konsolidasi UP3' : effectiveUnit?.displayName ?? 'ULP belum tersedia'
+  const primaryTabs = [{ id: 'rekap', label: 'Rekap Bulanan' }, ...(canViewVariableFinancial ? [{ id: 'dashboard-finansial', label: 'Dashboard Finansial' }] : [])]
   const configurationTabs = [
-    ...(isUp3Role && !isManagementReadOnly ? [{ id: 'target', label: 'Target Operasional' }] : []),
+    ...(canEditTargets ? [{ id: 'target', label: 'Target Operasional' }] : []),
     ...(canViewVariableFinancial ? [{ id: 'target-pendapatan', label: 'Target Pendapatan' }] : []),
     ...(canManageKonstruksiMonthly ? [{ id: 'harga-satuan', label: 'Harga Satuan' }] : []),
-    { id: 'penyulang', label: 'Master Penyulang' },
   ]
   const configurationActive = configurationTabs.some((tab) => tab.id === activeTab)
-  const scopeLabel = isAdminUlpView
-    ? (effectiveUnit?.displayName ?? effectiveLegacy)
-    : isConsolidated
-      ? 'Konsolidasi UP3'
-      : (childUlps.find((unit) => (unit.legacyKey ?? unit.uuid) === selectedUlpLegacy)?.displayName ?? '—')
-
-  // --- Baris rekap khusus indikator spreadsheet ---
-  function sheetUlpNameFor(unit) {
-    return normalizeSpreadsheetUlp(unit?.displayName ?? '')
-  }
-
-  function renderSheetRow(ind) {
-    const indicatorCode = ind.code ?? ind.point
-    const sheetSummary = sheetSummaries[indicatorCode] ?? null
-    const manualWoByUnit = manualWoMapFor(indicatorCode)
-    const periodMismatch = Boolean(sheetSummary) && sheetPeriods[indicatorCode] !== periodMonth
-    const firstLoad = sheetLoading && (!sheetSummary || periodMismatch)
-    if (sheetErrors[indicatorCode] && !sheetSummary) {
-      return (
-        <tr key={ind.id}>
-          <td>{getShortLabel(ind)}</td>
-          <td>{ind.unit ?? '—'}</td>
-          <td colSpan={rekapColumnCount - 2} className="sla-blocked-note">
-            Data gagal dimuat.{' '}
-            <button type="button" className="sla-btn" onClick={() => loadSheetSummary('refresh')}>Coba lagi</button>
-          </td>
-        </tr>
-      )
-    }
-    if (isConsolidated) {
-      const up3TargetRow = up3Targets.find((t) => {
-        const uuid = pointToUuids.get(ind.point)
-        return uuid ? t.indicator_id === uuid : false
-      })
-      const up3Target = up3TargetRow?.target_value ?? null
-      const totalWo = childUlps.reduce((sum, ulp) => sum + (manualWoByUnit.get(ulp.uuid) ?? 0), 0)
-      const hasWo = childUlps.some((ulp) => manualWoByUnit.has(ulp.uuid))
-      const realisasi = Number(sheetSummary?.realization ?? 0)
-      let pencapaian = '—'
-      if (up3Target != null && totalWo > 0) {
-        const denom = Math.min(Number(up3Target), totalWo)
-        if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
-      }
-      return (
-        <tr key={ind.id} aria-busy={sheetLoading || undefined}>
-          <td>{getShortLabel(ind)}</td>
-          <td>{ind.unit ?? '—'}</td>
-          <td>{ind.slaLinked ? (up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)) : EMPTY_VALUE}</td>
-          <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : hasWo ? formatNumber(totalWo) : <span className="text-muted">Belum diisi ULP</span>}</td>
-          <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : formatNumber(realisasi)}</td>
-          <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 56 }} /> : ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
-          {canViewVariableFinancial && <td>{renderSheetRevenue(ind.point)}</td>}
-          <td>
-            <button type="button" className="sla-btn" disabled={firstLoad} onClick={() => setDrillIndicator(ind)}>Detail</button>
-          </td>
-        </tr>
-      )
-    }
-    const unitUuid = effectiveUnitUuid
-    const woVal = unitUuid ? manualWoByUnit.get(unitUuid) : undefined
-    const target = targetByPoint.get(ind.point) ?? null
-    const realisasi = realizationForUnit(sheetSummary, effectiveUnit?.displayName)
-    let pencapaian = '—'
-    if (target != null && woVal != null && woVal > 0) {
-      const denom = Math.min(Number(target), woVal)
-      if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
-    }
-    const canEditWo = isAdminUlpView && unitUuid && !isManagementReadOnly
-    const draftKey = `${indicatorCode}:${unitUuid}`
-    return (
-      <tr key={ind.id} style={{ cursor: firstLoad ? undefined : 'pointer' }} aria-busy={sheetLoading || undefined} onClick={() => { if (!firstLoad) openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>
-        <td>{getShortLabel(ind)}</td>
-        <td>{ind.unit ?? '—'}</td>
-        <td>{ind.slaLinked ? (target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)) : EMPTY_VALUE}</td>
-        <td onClick={(e) => { if (canEditWo) e.stopPropagation() }}>
-          {canEditWo ? (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input
-                className="input-number"
-                inputMode="numeric"
-                style={{ width: 90 }}
-                value={woDrafts[draftKey] ?? ''}
-                placeholder="WO"
-                onChange={(e) => setWoDrafts((current) => ({ ...current, [draftKey]: e.target.value.replace(/\D/g, '') }))}
-              />
-              <button
-                type="button"
-                className="sla-btn sla-btn-primary"
-                disabled={woSavingUnit === draftKey}
-                onClick={() => handleSaveManualWo(unitUuid, indicatorCode)}
-              >
-                {woSavingUnit === draftKey ? '…' : 'Simpan'}
-              </button>
-            </div>
-          ) : (woVal == null ? <span className="text-muted">Belum diisi</span> : formatNumber(woVal))}
-        </td>
-        <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 72 }} /> : formatNumber(realisasi)}</td>
-        <td>{firstLoad ? <span className="vc-skeleton" style={{ width: 56 }} /> : ind.slaLinked && target != null ? pencapaian : EMPTY_VALUE}</td>
-        {canViewVariableFinancial && <td>{renderSheetRevenue(ind.point, effectiveUnitUuid)}</td>}
-        {showRekapAction && (
-          <td>
-            <button type="button" className="sla-btn" disabled={firstLoad} onClick={(e) => { e.stopPropagation(); openSheetDetail(ind, sheetUlpNameFor(effectiveUnit)) }}>Lihat Detail</button>
-          </td>
-        )}
-      </tr>
-    )
-  }
+  const columns = 7 + (canViewVariableFinancial ? 1 : 0)
 
   return (
     <section className="sla-module-panel vc-module">
-      <nav className="vc-breadcrumb" aria-label="Breadcrumb">
-        <span>Dashboard</span><span aria-hidden="true">/</span><span>Pelayanan Teknik</span><span aria-hidden="true">/</span><strong>Variable Cost</strong>
-      </nav>
-      <div className="vc-context-line">
-        <strong>VARIABLE COST</strong>
-        <span>{variableCostIndicators.length} indikator</span>
-        <span>{period}</span>
-        <span>{scopeLabel}</span>
-      </div>
+      <nav className="vc-breadcrumb" aria-label="Breadcrumb"><span>Dashboard</span><span aria-hidden="true">/</span><span>Pelayanan Teknik</span><span aria-hidden="true">/</span><strong>Variable Cost</strong></nav>
+      <div className="vc-context-line"><strong>VARIABLE COST</strong><span>{variableCostIndicators.length} indikator</span><span>{period}</span><span>{scopeLabel}</span></div>
       <div className="vc-navigation">
-        <Tabs
-          items={primaryTabs}
-          value={activeTab}
-          onChange={setActiveTab}
-          ariaLabel="Navigasi utama Variable Cost"
-          className="vc-primary-tabs"
-          renderLabel={(tab) => <>{tab.label}{tab.id === 'persetujuan' && (approvalCounts.variable ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.variable}</span>}</>}
-        />
-        <details className="vc-config-menu" ref={variableConfigMenuRef}>
-          <summary className={configurationActive ? 'vc-config-menu-active' : ''}>Pengaturan Variable</summary>
-          <div className="vc-config-menu-panel">
-            {configurationTabs.map((tab) => (
-              <Button key={tab.id} variant="ghost" className={activeTab === tab.id ? 'vc-config-item-active' : ''} onClick={() => { if (variableConfigMenuRef.current) variableConfigMenuRef.current.open = false; setActiveTab(tab.id) }}>
-                {tab.label}
-                {tab.id === 'penyulang' && isUp3Role && !isManagementReadOnly && (approvalCounts.feeder ?? 0) > 0 && <span className="approval-count-badge">{approvalCounts.feeder}</span>}
-              </Button>
-            ))}
-          </div>
-        </details>
+        <Tabs items={primaryTabs} value={activeTab} onChange={changeTab} ariaLabel="Navigasi utama Variable Cost" className="vc-primary-tabs" />
+        {configurationTabs.length > 0 && (
+          <details className="vc-config-menu" ref={variableConfigMenuRef}>
+            <summary className={configurationActive ? 'vc-config-menu-active' : ''}>Pengaturan Variable</summary>
+            <div className="vc-config-menu-panel">{configurationTabs.map((tab) => (
+              <Button key={tab.id} variant="ghost" className={activeTab === tab.id ? 'vc-config-item-active' : ''} onClick={() => { if (variableConfigMenuRef.current) variableConfigMenuRef.current.open = false; changeTab(tab.id) }}>{tab.label}</Button>
+            ))}</div>
+          </details>
+        )}
       </div>
-
-      {activeTab === 'rekap' && (
-        <FilterBar className="vc-filter-bar vc-sheet-bar">
-          {isUp3Role && !isAdminUlpView ? (
-            <FilterField label="Unit layanan">
-              <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
-                <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
-                {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
-              </select>
-            </FilterField>
-          ) : (
-            <FilterField label="Unit layanan">
-              <span className="vc-unit-static">{effectiveUnit?.displayName ?? '—'}</span>
-            </FilterField>
-          )}
-          <div className="vc-sync-zone">
-            <span className="vc-sync-status" role="status" aria-live="polite">
-              {sheetLoading
-                ? 'Memperbarui...'
-                : Object.keys(sheetErrors).length && Object.keys(sheetSummaries).length === 0
-                  ? 'Data gagal dimuat'
-                  : sheetSyncedAt
-                    ? `Diperbarui ${formatSyncTime(sheetSyncedAt)}`
-                    : 'Belum ada data'}
-            </span>
-            <button
-              type="button"
-              className="vc-refresh-btn"
-              onClick={() => { loadSheetSummary('refresh'); loadMonthly() }}
-              disabled={sheetLoading || !periodMonth}
-              title="Perbarui data"
-              aria-label="Perbarui data"
-            >
-              <Icon name="refresh-cw" size={17} className={sheetLoading ? 'ui-icon-spin' : ''} />
-            </button>
-          </div>
-        </FilterBar>
-      )}
 
       {activeTab === 'rekap' ? (
         <>
-          {isAdminUlpView && rejectedList.length > 0 && !rejectedLoading && (
-            <Alert tone="warning" title={`${rejectedList.length} transaksi perlu diperbaiki`} className="vc-repair-alert">
-              <span>Admin UP3 mengembalikan pengajuan untuk diperbaiki.</span>
-              <Button variant="secondary" size="small" onClick={() => {
-                if (rejectedList.length === 1) handleRepairRejected(rejectedList[0])
-                else document.getElementById('perlu-perbaikan-section')?.scrollIntoView({ behavior: 'smooth' })
-              }}>Lihat Perbaikan</Button>
-            </Alert>
-          )}
-          {isAdminUlpView && rejectedList.length > 0 && (
-            <section id="perlu-perbaikan-section" className="vc-repair-section">
-              <h3>PERLU PERBAIKAN</h3>
-              <div className="sla-table-wrap">
-                <table className="sla-table">
-                  <thead><tr><th>Tanggal</th><th>Kegiatan</th><th>Penyulang</th><th>Alasan Penolakan</th><th>Aksi</th></tr></thead>
-                  <tbody>
-                    {rejectedList.map((row) => {
-                      const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
-                      const short = ind ? getShortLabel(ind) : (row.indicator_id?.slice(0, 8) ?? '—')
-                      const feederName = row.feeders?.name ?? '—'
-                      return (
-                        <tr key={row.id}>
-                          <td>{row.work_date?.slice(0, 10)}</td>
-                          <td>{short}</td>
-                          <td>{feederName}</td>
-                          <td style={{ maxWidth: 220, whiteSpace: 'normal' }}>{row.rejection_reason ?? '—'}</td>
-                          <td><Button variant="primary" size="small" onClick={() => handleRepairRejected(row)}>Perbaiki Sekarang</Button></td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-          <div className="sla-table-wrap vc-rekap-table-wrap">
-            <table className="sla-table vc-rekap-table">
-              <thead>
-                <tr>
-                  <th>Indikator</th><th>Satuan</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{canViewVariableFinancial && <th>Pendapatan</th>}{showRekapAction && <th>Aksi</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={rekapColumnCount}>Memuat data Variable Cost…</td></tr>
-                ) : error ? (
-                  <tr><td colSpan={rekapColumnCount} className="sla-blocked-note">{error} <button type="button" className="sla-btn" onClick={loadMonthly}>Coba lagi</button></td></tr>
-                ) : variableCostIndicators.length === 0 ? (
-                  <tr><td colSpan={rekapColumnCount}>Belum ada data Variable Cost pada periode ini.</td></tr>
-                ) : variableCostIndicators.map((ind) => {
-                  if (isSpreadsheetSourced(ind.code ?? ind.point)) {
-                    return renderSheetRow(ind)
+          <FilterBar className="vc-filter-bar" actions={<Button variant="secondary" disabled={busy || loading} onClick={refresh} icon={<Icon name="refresh-cw" size={16} />}>Muat Ulang</Button>}>
+            <FilterField label="Periode"><select className="input-select" value={period} disabled={busy} onChange={(event) => changePeriod(event.target.value)}>{periods.map((item) => <option key={item} value={item}>{item}</option>)}</select></FilterField>
+            <FilterField label="Unit layanan">
+              {isUp3Role ? <select className="input-select" value={selectedUnitId} disabled={busy} onChange={(event) => { if (confirmLeave()) setSelectedUnitId(event.target.value) }}><option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>{childUlps.map((unit) => <option key={unit.uuid} value={unit.uuid}>{unit.displayName}</option>)}</select> : <span className="vc-unit-static">{scopeLabel}</span>}
+            </FilterField>
+          </FilterBar>
+          <p className="vc-helper-text">{canEditMonthly ? 'Isi total WO dan realisasi bulanan untuk ULP Anda, lalu simpan seluruh perubahan. Tanpa evidence atau persetujuan.' : 'WO dan realisasi berasal dari input bulanan masing-masing Admin ULP. Tampilan ini hanya untuk monitoring.'} Kosong berarti belum diinput; 0 adalah nilai valid. Konstruksi tetap menggunakan nominal bulanan.</p>
+          {saveError && <Alert tone="danger">{saveError}</Alert>}
+          {saveMessage && <Alert tone="success">{saveMessage}</Alert>}
+          {loading || (!isCurrent && !error) ? <StatePanel state="loading" title="Memuat input bulanan" /> : error ? <StatePanel state="error" title="Data gagal dimuat" action={<Button onClick={refresh}>Coba Lagi</Button>}>{error}</StatePanel> : (
+            <>
+              {!versionId && <Alert tone="warning">Tidak ada versi SLA aktif untuk periode ini. Input belum dapat disimpan.</Alert>}
+              <DataTable className="vc-rekap-table vc-monthly-table" frameClassName="vc-rekap-table-wrap" sticky>
+                <thead><tr><th>Indikator</th><th>Satuan</th><th>Target</th><th>WO Bulanan</th><th>Realisasi Bulanan</th><th>Pencapaian</th>{canViewVariableFinancial && <th>Pendapatan</th>}<th>Aksi</th></tr></thead>
+                <tbody>{variableCostIndicators.map((indicator) => {
+                  if (indicator.code === '3.1c') {
+                    const target = sumMonthlyField(data.konstruksiTargets, 'target_rp')
+                    const amount = sumMonthlyField(data.konstruksiAmounts, 'amount_rp')
+                    const complete = scopedUnits.length > 0 && data.konstruksiAmounts.length === scopedUnits.length && data.konstruksiTargets.length === scopedUnits.length
+                    return <tr key={indicator.code}><td>{getShortLabel(indicator)}</td><td>Rp</td><td>{formatRp(target)}</td><td>{EMPTY_VALUE}</td><td>{formatRp(amount)}</td><td>{complete && Number(target) > 0 ? formatPercent(Number(amount) / Number(target) * 100) : EMPTY_VALUE}</td>{canViewVariableFinancial && <td>{renderRevenue(indicator, isConsolidated ? null : effectiveUnitUuid)}</td>}<td>{canViewVariableFinancial ? <Button size="small" onClick={() => openDetail(indicator)}>Detail</Button> : <span className="text-muted">Dikelola UP3</span>}</td></tr>
                   }
-                  const isKonstruksi = ind.id === 'A-3.1c'
-                  if (!ind.workflowEnabled) {
-                    return (
-                      <tr key={ind.id}>
-                        <td>{getShortLabel(ind)}</td>
-                        <td>{ind.unit}</td>
-                        <td>{EMPTY_VALUE}</td>
-                        <td>0</td>
-                        <td>0</td>
-                        <td>{EMPTY_VALUE}</td>
-                        {canViewVariableFinancial && <td>{ind.point === '3.1a' ? 'Tidak Ditagihkan' : EMPTY_VALUE}</td>}
-                        {showRekapAction && <td>{EMPTY_VALUE}</td>}
-                      </tr>
-                    )
-                  }
-                  if (isConsolidated) {
-                    if (isKonstruksi) {
-                      const financial = getFinancialComparison(ind.point)
-                      const totalTarget = financial.target
-                      const hasTarget = financial.missing === 0
-                      const totalActual = financial.actual
-                      const hasActual = konstruksiAmounts.length > 0
-                      const pencapaian = formatPercent(financial.achievement)
-                      return (
-                        <tr key={ind.id}>
-                          <td>{getShortLabel(ind)}</td>
-                          <td>—</td>
-                          <td>{hasTarget ? formatRp(totalTarget) : (canViewVariableFinancial ? 'Target belum diatur' : EMPTY_VALUE)}</td>
-                          <td>—</td>
-                          <td>{hasActual ? formatRp(totalActual) : EMPTY_VALUE}</td>
-                          <td>{pencapaian}</td>
-                          {canViewVariableFinancial && <td>{renderFinancialValue(ind.point)}</td>}
-                          <td><button type="button" className="sla-btn" onClick={() => openKonstruksiDetail(ind)}>Detail</button></td>
-                        </tr>
-                      )
-                    }
-                    const cons = getConsolidatedValues(ind.point)
-                    const up3TargetRow = up3Targets.find((t) => {
-                      const uuid = pointToUuids.get(ind.point)
-                      return uuid ? t.indicator_id === uuid : false
-                    })
-                    const up3Target = up3TargetRow?.target_value ?? null
-                    let pencapaian = '—'
-                    if (up3Target != null && cons.wo > 0) {
-                      const denom = Math.min(Number(up3Target), cons.wo)
-                      if (denom > 0) pencapaian = formatPercent((cons.realisasi / denom) * 100)
-                    }
-                    return (
-                      <tr key={ind.id}>
-                        <td>{getShortLabel(ind)}</td>
-                        <td>{ind.unit ?? '—'}</td>
-                        <td>{ind.slaLinked ? (up3Target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(up3Target)) : EMPTY_VALUE}</td>
-                        <td>{formatNumber(cons.wo)}</td>
-                        <td>{formatNumber(cons.realisasi)}</td>
-                        <td>{ind.slaLinked && up3Target != null ? pencapaian : EMPTY_VALUE}</td>
-                        {canViewVariableFinancial && <td>{renderFinancialValue(ind.point)}</td>}
-                        <td><button type="button" className="sla-btn" onClick={() => setDrillIndicator(ind)}>Detail</button></td>
-                      </tr>
-                    )
-                  }
-                  const target = targetByPoint.get(ind.point) ?? null
-                  const entry = entryByPoint.get(ind.point) ?? null
-                  if (isKonstruksi) {
-                    const kTarget = konstruksiTargets.find((r) => r.unit_id === effectiveUnitUuid)?.target_rp ?? null
-                    const kActual = konstruksiAmounts.find((r) => r.unit_id === effectiveUnitUuid)?.amount_rp ?? null
-                    const kPencapaian = kTarget != null && Number(kTarget) > 0 && kActual != null ? formatPercent((Number(kActual) / Number(kTarget)) * 100) : EMPTY_VALUE
-                    return (
-                      <tr key={ind.id}>
-                        <td>{getShortLabel(ind)}</td>
-                        <td>—</td>
-                        <td>{kTarget != null ? formatRp(kTarget) : (canViewVariableFinancial ? 'Target belum diatur' : EMPTY_VALUE)}</td>
-                        <td>—</td>
-                        <td>{kActual != null ? formatRp(kActual) : EMPTY_VALUE}</td>
-                        <td>{kPencapaian}</td>
-                        {canViewVariableFinancial && <td>{renderFinancialValue(ind.point, effectiveUnitUuid)}</td>}
-                        {showRekapAction && <td>{canViewVariableFinancial ? <button type="button" className="sla-btn" onClick={() => openKonstruksiDetail(ind)}>Detail</button> : EMPTY_VALUE}</td>}
-                      </tr>
-                    )
-                  }
-                  const rejectedCount = isAdminUlpView ? rejectedList.filter((r) => {
-                    const uuid = pointToUuids.get(ind.point)
-                    return uuid ? r.indicator_id === uuid : false
-                  }).length : 0
+                  const values = aggregateMonthlyValues(monthlyRows, indicator.code, scopedUnitIds)
+                  const target = getTarget(indicator, isConsolidated ? null : effectiveUnitUuid)
+                  const wo = canEditMonthly ? draftNumber(drafts[indicator.code]?.workOrder) : values.workOrder
+                  const real = canEditMonthly ? draftNumber(drafts[indicator.code]?.realization) : values.realization
+                  const complete = canEditMonthly || (values.missingWorkOrder === 0 && values.missingRealization === 0)
                   return (
-                    <tr key={ind.id} style={!isConsolidated && (!isUp3Role || canViewVariableFinancial) ? { cursor: 'pointer' } : undefined} onClick={() => { if (!isConsolidated && (!isUp3Role || canViewVariableFinancial)) openDailyList(ind) }}>
-                      <td>{getShortLabel(ind)}{rejectedCount > 0 && (
-                        <button type="button" className="vc-inline-danger-badge" onClick={(e) => { e.stopPropagation(); const uuid = pointToUuids.get(ind.point); const related = rejectedList.filter((r) => r.indicator_id === uuid); if (related.length === 1) handleRepairRejected(related[0]); else openDailyList(ind, true); }}>{rejectedCount} Perlu Perbaikan</button>
-                      )}</td>
-                      <td>{ind.unit ?? '—'}</td>
-                      <td>{ind.slaLinked ? (target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target)) : EMPTY_VALUE}</td>
-                      <td>{entry?.work_order == null ? '0' : formatNumber(entry.work_order)}</td>
-                      <td>{entry?.realization == null ? '0' : formatNumber(entry.realization)}</td>
-                      <td>{ind.slaLinked && entry?.achievement != null ? formatPercent(entry.achievement) : EMPTY_VALUE}</td>
-                      {canViewVariableFinancial && <td>{renderFinancialValue(ind.point, effectiveUnitUuid)}</td>}
-                      {showRekapAction && <td>{!isConsolidated ? <button type="button" className="sla-btn" onClick={(e) => { e.stopPropagation(); openDailyList(ind) }}>Lihat Detail</button> : EMPTY_VALUE}</td>}
+                    <tr key={indicator.code}>
+                      <td>{getShortLabel(indicator)}<small className="vc-monthly-note">{indicator.slaLinked ? indicator.code : 'Non-SLA'}</small></td>
+                      <td>{indicator.unit ?? EMPTY_VALUE}</td>
+                      <td>{indicator.slaLinked ? target == null ? <span className="text-muted">Belum diatur</span> : formatNumber(target) : EMPTY_VALUE}</td>
+                      <td>{canEditMonthly ? <input aria-label={`WO ${indicator.code}`} type="number" min="0" step="0.0001" className="input-number vc-monthly-input" value={drafts[indicator.code]?.workOrder ?? ''} placeholder="Belum diisi" disabled={busy || !versionId} onChange={(event) => { setSaveMessage(''); setDrafts((current) => ({ ...current, [indicator.code]: { ...current[indicator.code], workOrder: event.target.value } })) }} /> : renderMonthlyValue(values.workOrder, values.missingWorkOrder)}</td>
+                      <td>{canEditMonthly ? <input aria-label={`Realisasi ${indicator.code}`} type="number" min="0" step="0.0001" className="input-number vc-monthly-input" value={drafts[indicator.code]?.realization ?? ''} placeholder="Belum diisi" disabled={busy || !versionId} onChange={(event) => { setSaveMessage(''); setDrafts((current) => ({ ...current, [indicator.code]: { ...current[indicator.code], realization: event.target.value } })) }} /> : renderMonthlyValue(values.realization, values.missingRealization)}</td>
+                      <td>{indicator.slaLinked && complete ? formatPercent(monthlyAchievement(target, wo, real)) : EMPTY_VALUE}</td>
+                      {canViewVariableFinancial && <td>{renderRevenue(indicator, isConsolidated ? null : effectiveUnitUuid)}</td>}
+                      <td>{isConsolidated ? <Button size="small" onClick={() => openDetail(indicator)}>Detail per ULP</Button> : effectiveUnit && <Button size="small" onClick={() => openHistory(indicator, effectiveUnit)}>Riwayat</Button>}</td>
                     </tr>
                   )
-                })}
-              </tbody>
-            </table>
-          </div>
-          {canViewVariableFinancial && !loading && !error && (
-            <section className="vc-inline-summary" style={{ marginTop: 12, borderRadius: 8, padding: 12, maxWidth: 520 }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>PENDAPATAN VARIABLE — {period.toUpperCase()}</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 16px' }}>
-                <span>Target Pendapatan</span><strong>{financialTargetError ? EMPTY_VALUE : (configuredFinancialTargetCount === 0 ? 'Target belum diatur' : formatRp(totalFinancialTarget))}</strong>
-                <span>Realisasi Pendapatan</span><strong>{financialError ? EMPTY_VALUE : formatRp(totalFinancialActual)}</strong>
-                <span>Selisih</span><strong>{financialError ? EMPTY_VALUE : formatSignedRp(totalFinancialDifference)}</strong>
-                <span>Pencapaian</span><strong>{financialError ? EMPTY_VALUE : formatPercent(totalFinancialAchievement)}</strong>
-              </div>
-              {missingTargetCount > 0 && <p className="sla-blocked-note" style={{ margin: '10px 0 0' }}>Target pendapatan belum lengkap: {missingTargetCount} item. Total target menampilkan nilai yang sudah dikonfigurasi; Selisih dan Pencapaian belum dihitung.</p>}
-              {missingPriceCount > 0 && <p className="sla-blocked-note" style={{ margin: '10px 0 0' }}>Harga belum tersedia: {missingPriceCount} transaksi. Transaksi tersebut tidak termasuk total terkonfirmasi.</p>}
-              {financialError && <p className="sla-blocked-note" style={{ margin: '10px 0 0' }}>{financialError}</p>}
-              {financialTargetError && <p className="sla-blocked-note" style={{ margin: '10px 0 0' }}>{financialTargetError}</p>}
-            </section>
-          )}
-          {!loading && !error && isConsolidated && entries.length === 0 && konstruksiAmounts.length === 0 && (
-            <p className="text-muted" style={{ marginTop: 12 }}>Belum ada data Variable Cost pada periode ini. WO/Realisasi konsolidasi 0 (hanya APPROVED).</p>
-          )}
-          {!loading && !error && !isConsolidated && entries.length === 0 && konstruksiAmounts.length === 0 && (
-            <p className="text-muted" style={{ marginTop: 12 }}>Belum ada data Variable Cost pada periode ini.</p>
-          )}
-          {entries.length === 0 && konstruksiAmounts.length === 0 && targets.length === 0 && up3Targets.length === 0 && !loading && !error && (
-            <p className="text-muted">Target belum diatur oleh Admin UP3.</p>
-          )}
-          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {!isConsolidated && !isUp3Role && !isManagementReadOnly && (
-              <button type="button" className="sla-btn sla-btn-primary" onClick={openInputPicker}>+ Input Kegiatan</button>
-            )}
-            {isUp3Role && !isConsolidated && (
-              <span className="text-muted" style={{ alignSelf: 'center' }}>Monitoring ULP — input oleh ADMIN_ULP</span>
-            )}
-            {isConsolidated && (
-              <span className="text-muted" style={{ alignSelf: 'center' }}>{childUlps.length} ULP — workflow APPROVED + Konstruksi bulanan langsung</span>
-            )}
-            {!isConsolidated && isUp3Role && null}
-            {!isConsolidated && !isUp3Role && <span className="text-muted" style={{ alignSelf: 'center' }}>{activeFeeders.length} Penyulang aktif</span>}
-            {Object.keys(sheetErrors).length > 0 && Object.keys(sheetSummaries).length > 0 && <span className="sla-blocked-note" style={{ alignSelf: 'center' }}>{Object.values(sheetErrors)[0]}</span>}
-            {woError && <span className="sla-blocked-note" style={{ alignSelf: 'center' }}>{woError}</span>}
-            {woMessage && <span className="vc-inline-success" style={{ alignSelf: 'center' }}>{woMessage}</span>}
-          </div>
-          {drillIndicator && (
-            <div className="modal-backdrop" onClick={() => setDrillIndicator(null)}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
-                <div className="modal-header">
-                  <h3>{drillIndicator.id === 'A-3.1c' ? `KONSTRUKSI — ${period.toUpperCase()}` : `Detail ${getShortLabel(drillIndicator)} · Periode ${period}`}</h3>
-                  <button type="button" className="modal-close" onClick={() => setDrillIndicator(null)}>×</button>
-                </div>
-                <div className="modal-body">
-                  <table className="sla-table">
-                    <thead>
-                      <tr>
-                        <th>ULP</th>
-                        {isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point) ? (
-                          <><th>Target Operasional</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th><th>Aksi</th></>
-                        ) : drillIndicator.id === 'A-3.1c' ? (
-                          <><th>Target Pendapatan</th><th>Aktual</th><th>Selisih</th><th>Pencapaian</th></>
-                        ) : (
-                          <><th>Target Operasional</th><th>WO</th><th>Realisasi</th><th>Pencapaian Operasional</th>{canViewVariableFinancial && <><th>Target Pendapatan</th><th>Pendapatan Aktual</th><th>Selisih</th><th>Pencapaian Pendapatan</th><th>Aksi</th></>}</>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point)
-                        ? (() => {
-                          const indicatorCode = drillIndicator.code ?? drillIndicator.point
-                          const sheetSummary = sheetSummaries[indicatorCode] ?? null
-                          const manualWoByUnit = manualWoMapFor(indicatorCode)
-                          return childUlps.map((ulp) => {
-                            const sheetName = sheetUlpNameFor(ulp)
-                            const realisasi = realizationForUnit(sheetSummary, ulp.displayName)
-                            const woVal = manualWoByUnit.get(ulp.uuid)
-                            const uuid = pointToUuids.get(drillIndicator.point)
-                            const tRow = targets.find((t) => t.unit_id === ulp.uuid && (uuid ? t.indicator_id === uuid : false))
-                            const tgt = tRow?.target_value ?? null
-                            let pencapaian = '—'
-                            if (tgt != null && woVal != null && woVal > 0) {
-                              const denom = Math.min(Number(tgt), woVal)
-                              if (denom > 0) pencapaian = formatPercent((realisasi / denom) * 100)
-                            }
-                            return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{woVal == null ? <span className="text-muted">Belum diisi</span> : formatNumber(woVal)}</td><td>{formatNumber(realisasi)}</td><td>{pencapaian}</td><td><button type="button" className="sla-btn" onClick={() => { setDrillIndicator(null); openSheetDetail(drillIndicator, sheetName) }}>Baris</button></td></tr>
-                          })
-                        })()
-                        : (drillIndicator.id === 'A-3.1c' ? konstruksiEditorUnits : childUlps).map((ulp) => {
-                        const uuid = pointToUuids.get(drillIndicator.point)
-                        const row = entries.find((e) => e.unit_id === ulp.uuid && (uuid ? e.indicator_id === uuid : false))
-                        const tRow = targets.find((t) => t.unit_id === ulp.uuid && (uuid ? t.indicator_id === uuid : false))
-                        if (drillIndicator.id === 'A-3.1c') {
-                          const amount = konstruksiAmounts.find((entry) => entry.unit_id === ulp.uuid)?.amount_rp
-                          const target = konstruksiTargets.find((entry) => entry.unit_id === ulp.uuid)?.target_rp
-                          const difference = target != null && amount != null ? Number(amount) - Number(target) : null
-                          const pencapaian = target != null && Number(target) > 0 && amount != null ? formatPercent((Number(amount) / Number(target)) * 100) : EMPTY_VALUE
-                          if (canManageKonstruksiMonthly) {
-                            const draftTarget = konstruksiTargetDrafts[ulp.uuid] ?? ''
-                            const draftAmount = konstruksiDrafts[ulp.uuid] ?? ''
-                            const liveTarget = draftTarget !== '' ? Number(draftTarget) : null
-                            const liveAmount = draftAmount !== '' ? Number(draftAmount) : Number(amount ?? 0)
-                            const liveDifference = liveTarget != null ? liveAmount - liveTarget : null
-                            const livePencapaian = liveTarget != null && liveTarget > 0 && draftAmount !== '' ? formatPercent((liveAmount / liveTarget) * 100) : pencapaian
-                            return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span>Rp</span><input className="input-number" inputMode="numeric" value={draftTarget} placeholder="0" onChange={(event) => setKonstruksiTargetDrafts((current) => ({ ...current, [ulp.uuid]: event.target.value.replace(/\D/g, '') }))} /></div></td><td><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span>Rp</span><input className="input-number" inputMode="numeric" value={draftAmount} placeholder="0" onChange={(event) => setKonstruksiDrafts((current) => ({ ...current, [ulp.uuid]: event.target.value.replace(/\D/g, '') }))} /></div></td><td>{formatSignedRp(liveDifference)}</td><td>{livePencapaian}</td></tr>
-                          }
-                          return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{target != null ? formatRp(target) : 'Target belum diatur'}</td><td>{amount != null ? formatRp(amount) : EMPTY_VALUE}</td><td>{formatSignedRp(difference)}</td><td>{pencapaian}</td></tr>
-                        }
-                        const wo = row?.work_order ?? 0
-                        const real = row?.realization ?? 0
-                        const tgt = tRow?.target_value ?? null
-                        let pencapaian = '—'
-                        if (tgt != null && wo > 0) {
-                          const denom = Math.min(Number(tgt), wo)
-                          if (denom > 0) pencapaian = formatPercent((real / denom) * 100)
-                        }
-                        const financial = getFinancialComparison(drillIndicator.point, ulp.uuid)
-                        const isRowFix = drillIndicator.point === '3.1a'
-                        return <tr key={ulp.uuid}><td>{ulp.displayName}</td><td>{tgt == null ? 'Belum diatur' : formatNumber(tgt)}</td><td>{formatNumber(wo)}</td><td>{formatNumber(real)}</td><td>{pencapaian}</td>{canViewVariableFinancial && <><td>{isRowFix ? 'Tidak Ditagihkan' : (financial.missing > 0 ? 'Target belum diatur' : formatRp(financial.target))}</td><td>{renderFinancialValue(drillIndicator.point, ulp.uuid)}</td><td>{isRowFix ? EMPTY_VALUE : formatSignedRp(financial.difference)}</td><td>{isRowFix ? EMPTY_VALUE : formatPercent(financial.achievement)}</td><td><button type="button" className="sla-btn" onClick={() => { setSelectedUlpLegacy(ulp.legacyKey ?? ulp.uuid); setDrillIndicator(null) }}>Transaksi</button></td></>}</tr>
-                      }))}
-                      {isSpreadsheetSourced(drillIndicator.code ?? drillIndicator.point) ? (
-                        (() => {
-                          const indicatorCode = drillIndicator.code ?? drillIndicator.point
-                          const sheetSummary = sheetSummaries[indicatorCode] ?? null
-                          const manualWoByUnit = manualWoMapFor(indicatorCode)
-                          const totalWo = childUlps.reduce((sum, ulp) => sum + (manualWoByUnit.get(ulp.uuid) ?? 0), 0)
-                          const totalReal = Number(sheetSummary?.realization ?? 0)
-                          return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{EMPTY_VALUE}</td><td>{formatNumber(totalWo)}</td><td>{formatNumber(totalReal)}</td><td>{EMPTY_VALUE}</td><td>{EMPTY_VALUE}</td></tr>
-                        })()
-                      ) : drillIndicator.id === 'A-3.1c' ? (
-                        (() => {
-                          const totalTarget = canManageKonstruksiMonthly
-                            ? konstruksiEditorUnits.reduce((sum, unit) => {
-                                const v = konstruksiTargetDrafts[unit.uuid]
-                                return sum + (v !== '' && v != null ? Number(v) : Number(konstruksiTargets.find((r) => r.unit_id === unit.uuid)?.target_rp ?? 0))
-                              }, 0)
-                            : konstruksiTargets.reduce((sum, row) => sum + Number(row.target_rp ?? 0), 0)
-                          const totalActual = canManageKonstruksiMonthly
-                            ? konstruksiEditorUnits.reduce((sum, unit) => {
-                                const v = konstruksiDrafts[unit.uuid]
-                                return sum + (v !== '' && v != null ? Number(v) : Number(konstruksiAmounts.find((r) => r.unit_id === unit.uuid)?.amount_rp ?? 0))
-                              }, 0)
-                            : konstruksiAmounts.reduce((sum, row) => sum + Number(row.amount_rp ?? 0), 0)
-                          const hasTarget = canManageKonstruksiMonthly
-                            ? konstruksiEditorUnits.length > 0 && konstruksiEditorUnits.every((unit) => (konstruksiTargetDrafts[unit.uuid] ?? '') !== '')
-                            : getFinancialComparison(drillIndicator.point).missing === 0
-                          const pencapaian = hasTarget && totalTarget > 0 ? formatPercent((totalActual / totalTarget) * 100) : EMPTY_VALUE
-                          return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{hasTarget ? formatRp(totalTarget) : 'Target belum diatur'}</td><td>{formatRp(totalActual)}</td><td>{hasTarget ? formatSignedRp(totalActual - totalTarget) : EMPTY_VALUE}</td><td>{pencapaian}</td></tr>
-                        })()
-                      ) : (
-                        (() => {
-                          const cons = getConsolidatedValues(drillIndicator.point)
-                          const up3TargetRow = up3Targets.find((t) => {
-                            const uuid = pointToUuids.get(drillIndicator.point)
-                            return uuid ? t.indicator_id === uuid : false
-                          })
-                          const up3Target = up3TargetRow?.target_value ?? null
-                          let pencapaian = '—'
-                          if (up3Target != null && cons.wo > 0) {
-                            const denom = Math.min(Number(up3Target), cons.wo)
-                            if (denom > 0) pencapaian = formatPercent((cons.realisasi / denom) * 100)
-                          }
-                          const financial = getFinancialComparison(drillIndicator.point)
-                          const isRowFix = drillIndicator.point === '3.1a'
-                          return <tr style={{ fontWeight: 600 }}><td>Total UP3</td><td>{up3Target == null ? 'Belum diatur' : formatNumber(up3Target)}</td><td>{formatNumber(cons.wo)}</td><td>{formatNumber(cons.realisasi)}</td><td>{pencapaian}</td>{canViewVariableFinancial && <><td>{isRowFix ? 'Tidak Ditagihkan' : (financial.missing > 0 ? <span>Target belum diatur ({financial.missing})</span> : formatRp(financial.target))}</td><td>{renderFinancialValue(drillIndicator.point)}</td><td>{isRowFix ? EMPTY_VALUE : formatSignedRp(financial.difference)}</td><td>{isRowFix ? EMPTY_VALUE : formatPercent(financial.achievement)}</td><td>{EMPTY_VALUE}</td></>}</tr>
-                        })()
-                      )}
-                    </tbody>
-                  </table>
-                  {drillIndicator.id === 'A-3.1c' && canManageKonstruksiMonthly && (
-                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <button type="button" className="sla-btn sla-btn-primary" disabled={konstruksiBusy} onClick={handleSaveKonstruksi}>{konstruksiBusy ? 'Menyimpan...' : 'Simpan'}</button>
-                      {konstruksiMessage && <span className="vc-inline-success">{konstruksiMessage}</span>}
-                      {konstruksiError && <span className="sla-blocked-note">{konstruksiError}</span>}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          {sheetDetailOpen && sheetDetailIndicator && (
-            <div className="modal-backdrop" onClick={() => { setSheetDetailOpen(false); setSheetDetailData(null) }}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900 }}>
-                <div className="modal-header">
-                  <h3>Detail {getShortLabel(sheetDetailIndicator)}</h3>
-                  <button type="button" className="modal-close" onClick={() => { setSheetDetailOpen(false); setSheetDetailData(null) }}>×</button>
-                </div>
-                <div className="modal-body">
-                  <p className="text-muted vc-detail-period">{period}{sheetDetailUlp ? ` · ${sheetDetailUlp}` : ''}</p>
-                  {sheetDetailLoading ? (
-                    <div className="vc-detail-loading" role="status" aria-live="polite" aria-label="Memuat data">
-                      <Icon name="loader" size={34} className="ui-icon-spin" />
-                      <strong>Memuat data</strong>
-                      <div className="vc-skeleton-table" aria-hidden="true">
-                        {[0, 1, 2, 3, 4].map((row) => (
-                          <div key={row} className="vc-skeleton-row">
-                            <span className="vc-skeleton" style={{ width: '12%' }} />
-                            <span className="vc-skeleton" style={{ width: '18%' }} />
-                            <span className="vc-skeleton" style={{ width: '22%' }} />
-                            <span className="vc-skeleton" style={{ width: '28%' }} />
-                            <span className="vc-skeleton" style={{ width: '20%' }} />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : !sheetDetailData || sheetDetailData.success === false ? (
-                    <p className="sla-blocked-note">{sheetDetailData?.error ?? 'Gagal memuat detail.'} <button type="button" className="sla-btn" onClick={() => openSheetDetail(sheetDetailIndicator, sheetDetailUlp, sheetDetailData?.pagination?.page ?? 1)}>Coba lagi</button></p>
-                  ) : (
-                    <>
-                      <p className="text-muted" style={{ fontSize: 12 }}>
-                        Total {Number(sheetDetailData.realization ?? 0).toLocaleString('id-ID')} baris
-                        {sheetDetailData.pagination ? ` · Halaman ${sheetDetailData.pagination.page} dari ${sheetDetailData.pagination.totalPages}` : ''}
-                      </p>
-                      <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>ID Temuan</th><th>ULP</th><th>Penyulang</th><th>Section</th><th>Jenis Temuan</th><th>Koordinat</th><th>Petugas</th></tr></thead><tbody>
-                        {(sheetDetailData.rows ?? []).map((row, idx) => (
-                          <tr key={`${row.sourceRowNumber ?? idx}-${row.idTemuan ?? idx}`}>
-                            <td>{row.tanggalInspeksi ?? '—'}</td>
-                            <td>{row.idTemuan ?? '—'}</td>
-                            <td>{row.ulp ?? '—'}</td>
-                            <td>{row.penyulang ?? '—'}</td>
-                            <td style={{ maxWidth: 220, whiteSpace: 'normal' }}>{row.section ?? '—'}</td>
-                            <td style={{ maxWidth: 200, whiteSpace: 'normal' }}>{row.jenisTemuan ?? '—'}</td>
-                            <td style={{ maxWidth: 180, whiteSpace: 'normal' }}>{row.koordinatTemuan ?? '—'}</td>
-                            <td>{row.petugasInspeksi ?? '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody></table></div>
-                      {sheetDetailData.pagination && sheetDetailData.pagination.totalPages > 1 && (
-                        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <button type="button" className="sla-btn" disabled={sheetDetailData.pagination.page <= 1} onClick={() => openSheetDetail(sheetDetailIndicator, sheetDetailUlp, sheetDetailData.pagination.page - 1)}>‹ Sebelumnya</button>
-                          <span className="text-muted" style={{ fontSize: 12 }}>Halaman {sheetDetailData.pagination.page} / {sheetDetailData.pagination.totalPages}</span>
-                          <button type="button" className="sla-btn" disabled={sheetDetailData.pagination.page >= sheetDetailData.pagination.totalPages} onClick={() => openSheetDetail(sheetDetailIndicator, sheetDetailUlp, sheetDetailData.pagination.page + 1)}>Berikutnya ›</button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          {showInputPicker && (
-            <div className="modal-backdrop" onClick={() => setShowInputPicker(false)}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
-                <div className="modal-header"><h3>Pilih Jenis Kegiatan</h3><button type="button" className="modal-close" onClick={() => setShowInputPicker(false)}>×</button></div>
-                <div className="modal-body" style={{ display: 'grid', gap: 10 }}>
-                  {INPUT_INDICATORS.filter((ind) => !isSpreadsheetSourced(ind.code ?? ind.point)).map((ind) => (
-                    <button key={ind.id} type="button" className="sla-btn" style={{ textAlign: 'left', padding: 12, justifyContent: 'flex-start' }} onClick={() => chooseIndicator(ind)}>
-                      <div><strong>{getShortLabel(ind)}</strong><br/><small>{ind.unit} · {ind.scope ?? 'Variable Cost'}</small></div>
-                    </button>
-                  ))}
-                  <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>Konstruksi dikelola sebagai pendapatan bulanan langsung oleh management.</div>
-                </div>
-              </div>
-            </div>
-          )}
-          {showForm && selectedIndicator && (
-            <div className="modal-backdrop" onClick={() => { setShowForm(false); setEditingRejectionReason('') }}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: '90vh', overflowY: 'auto' }}>
-                <div className="modal-header"><h3>{editingEntryId ? (editingRejectionReason ? 'Perbaiki Pengajuan' : 'Lanjutkan Draft') : 'Input Kegiatan'} — {getShortLabel(selectedIndicator)}</h3><button type="button" className="modal-close" onClick={() => { setShowForm(false); setEditingRejectionReason('') }}>×</button></div>
-                <div className="modal-body" style={{ display: 'grid', gap: 16 }}>
-                  {formError && <div className="sla-blocked-note">{formError}</div>}
-                  {editingRejectionReason && (
-                    <div className="vc-inline-rejection" style={{ padding: 10, borderRadius: 6 }}>
-                      <strong>Alasan penolakan dari Admin UP3</strong>
-                      <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{editingRejectionReason}</div>
-                    </div>
-                  )}
-                  <section>
-                    <h4 style={{ margin: '0 0 8px' }}>A. Informasi Kegiatan</h4>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <label>Tanggal *<input type="date" className="input-field" value={formDate} onChange={(e) => setFormDate(e.target.value)} /></label>
-                      <label>Penyulang *{activeFeeders.length === 0 ? <span className="text-muted"> — Belum ada Penyulang aktif untuk ULP ini. <button type="button" className="sla-btn" onClick={() => { setShowForm(false); setActiveTab('penyulang') }}>Ke Master Penyulang</button></span> : <select className="input-select" value={formFeeder} onChange={(e) => setFormFeeder(e.target.value)}><option value="">Pilih Penyulang</option>{activeFeeders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>}</label>
-                      <label>Lokasi / Alamat *<input className="input-field" placeholder="Jl. ... / lokasi pekerjaan" value={formLocation} onChange={(e) => setFormLocation(e.target.value)} /></label>
-                      <label>Satuan<input className="input-field" value={selectedIndicator.unit ?? ''} disabled /></label>
-                    </div>
-                  </section>
-                  <section>
-                    <h4 style={{ margin: '0 0 8px' }}>B. Pekerjaan</h4>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <label>WO *<input type="number" min="0" step="1" className="input-field" value={formWo} onChange={(e) => setFormWo(e.target.value)} /></label>
-                      <label>Realisasi *<input type="number" min="0" step="1" className="input-field" value={formRealisasi} onChange={(e) => setFormRealisasi(e.target.value)} /></label>
-                      <label>Petugas *{employees.length === 0 ? <span className="text-muted"> — Belum ada pegawai aktif yang dapat dipilih.</span> : null}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                          {formPetugas.map((eid) => {
-                            const emp = employees.find((e) => e.id === eid)
-                            return <span key={eid} className="sla-badge" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{emp?.name ?? eid}<button type="button" onClick={() => setFormPetugas(formPetugas.filter((x) => x !== eid))}>×</button></span>
-                          })}
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                          <select className="input-select" value="" onChange={(e) => { if (e.target.value && !formPetugas.includes(e.target.value)) setFormPetugas([...formPetugas, e.target.value]); e.target.value = '' }}>
-                            <option value="">+ Tambah Petugas</option>
-                            {employees.filter((e) => !formPetugas.includes(e.id)).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                          </select>
-                        </div>
-                      </label>
-                      <label>Keterangan<textarea className="input-field" rows={3} value={formKeterangan} onChange={(e) => setFormKeterangan(e.target.value)} placeholder="Catatan pekerjaan" /></label>
-                    </div>
-                  </section>
-                  <section>
-                    <h4 style={{ margin: '0 0 8px' }}>C. Evidence</h4>
-                    <p className="text-muted" style={{ fontSize: 12 }}>Evidence Pekerjaan * — Minimal 1 foto atau dokumen sebagai bukti pekerjaan.</p>
-                    <input type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={(e) => setFormFiles(Array.from(e.target.files ?? []))} />
-                    {formFiles.length > 0 && <ul style={{ marginTop: 8 }}>{formFiles.map((f, i) => <li key={i}>{f.name} — {(f.size/1024).toFixed(0)} KB <button type="button" onClick={() => setFormFiles(formFiles.filter((_, idx) => idx !== i))}>Hapus</button></li>)}</ul>}
-                  </section>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                    <button type="button" className="sla-btn" disabled={formBusy} onClick={() => { setShowForm(false); setEditingRejectionReason('') }}>Batal</button>
-                    <button type="button" className="sla-btn" disabled={formBusy} onClick={() => handleSaveDraft(false)}>{formBusy ? 'Menyimpan…' : 'Simpan Draft'}</button>
-                    <button type="button" className="sla-btn sla-btn-primary" disabled={formBusy} onClick={() => handleSaveDraft(true)}>{formBusy ? 'Mengajukan…' : (editingRejectionReason ? 'Ajukan Ulang' : 'Ajukan')}</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {showDailyList && dailyIndicator && (
-            <div className="modal-backdrop" onClick={closeDailyList}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760 }}>
-                <div className="modal-header"><h3>{getShortLabel(dailyIndicator)} — Harian · Periode {period} · {childUlps.find((unit) => unit.uuid === dailyUnitId)?.displayName ?? effectiveUnit?.displayName}</h3><button type="button" className="modal-close" onClick={closeDailyList}>×</button></div>
-                <div className="modal-body">
-                  {dailyLoading ? <p>Memuat…</p> : dailyList.length === 0 ? <p className="text-muted">Belum ada transaksi harian untuk indikator ini.</p> : (
-                    <div className="sla-table-wrap"><table className="sla-table"><thead><tr><th>Tanggal</th><th>Penyulang</th><th>Lokasi</th><th>WO</th><th>Realisasi</th><th>Petugas</th>{canViewVariableFinancial && <th>Pendapatan</th>}<th>Status</th><th>Aksi</th></tr></thead><tbody>
-                      {dailyList.map((row) => (
-                        <tr key={row.id} className={row.status === 'REJECTED' ? 'vc-row-rejected' : undefined}>
-                          <td>{row.work_date?.slice(0,10)}</td>
-                          <td>{row.feeder_id ? (activeFeeders.find((f) => f.id === row.feeder_id)?.name ?? row.feeder_id.slice(0,8)) : '—'}</td>
-                          <td>{row.location_address ?? '—'}</td>
-                          <td>{row.work_order ?? '—'}</td>
-                          <td>{row.realization ?? '—'}</td>
-                          <td>—</td>
-                          {canViewVariableFinancial && <td>{renderTransactionRevenue(row, dailyIndicator)}</td>}
-                          <td>
-                            <StatusBadge status={row.status}>{row.status === 'DRAFT' ? 'Draft' : row.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : row.status === 'APPROVED' ? 'Disetujui' : row.status === 'REJECTED' ? 'Ditolak · Perlu Perbaikan' : row.status}</StatusBadge>
-                            {row.status === 'REJECTED' && row.rejection_reason && <div className="vc-rejection-reason" style={{ marginTop: 4 }}>Alasan: {row.rejection_reason}</div>}
-                          </td>
-                          <td style={{ display: 'flex', gap: 6 }}>
-                            <button type="button" className="sla-btn" onClick={() => openDetail(row.id)}>Lihat Detail</button>
-                            {row.status === 'DRAFT' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleContinueDraft(row)}>Lanjutkan Draft</button>}
-                            {row.status === 'REJECTED' && <button type="button" className="sla-btn sla-btn-primary" onClick={() => handleContinueDraft(row)}>Perbaiki Sekarang</button>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody></table></div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          {detailEntry && (
-            <div className="modal-backdrop" onClick={() => { setDetailEntry(null); setDetailData(null) }}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
-                <div className="modal-header"><h3>Detail Transaksi</h3><button type="button" className="modal-close" onClick={() => { setDetailEntry(null); setDetailData(null) }}>×</button></div>
-                <div className="modal-body">
-                  {!detailData ? <p>Memuat…</p> : (
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <div><strong>Nama Kegiatan:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id) ?? dailyIndicator; return ind ? getShortLabel(ind) : (dailyIndicator ? getShortLabel(dailyIndicator) : detailData.entry.indicator_id?.slice(0,8)) })()}</div>
-                      <div><strong>Referensi SLA:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.point_code ?? ind?.point ?? '—' })()}</div>
-                      <div><strong>Deskripsi SLA resmi:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.criteria ?? '—' })()}</div>
-                      <div><strong>Satuan:</strong> {(() => { const ind = detailData.indicator ?? indicators.find((r) => r.id === detailData.entry.indicator_id); return ind?.measurement_unit ?? selectedIndicator?.unit ?? dailyIndicator?.unit ?? '—' })()}</div>
-                      <div><strong>Tanggal:</strong> {detailData.entry.work_date?.slice(0,10)}</div>
-                      <div><strong>ULP:</strong> {childUlps.find((unit) => unit.uuid === dailyUnitId)?.displayName ?? effectiveUnit?.displayName}</div>
-                      <div><strong>Penyulang:</strong> {detailData.entry.feeder_id ? (activeFeeders.find((f) => f.id === detailData.entry.feeder_id)?.name ?? detailData.entry.feeder_id) : '—'}</div>
-                      <div><strong>Lokasi:</strong> {detailData.entry.location_address ?? '—'}</div>
-                      <div><strong>WO:</strong> {detailData.entry.work_order ?? '—'}</div>
-                      <div><strong>Realisasi:</strong> {detailData.entry.realization ?? '—'}</div>
-                      {canViewVariableFinancial && (() => {
-                        const indicator = detailData.indicator ?? indicators.find((row) => row.id === detailData.entry.indicator_id) ?? dailyIndicator
-                        const point = indicator?.point_code ?? indicator?.point
-                        if (point === '3.1a') return <div><strong>Pendapatan:</strong> Tidak Ditagihkan</div>
-                        if (detailData.entry.status !== 'APPROVED') return <div><strong>Pendapatan:</strong> <span className="text-muted">Belum termasuk karena transaksi belum APPROVED</span></div>
-                        if (financialError) return <div><strong>Pendapatan:</strong> <span className="sla-blocked-note">Tidak tersedia</span></div>
-                        const financial = financialRows.find((row) => row.entry_id === detailData.entry.id)
-                        if (financial?.price_missing) return <div><strong>Pendapatan:</strong> <span className="sla-blocked-note">Harga belum tersedia</span></div>
-                        return <><div><strong>Harga Satuan:</strong> {financial?.unit_price == null ? EMPTY_VALUE : formatRp(financial.unit_price)}{financial?.price_effective_from ? ` (berlaku ${financial.price_effective_from})` : ''}</div><div><strong>Pendapatan:</strong> {financial?.revenue_amount == null ? EMPTY_VALUE : formatRp(financial.revenue_amount)}</div></>
-                      })()}
-                      <div><strong>Petugas:</strong> {(detailData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
-                      <div><strong>Keterangan:</strong> {detailData.entry.description ?? '—'}</div>
-                      <div><strong>Status:</strong> {detailData.entry.status === 'DRAFT' ? 'Draft' : detailData.entry.status === 'SUBMITTED' ? 'Menunggu Persetujuan' : detailData.entry.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}</div>
-                      {detailData.entry.status === 'REJECTED' && detailData.entry.rejection_reason && <div><strong>Alasan Ditolak:</strong> {detailData.entry.rejection_reason}</div>}
-                      <div><strong>Riwayat Status:</strong>{(detailData.history ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : <ul>{detailData.history.map((item) => <li key={item.id}>{new Date(item.changed_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })} - {item.from_status === item.to_status ? `Data diperbarui (${formatApprovalStatus(item.to_status)})` : `${item.from_status ? formatApprovalStatus(item.from_status) : 'Baru'} ke ${formatApprovalStatus(item.to_status)}`}{item.reason ? `: ${item.reason}` : ''}</li>)}</ul>}</div>
-                      <div><strong>Evidence:</strong>
-                        {(detailData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (
-                          <ul>
-                            {(detailData.evidences ?? []).map((ev) => (
-                              <li key={ev.id}><button type="button" className="sla-btn" onClick={async () => { const url = await getEvidencePreviewUrl(ev.storage_path); window.open(url, '_blank') }}>{ev.file_name}</button> — {ev.mime_type}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+                })}{!scopedUnits.length && <tr><td colSpan={columns}>Tidak ada ULP dalam scope ini.</td></tr>}</tbody>
+              </DataTable>
+              {canEditMonthly && <div className="vc-monthly-save-bar"><span role="status">{monthlyDirty ? 'Ada perubahan belum disimpan.' : 'Tidak ada perubahan belum disimpan.'}</span><Button variant="primary" disabled={busy || !monthlyDirty || !versionId || !isCurrent} onClick={handleSaveMonthly}>{saving ? 'Menyimpan…' : 'Simpan Input Bulanan'}</Button></div>}
+              <p className="vc-helper-text">Pencapaian = Realisasi ÷ min(Target, WO) × 100. Jika target/WO nol atau data belum lengkap, pencapaian tidak dihitung. Pendapatan memakai realisasi tersimpan × harga satuan efektif akhir bulan. ROW Fix tidak ditagihkan.</p>
+              {canViewVariableFinancial && (data.financialError ? <Alert tone="danger">{data.financialError}</Alert> : summary && (
+                <section className="vc-inline-summary vc-monthly-summary">
+                  <h3>PENDAPATAN VARIABLE — {period.toUpperCase()}</h3>
+                  <dl><dt>Target Pendapatan</dt><dd>{formatRp(summary.target_amount)}</dd><dt>Realisasi Terkonfirmasi</dt><dd>{formatRp(summary.actual_amount)}</dd><dt>Selisih</dt><dd>{formatRp(summary.difference_amount)}</dd><dt>Pencapaian</dt><dd>{formatPercent(summary.achievement_percent)}</dd></dl>
+                  {Number(summary.missing_actual_count) > 0 && <p className="sla-blocked-note">{summary.missing_actual_count} realisasi bulanan belum diinput. Total hanya mencakup nilai tersimpan; selisih dan pencapaian belum final.</p>}
+                  {Number(summary.missing_target_count) > 0 && <p className="sla-blocked-note">{summary.missing_target_count} target pendapatan belum diatur.</p>}
+                  {Number(summary.missing_price_count) > 0 && <p className="sla-blocked-note">{summary.missing_price_count} harga belum tersedia dan belum termasuk pendapatan terkonfirmasi.</p>}
+                </section>
+              ))}
+            </>
           )}
         </>
-      ) : activeTab === 'persetujuan' ? (
-        <div className="vc-subpage">
-          <div className="vc-subpage-heading">
-            <div><span className="vc-section-kicker">WORKFLOW</span><h3>Persetujuan Variable Cost</h3></div>
-            <Button variant="secondary" onClick={loadPending}>Muat Ulang</Button>
-          </div>
-          {pendingError && <Alert tone="danger">{pendingError}</Alert>}
-          {pendingLoading ? <StatePanel state="loading" title="Memuat persetujuan" /> : pendingList.length === 0 ? <StatePanel title="Tidak ada transaksi menunggu persetujuan" /> : (
-            <div className="sla-table-wrap vc-approval-table-wrap"><table className="sla-table vc-approval-table"><thead><tr><th>Tanggal</th><th>ULP</th><th>Kegiatan</th><th>Penyulang</th><th>WO</th><th>Realisasi</th><th>Petugas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
-              {pendingList.map((row) => {
-                const ulp = childUlps.find((u) => u.uuid === row.unit_id)
-                const ind = row.sla_indicators ?? indicators.find((r) => r.id === row.indicator_id) ?? variableCostIndicators.find((item) => item.id === row.indicator_id) ?? null
-                const short = ind ? getShortLabel(ind) : (row.indicator_id?.slice(0,8) ?? '—')
-                const feederName = row.feeders?.name ?? '—'
-                return (
-                  <tr key={row.id}>
-                    <td>{row.work_date?.slice(0,10)}</td>
-                    <td>{ulp?.displayName ?? row.unit_id?.slice(0,8)}</td>
-                    <td>{short}<br/><small className="text-muted">Ref: {ind?.point_code ?? '—'}</small></td>
-                    <td>{feederName}</td>
-                    <td>{row.work_order ?? '—'}</td>
-                    <td>{row.realization ?? '—'}</td>
-                    <td>—</td>
-                    <td><StatusBadge status="SUBMITTED" /></td>
-                    <td className="vc-table-actions">
-                      <Button variant="secondary" size="small" onClick={() => openApprovalDetail(row)}>Lihat Detail</Button>
-                      <Button variant="primary" size="small" onClick={() => handleApproveTx(row.id)}>Setujui</Button>
-                      <Button variant="danger" size="small" onClick={() => handleRejectTx(row.id)}>Tolak</Button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody></table></div>
-          )}
-          {approvalDetail && (
-            <div className="modal-backdrop" data-approval-id={approvalDetail.id} onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>
-              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
-                <div className="modal-header"><h3>Detail Persetujuan — {approvalData?.indicator ? getShortLabel(approvalData.indicator) : '—'}</h3><button type="button" className="modal-close" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>×</button></div>
-                <div className="modal-body">
-                  {approvalDetailError ? <p className="sla-blocked-note">{approvalDetailError}</p> : !approvalData ? <p>Memuat…</p> : (
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <div><strong>Nama Kegiatan:</strong> {approvalData.indicator ? getShortLabel(approvalData.indicator) : '—'}</div>
-                      <div><strong>Referensi SLA:</strong> {approvalData.indicator?.point_code ?? '—'}</div>
-                      <div><strong>Deskripsi SLA resmi:</strong> {approvalData.indicator?.criteria ?? '—'}</div>
-                      <div><strong>Satuan:</strong> {approvalData.indicator?.measurement_unit ?? approvalData.indicator?.unit ?? '—'}</div>
-                      <div><strong>ULP:</strong> {childUlps.find((u) => u.uuid === approvalData.row.unit_id)?.displayName ?? approvalData.row.unit_id}</div>
-                      <div><strong>Tanggal:</strong> {approvalData.entry.work_date?.slice(0,10)}</div>
-                      <div><strong>Penyulang:</strong> {approvalData.entry.feeder_id ? (approvalData.entry.feeders?.name ?? approvalData.entry.feeder_id) : '—'}</div>
-                      <div><strong>Lokasi:</strong> {approvalData.entry.location_address ?? '—'}</div>
-                      <div><strong>WO:</strong> {approvalData.entry.work_order ?? '—'}</div>
-                      <div><strong>Realisasi:</strong> {approvalData.entry.realization ?? '—'}</div>
-                      <div><strong>Petugas:</strong> {(approvalData.personnel ?? []).map((p) => p.employees?.name ?? p.employee_id).join(', ') || '—'}</div>
-                      <div><strong>Keterangan:</strong> {approvalData.entry.description ?? '—'}</div>
-                      <div><strong>Status:</strong> <StatusBadge status={approvalData.entry.status}>{formatApprovalStatus(approvalData.entry.status)}</StatusBadge></div>
-                      <div><strong>Riwayat Status:</strong>{(approvalData.history ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : <ul>{approvalData.history.map((item) => <li key={item.id}>{new Date(item.changed_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })} - {item.from_status === item.to_status ? `Data diperbarui (${formatApprovalStatus(item.to_status)})` : `${item.from_status ? formatApprovalStatus(item.from_status) : 'Baru'} ke ${formatApprovalStatus(item.to_status)}`}{item.reason ? `: ${item.reason}` : ''}</li>)}</ul>}</div>
-                      <div><strong>Evidence:</strong> {(approvalData.evidences ?? []).length === 0 ? <span className="text-muted"> Belum ada</span> : (<ul>{(approvalData.evidences ?? []).map((ev) => (<li key={ev.id}><button type="button" className="sla-btn" onClick={async () => { const url = await getEvidencePreviewUrl(ev.storage_path); window.open(url, '_blank') }}>{ev.file_name}</button> — {ev.mime_type}</li>))}</ul>)}</div>
-                      <div className="vc-page-actions">
-                        <Button variant="secondary" onClick={() => { setApprovalDetail(null); setApprovalData(null) }}>Tutup</Button>
-                        {approvalData.entry.status === 'SUBMITTED' && <Button variant="danger" onClick={() => handleRejectTx(approvalDetail.id)}>Tolak</Button>}
-                        {approvalData.entry.status === 'SUBMITTED' && <Button variant="primary" onClick={() => handleApproveTx(approvalDetail.id)}>Setujui</Button>}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : activeTab === 'dashboard-finansial' ? (
-        <VariableFinancialDashboard contractId={contractId} up3Id={up3Uuid} period={period} periods={periods} onPeriodChange={onPeriodChange} units={childUlps} onOpenTransactions={openDashboardTransactions} />
-      ) : activeTab === 'harga-satuan' ? (
-        <MasterHargaSatuan contractId={contractId} up3Id={up3Uuid} up3Name={units.find(u=>u.uuid===up3Uuid)?.displayName ?? 'UP3'} canManage={canManageKonstruksiMonthly} />
-      ) : activeTab === 'target-pendapatan' ? (
-        <TargetPendapatanVariable contractId={contractId} up3Id={up3Uuid} period={period} periods={periods} onPeriodChange={onPeriodChange} units={childUlps} onSaved={loadMonthly} />
-      ) : activeTab === 'target' ? (
+      ) : activeTab === 'dashboard-finansial' && canViewVariableFinancial ? (
+        <VariableFinancialDashboard contractId={contractId} up3Id={up3Uuid} period={period} periods={periods} onPeriodChange={changePeriod} units={childUlps} onOpenMonthly={(code, requestedUnitId) => { setSelectedUnitId(requestedUnitId); setActiveTab('rekap') }} />
+      ) : activeTab === 'harga-satuan' && canManageKonstruksiMonthly ? (
+        <MasterHargaSatuan contractId={contractId} up3Id={up3Uuid} up3Name={units.find((unit) => unit.uuid === up3Uuid)?.displayName ?? 'UP3'} canManage={canManageKonstruksiMonthly} />
+      ) : activeTab === 'target-pendapatan' && canViewVariableFinancial ? (
+        <TargetPendapatanVariable contractId={contractId} up3Id={up3Uuid} period={period} periods={periods} onPeriodChange={changePeriod} units={childUlps} onSaved={loadMonthly} />
+      ) : activeTab === 'target' && canEditTargets ? (
         <div className="vc-subpage">
           <div className="vc-subpage-heading"><div><span className="vc-section-kicker">KONFIGURASI</span><h3>Target Operasional Variable Cost</h3></div></div>
-          <FilterBar className="vc-filter-bar">
-            <FilterField label="Periode">
-              <select className="input-select" value={period} disabled={!!targetBusyPoint} onChange={(event) => onPeriodChange?.(event.target.value)}>
-                {periods.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </FilterField>
-            <FilterField label="Unit layanan">
-              <select className="input-select" value={targetUnitId} disabled={!!targetBusyPoint} onChange={(event) => { setTargetMessage(''); setTargetError(''); setTargetUnitId(event.target.value) }}>
-                {childUlps.map((unit) => <option key={unit.uuid} value={unit.uuid}>{unit.displayName}</option>)}
-              </select>
-            </FilterField>
-          </FilterBar>
-          {targetError && <Alert tone="danger">{targetError}</Alert>}
-          {targetMessage && <Alert tone="success">{targetMessage}</Alert>}
-          {!activeVersionId && <Alert tone="warning">Tidak ada versi SLA aktif untuk periode ini.</Alert>}
-          <DataTable className="vc-compact-table" sticky>
-              <thead><tr><th>Kegiatan</th><th>Satuan</th><th>Target</th><th>Aksi</th></tr></thead>
-              <tbody>
-                {STANDARD_8.map((indicator) => {
-                  const canonical = indicators.find((row) => row.point_code === indicator.point && row.sla_version_id === activeVersionId)
-                  const busy = targetBusyPoint === indicator.point
-                  return (
-                    <tr key={indicator.id}>
-                      <td>{getShortLabel(indicator)}</td>
-                      <td>{canonical?.measurement_unit ?? indicator.unit ?? '—'}</td>
-                      <td><input type="number" min="0" className="input-field" value={targetDrafts[indicator.point] ?? ''} disabled={!activeVersionId || !!targetBusyPoint} onChange={(event) => setTargetDrafts((current) => ({ ...current, [indicator.point]: event.target.value }))} /></td>
-                      <td className="ui-table-actions"><Button variant="primary" size="small" disabled={!activeVersionId || !!targetBusyPoint} onClick={() => handleSaveTarget(indicator)}>{busy ? 'Menyimpan…' : 'Simpan'}</Button></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-          </DataTable>
+          <FilterBar className="vc-filter-bar"><FilterField label="Periode"><select className="input-select" value={period} disabled={busy} onChange={(event) => changePeriod(event.target.value)}>{periods.map((item) => <option key={item} value={item}>{item}</option>)}</select></FilterField><FilterField label="Unit layanan"><select className="input-select" value={targetUnitId} disabled={busy} onChange={(event) => { setTargetError(''); setTargetMessage(''); setTargetUnitId(event.target.value) }}>{childUlps.map((unit) => <option key={unit.uuid} value={unit.uuid}>{unit.displayName}</option>)}</select></FilterField></FilterBar>
+          {targetError && <Alert tone="danger">{targetError}</Alert>}{targetMessage && <Alert tone="success">{targetMessage}</Alert>}
+          {error ? <StatePanel state="error" title="Target gagal dimuat" action={<Button onClick={refresh}>Coba Lagi</Button>}>{error}</StatePanel> : loading || !isCurrent ? <StatePanel state="loading" title="Memuat target" /> : <DataTable className="vc-compact-table" sticky><thead><tr><th>Kegiatan</th><th>Satuan</th><th>Target</th><th>Aksi</th></tr></thead><tbody>{STANDARD_8.map((indicator) => <tr key={indicator.code}><td>{getShortLabel(indicator)}</td><td>{indicator.unit}</td><td><input aria-label={`Target ${indicator.code}`} type="number" min="0" step="0.0001" className="input-field" value={targetDrafts[indicator.code] ?? ''} disabled={busy || !versionId} onChange={(event) => setTargetDrafts((current) => ({ ...current, [indicator.code]: event.target.value }))} /></td><td><Button variant="primary" size="small" disabled={busy || !versionId} onClick={() => handleSaveTarget(indicator)}>{targetBusyPoint === indicator.code ? 'Menyimpan…' : 'Simpan'}</Button></td></tr>)}</tbody></DataTable>}
         </div>
-      ) : (
-        <div className="vc-subpage">
-          <div className="vc-subpage-heading"><div><span className="vc-section-kicker">MASTER DATA</span><h3>Master Penyulang</h3></div></div>
-          <FilterBar className="vc-filter-bar" actions={<Button variant="secondary" onClick={loadFeeders}>Muat Ulang</Button>}>
-            {!isAdminUlpView && (
-              <FilterField label="Unit layanan">
-                <select className="input-select" value={selectedUlpLegacy} onChange={(e) => setSelectedUlpLegacy(e.target.value)}>
-                  <option value={ALL_KEY}>Semua ULP — Konsolidasi UP3</option>
-                  {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
-                </select>
-              </FilterField>
-            )}
-            <FilterField label="Status">
-              <select className="input-select" value={feederStatusFilter} onChange={(e) => setFeederStatusFilter(e.target.value)}>
-                <option value="">Semua Status</option>
-                <option value="PENDING">Menunggu Persetujuan</option>
-                <option value="ACTIVE">Aktif</option>
-                <option value="REJECTED">Ditolak</option>
-                <option value="INACTIVE">Nonaktif</option>
-              </select>
-            </FilterField>
-          </FilterBar>
+      ) : null}
 
-          {!isManagementReadOnly && (
-          <div className="vc-inline-form">
-            {!isAdminUlpView && (
-              <FilterField label="ULP Tujuan">
-                <select className="input-select" value={directUlp} onChange={(e) => setDirectUlp(e.target.value)}>
-                  {childUlps.map((u) => <option key={u.uuid} value={u.legacyKey ?? u.uuid}>{u.displayName}</option>)}
-                </select>
-              </FilterField>
-            )}
-            <FilterField label="Nama Penyulang" className="vc-feeder-name-field"><input className="input-field" placeholder="Nama Penyulang" value={proposeName} onChange={(e) => setProposeName(e.target.value)} /></FilterField>
-            <Button variant="primary" disabled={proposeBusy || !proposeName.trim()} onClick={handlePropose}>
-              {proposeBusy ? 'Menyimpan…' : isAdminUlpView ? '+ Usulkan Penyulang' : '+ Tambah Penyulang'}
-            </Button>
-          </div>
-          )}
-
-          {feederError && <Alert tone="danger">{feederError}</Alert>}
-
-          {feederLoading ? <StatePanel state="loading" title="Memuat Penyulang" /> : feeders.length === 0 ? (
-            <StatePanel title="Belum ada Penyulang untuk scope ini" />
-          ) : (
-            <DataTable className="vc-compact-table" sticky>
-                <thead><tr><th>Nama Penyulang</th><th>Status</th><th>Tanggal Pengajuan</th><th>Aksi</th></tr></thead>
-                <tbody>
-                  {feeders.map((f) => (
-                    <tr key={f.id} id={`feeder-${f.id}`} className={focusedFeederId === f.id ? 'approval-focused-row' : ''}>
-                      <td>{f.name}</td>
-                      <td><StatusBadge status={f.status}>{formatFeederStatus(f.status)}</StatusBadge>{f.status === 'REJECTED' && f.rejection_reason ? <span className="vc-rejection-reason">{f.rejection_reason}</span> : null}</td>
-                      <td>{f.proposed_at ? new Date(f.proposed_at).toLocaleDateString('id-ID') : '—'}</td>
-                      <td className="vc-table-actions">
-                        {f.status === 'PENDING' && !isAdminUlpView && !isManagementReadOnly && (
-                          <>
-                            <Button variant="primary" size="small" onClick={() => handleApprove(f.id)}>Approve</Button>
-                            <Button variant="danger" size="small" onClick={() => handleReject(f.id)}>Reject</Button>
-                          </>
-                        )}
-                        {f.status === 'ACTIVE' && !isAdminUlpView && !isManagementReadOnly && (
-                          <Button variant="secondary" size="small" onClick={() => handleToggleActive(f)}>Nonaktifkan</Button>
-                        )}
-                        {f.status === 'INACTIVE' && !isAdminUlpView && !isManagementReadOnly && (
-                          <Button variant="secondary" size="small" onClick={() => handleToggleActive(f)}>Aktifkan</Button>
-                        )}
-                        {!isAdminUlpView && !isManagementReadOnly && (
-                          <Button variant="danger" size="small" onClick={() => handleDelete(f)}>Hapus</Button>
-                        )}
-                        {f.status === 'REJECTED' && isAdminUlpView && f.rejection_reason && (
-                          <span className="text-muted">Alasan: {f.rejection_reason}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-            </DataTable>
-          )}
-          {isAdminUlpView && <p className="text-muted" style={{ marginTop: 8 }}>Usulan baru berstatus Menunggu Persetujuan. Approve/Reject hanya oleh Admin UP3.</p>}
-        </div>
-      )}
-      <ProcessModal
-        open={Boolean(processState)}
-        status={processState?.status ?? 'loading'}
-        title={processState ? (PROCESS_TITLES[processState.mode] ?? 'Memproses') : ''}
-        subtitle={`${period} · ${scopeLabel}`}
-        successMessage={processState?.mode === 'wo' ? 'WO berhasil disimpan.' : 'Data berhasil diperbarui.'}
-        error={processState?.error}
-        onClose={() => setProcessState(null)}
-        onRetry={handleProcessRetry}
-        allowClose={processState?.status !== 'loading'}
-      />
+      <Modal open={Boolean(drillIndicator)} onClose={closeDetail} title={`${getShortLabel(drillIndicator)} · ${period}`} size="large" dismissDisabled={busy} showCloseButton={!busy}>
+        {drillIndicator && isCurrent && (konstruksiOpen ? (
+          <>
+            <DataTable><thead><tr><th>ULP</th><th>Target Pendapatan</th><th>Aktual</th><th>Selisih</th><th>Pencapaian</th></tr></thead><tbody>{scopedUnits.map((unit) => {
+              const target = canManageKonstruksiMonthly ? draftNumber(konstruksiTargetDrafts[unit.uuid]) : data.konstruksiTargets.find((row) => row.unit_id === unit.uuid)?.target_rp
+              const amount = canManageKonstruksiMonthly ? draftNumber(konstruksiDrafts[unit.uuid]) : data.konstruksiAmounts.find((row) => row.unit_id === unit.uuid)?.amount_rp
+              return <tr key={unit.uuid}><td>{unit.displayName}</td><td>{canManageKonstruksiMonthly ? <input aria-label={`Target Konstruksi ${unit.displayName}`} className="input-number" inputMode="numeric" value={konstruksiTargetDrafts[unit.uuid] ?? ''} disabled={busy} onChange={(event) => setKonstruksiTargetDrafts((current) => ({ ...current, [unit.uuid]: event.target.value.replace(/\D/g, '') }))} /> : formatRp(target)}</td><td>{canManageKonstruksiMonthly ? <input aria-label={`Aktual Konstruksi ${unit.displayName}`} className="input-number" inputMode="numeric" value={konstruksiDrafts[unit.uuid] ?? ''} disabled={busy} onChange={(event) => setKonstruksiDrafts((current) => ({ ...current, [unit.uuid]: event.target.value.replace(/\D/g, '') }))} /> : formatRp(amount)}</td><td>{target != null && amount != null ? formatRp(Number(amount) - Number(target)) : EMPTY_VALUE}</td><td>{target > 0 && amount != null ? formatPercent(Number(amount) / Number(target) * 100) : EMPTY_VALUE}</td></tr>
+            })}</tbody></DataTable>
+            {canManageKonstruksiMonthly && <div className="vc-page-actions"><Button variant="primary" disabled={busy || !konstruksiDirty} onClick={handleSaveKonstruksi}>{konstruksiBusy ? 'Menyimpan…' : 'Simpan Konstruksi'}</Button></div>}
+            <p className="vc-helper-text">Konstruksi tetap menggunakan nominal bulanan. Kolom kosong tidak menghapus nominal yang telah tersimpan; gunakan 0 untuk nilai nol.</p>
+            {konstruksiError && <Alert tone="danger">{konstruksiError}</Alert>}{konstruksiMessage && <Alert tone="success">{konstruksiMessage}</Alert>}
+          </>
+        ) : (
+          <DataTable><thead><tr><th>ULP</th><th>Target</th><th>WO</th><th>Realisasi</th><th>Pencapaian</th>{canViewVariableFinancial && <th>Pendapatan</th>}<th>Aksi</th></tr></thead><tbody>{scopedUnits.map((unit) => {
+            const row = monthlyRows.find((item) => item.unit_id === unit.uuid && item.indicator_code === drillIndicator.code)
+            const target = getTarget(drillIndicator, unit.uuid)
+            return <tr key={unit.uuid}><td>{unit.displayName}</td><td>{formatNumber(target)}</td><td>{renderMonthlyValue(row?.work_order)}</td><td>{renderMonthlyValue(row?.realization)}</td><td>{drillIndicator.slaLinked ? formatPercent(monthlyAchievement(target, row?.work_order, row?.realization)) : EMPTY_VALUE}</td>{canViewVariableFinancial && <td>{renderRevenue(drillIndicator, unit.uuid)}</td>}<td><Button size="small" onClick={() => openHistory(drillIndicator, unit)}>Riwayat</Button></td></tr>
+          })}</tbody></DataTable>
+        ))}
+      </Modal>
+      <Modal open={Boolean(historyScope)} onClose={() => { historyRequestId.current += 1; setHistoryScope(null) }} title={`Riwayat ${getShortLabel(historyScope?.indicator)} · ${historyScope?.unit.displayName ?? ''} · ${period}`} size="large">
+        {historyLoading ? <StatePanel state="loading" title="Memuat riwayat" /> : historyError ? <Alert tone="danger">{historyError}</Alert> : historyRows.length === 0 ? <StatePanel title="Belum ada perubahan tersimpan" /> : (
+          <><p className="vc-helper-text">Maksimal 100 revisi terakhir. Nilai kosong ditampilkan sebagai —.</p><DataTable><thead><tr><th>Revisi</th><th>Waktu (WIB)</th><th>WO Lama → Baru</th><th>Realisasi Lama → Baru</th></tr></thead><tbody>{historyRows.map((row) => <tr key={row.id}><td>{row.revision}</td><td>{new Date(row.changed_at).toLocaleString('id-ID', { timeZone: 'Asia/Pontianak' })}</td><td>{formatNumber(row.old_work_order)} → {formatNumber(row.new_work_order)}</td><td>{formatNumber(row.old_realization)} → {formatNumber(row.new_realization)}</td></tr>)}</tbody></DataTable></>
+        )}
+      </Modal>
     </section>
   )
 }
