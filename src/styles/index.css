@@ -6658,11 +6658,34 @@ img.sp-pegawai-photo {
 
 /* ---------- Lembur operational UI ---------- */
 .lembur-l2 { min-width: 0; display: grid; gap: 12px; }
-.lembur-landing-header { min-height: 52px; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 0 2px; }
+.lembur-landing-header { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 2px; }
 .lembur-landing-header h1 { margin: 1px 0 0; color: var(--pln-navy); font-size: 18px; line-height: 24px; letter-spacing: 0; }
 .lembur-landing-header p { margin: 1px 0 0; color: var(--color-text-muted); font-size: 12px; line-height: 18px; }
 .lembur-landing-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
-.lembur-period-picker { min-width: 180px; }
+.lembur-period-picker { position: relative; min-width: 0; flex: 0 0 auto; }
+.lembur-period-trigger { min-width: 196px; height: 42px; display: inline-flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-elevated); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; box-shadow: var(--shadow-sm); transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+.lembur-period-trigger:hover { border-color: var(--primary); background: var(--surface-hover); }
+.lembur-period-trigger:focus-visible, .lembur-period-year-button:focus-visible, .lembur-period-month:focus-visible { outline: 3px solid rgba(0, 120, 190, .25); outline-offset: 2px; }
+.lembur-period-trigger-icon { flex: 0 0 auto; color: var(--pln-blue); }
+.lembur-period-trigger-label { flex: 1 1 auto; white-space: nowrap; }
+.lembur-period-trigger-chevron { flex: 0 0 auto; color: #718096; transition: transform .16s ease; }
+.lembur-period-trigger-chevron.is-open { transform: rotate(180deg); }
+.lembur-period-popover { position: absolute; z-index: 1200; top: calc(100% + 8px); right: 0; width: 284px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-elevated); color: var(--text-primary); box-shadow: 0 16px 42px rgba(16, 39, 66, .18); animation: lembur-period-popover-in .14s ease-out; }
+.lembur-period-popover-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.lembur-period-popover-title { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.lembur-period-year-nav { display: inline-flex; align-items: center; gap: 7px; }
+.lembur-period-year-nav strong { min-width: 42px; color: var(--heading); font-size: 14px; text-align: center; font-variant-numeric: tabular-nums; }
+.lembur-period-year-button { width: 28px; height: 28px; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.lembur-period-year-button:hover:not(:disabled) { border-color: var(--border); background: var(--surface-hover); color: var(--primary); }
+.lembur-period-year-button:disabled { color: var(--text-disabled); cursor: default; }
+.lembur-period-month-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.lembur-period-month { position: relative; min-height: 38px; border: 1px solid transparent; border-radius: 9px; background: var(--surface-subtle); color: var(--text-secondary); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .14s ease, border-color .14s ease, color .14s ease, transform .14s ease; }
+.lembur-period-month:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--border-strong); background: var(--primary-subtle); color: var(--primary); }
+.lembur-period-month:disabled { background: transparent; color: var(--text-disabled); cursor: not-allowed; }
+.lembur-period-month.is-selected { border-color: var(--pln-blue); background: var(--pln-blue); color: #fff; box-shadow: 0 3px 8px rgba(8, 120, 185, .2); }
+.lembur-period-month-check { position: absolute; top: 2px; right: 5px; font-size: 9px; line-height: 12px; }
+.lembur-period-popover-hint { margin: 11px 1px 0; color: var(--text-muted); font-size: 10px; line-height: 15px; }
+@keyframes lembur-period-popover-in { from { opacity: 0; transform: translateY(-4px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .lembur-scope-badge { min-height: 28px; padding: 4px 10px; display: inline-flex; align-items: center; border: 1px solid #c9deef; border-radius: 999px; background: #edf6fc; color: #17628f; font-size: 11px; line-height: 16px; font-weight: 700; white-space: nowrap; }
 .lembur-landing-message { margin: 0; }
 .lembur-kicker { color: var(--pln-blue); font-size: 10.5px; line-height: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -6943,6 +6966,10 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 }
 @media (max-width: 680px) {
   .lembur-landing-header, .lembur-form-heading { align-items: flex-start; flex-direction: column; }
+  .lembur-landing-actions { width: 100%; justify-content: flex-start; }
+  .lembur-period-picker { flex: 1 1 175px; }
+  .lembur-period-trigger { width: 100%; min-width: 0; }
+  .lembur-period-popover { right: auto; left: 0; width: min(284px, calc(100vw - 40px)); }
   .lembur-heading-actions { width: 100%; justify-content: flex-end; }
   .lembur-type-grid, .lembur-form-grid, .lembur-form-grid.is-replacement, .lembur-form-grid.is-administrasi, .lembur-form-grid.is-technical, .lembur-upload-grid, .lembur-detail-evidence-grid { grid-template-columns: 1fr; }
   .lembur-form-grid.is-technical > .sla-context-field:nth-child(3), .lembur-form-grid.is-technical > .sla-context-field:nth-child(4) { grid-column: 1 / -1; grid-row: auto; }

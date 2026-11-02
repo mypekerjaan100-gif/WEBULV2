@@ -29,6 +29,7 @@ import { selectOvertimeHistoryForDisplay } from '../../data/overtimeHistoryPrese
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 import EvidenceUploadCard from './EvidenceUploadCard.jsx'
+import OvertimePeriodPicker from './OvertimePeriodPicker.jsx'
 import Icon from '../Icon.jsx'
 import {
   Alert,
@@ -2439,19 +2440,16 @@ export default function SLALembur({
         </div>
         <div className="lembur-landing-actions">
           {onOpenPeriod && (
-            <label className="sla-context-field lembur-period-picker">
-              <span className="sla-context-label">Periode Lembur</span>
-              <select aria-label="Periode Lembur" className="sla-context-select" value={periodMonth ?? ''} disabled={isSubmitting} onChange={(event) => {
-                const date = event.target.value
+            <OvertimePeriodPicker
+              periods={periods}
+              value={periodMonth}
+              disabled={isSubmitting}
+              onChange={(date) => {
                 if (date === periodMonth) return
                 if (formOpen && dirty && !window.confirm(`Perubahan yang belum disimpan akan hilang. Buka periode ${periodLabelForDate(date)}?`)) return
                 onOpenPeriod(date)
-              }}>
-                {[...new Set([...periods, periodMonth].filter(Boolean))].sort().map((month) => (
-                  <option key={month} value={month}>{periodLabelForDate(month)}</option>
-                ))}
-              </select>
-            </label>
+              }}
+            />
           )}
           {(up3ScopeName || contractScope.region || ulpCount > 0) && <span className="lembur-scope-badge">{up3ScopeName ?? contractScope.region ?? 'Scope UP3'} · {ulpCount} ULP</span>}
           {canMutate && <Button variant="primary" onClick={openNewForm}>+ Tambah Lembur</Button>}
