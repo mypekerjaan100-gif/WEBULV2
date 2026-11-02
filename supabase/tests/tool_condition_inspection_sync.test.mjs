@@ -19,7 +19,7 @@ try {
     insert into public.organization_units values('${ulp}','ULP','${up3}',1,'ulp-1');
     create table public.ops_tool_assets(id uuid,contract_id uuid,up3_id uuid,ulp_id uuid,slot_id uuid,equipment_id uuid,commissioned_at timestamptz,replaced_at timestamptz);
     create table public.ops_tool_inspections(asset_id uuid,inspected_at timestamptz);
-    create table public.ops_tool_issues(contract_id uuid,up3_id uuid,ulp_id uuid,slot_id uuid,equipment_id uuid,opened_at timestamptz,resolved_at timestamptz);
+    create table public.ops_tool_issues(contract_id uuid,up3_id uuid,ulp_id uuid,slot_id uuid,equipment_id uuid,opened_at timestamptz,resolved_at timestamptz,status text default 'OPEN',replacement_asset_id uuid);
     create table public.ops_vehicle_monthly_reports(id uuid default gen_random_uuid(),contract_id uuid,up3_id uuid,ulp_id uuid,period_month date,revision integer default 1,vehicles jsonb,items jsonb,status text,created_by uuid,updated_by uuid);
     create table public.fixture(bundle jsonb);
     create function public.ops_prescribed_assert_scope(uuid,uuid,uuid) returns void language plpgsql as $$begin if $1<>'${contract}'::uuid or $2<>'${up3}'::uuid or ($3 is not null and $3<>'${ulp}'::uuid) then raise exception 'Scope denied';end if;end$$;
@@ -39,6 +39,7 @@ try {
   const source=readFileSync(new URL('../migrations/20261028102000_ops_vehicle_condition_reports_restore.sql',import.meta.url),'utf8')
   await db.exec(source.slice(source.indexOf('create or replace function public.ops_save_vehicle_condition_report('),source.indexOf('create or replace function public.ops_save_vehicle_condition_subset(')))
   await db.exec(readFileSync(new URL('../migrations/20261102024519_tool_condition_inspection_sync.sql',import.meta.url),'utf8'))
+  await db.exec(readFileSync(new URL('../migrations/20261102075127_handover_verifies_tool_unit.sql',import.meta.url),'utf8'))
   let b=await report('2026-10-01')
   check([tool(b).good_qty,tool(b).bad_qty,coverage(b).uninspected],[1,0,1])
   await query('insert into public.ops_tool_inspections values($1,$2),($1,$3)',[asset,'2026-10-09T02:24:00Z','2026-10-10T02:24:00Z'])
@@ -58,16 +59,16 @@ try {
   b=(await query('select public.ops_save_vehicle_condition_report($1,$2,$3,$4,0,$5) value',[...scope,'2026-10-01',JSON.stringify(manual)]))[0].value
   check([tool(b).good_qty,tool(b).bad_qty],[0,1])
   const frozen=JSON.stringify((await query('select items from public.ops_vehicle_monthly_reports'))[0].items)
-  // November handover restores November, not October. New asset needs inspection.
-  await query('update public.ops_tool_issues set resolved_at=$1',['2026-11-02T02:00:00Z'])
+  // November handover verifies the replacement unit in November, not October.
+  await query('update public.ops_tool_issues set resolved_at=$1,status=$2,replacement_asset_id=$3',['2026-11-02T02:00:00Z','RESOLVED',id(8)])
   await query('update public.ops_tool_assets set replaced_at=$1 where id=$2',['2026-11-02T02:00:00Z',asset])
   await query('insert into public.ops_tool_assets values($1,$2,$3,$4,$5,$6,$7,null)',[id(8),...scope,vehicle,equipment,'2026-11-02T02:00:00Z'])
   b=await report('2026-11-01')
-  check([tool(b).good_qty,tool(b).bad_qty,coverage(b).inspected,coverage(b).uninspected],[1,0,0,1])
+  check([tool(b).good_qty,tool(b).bad_qty,coverage(b).inspected,coverage(b).uninspected],[1,0,1,0])
   check(tool(await report('2026-10-01')).bad_qty,1)
   check(JSON.stringify((await query('select items from public.ops_vehicle_monthly_reports'))[0].items),frozen)
-  await query('insert into public.ops_tool_inspections values($1,$2)',[id(8),'2026-11-02T03:00:00Z'])
-  check(coverage(await report('2026-11-01')).uninspected,0)
+  // Handover is a verification for its own month; next month needs a new check.
+  check(coverage(await report('2026-12-01')).uninspected,1)
   // Pontianak month boundary: Nov 1 00:00 WIB is not October.
   await query('update public.ops_tool_issues set resolved_at=$1',['2026-10-31T17:00:00Z'])
   check(tool(await report('2026-10-01')).bad_qty,1)

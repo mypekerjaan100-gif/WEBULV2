@@ -49,8 +49,8 @@ assert(
 )
 
 assert(
-  evidenceUi.includes("label: 'Alat pengganti · belum diperiksa'"),
-  'Unit pengganti tanpa inspeksi harus ditandai jelas',
+  evidenceUi.includes('asset.handover?.resolved_at') && evidenceUi.includes("label: 'Baik · sudah diperiksa'"),
+  'Serah Terima harus membuat unit pengganti berstatus sudah diperiksa',
 )
 assert(
   matrix.includes('Alat pengganti · mulai pakai'),

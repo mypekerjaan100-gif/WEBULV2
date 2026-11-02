@@ -60,8 +60,10 @@ function agePhrase(months, label = 'Umur') {
 function UnitDetailCard({ asset, highlightedIssueId }) {
   const status = assetStatus(asset)
   const issue = asset.open_issue
+  const handover = asset.handover
   const age = issue ? issue.age_at_failure_months : asset.age_months
   const life = issue ? issue.standard_life_months : asset.useful_life_months
+  const verifiedAt = asset.latest_inspection?.inspected_at || handover?.resolved_at
   return (
     <div className={`tool-unit-card ${issue ? 'is-issue' : ''} ${issue && String(issue.id) === String(highlightedIssueId) ? 'is-highlighted' : ''}`}>
       <div className="tool-unit-card-head">
@@ -69,10 +71,13 @@ function UnitDetailCard({ asset, highlightedIssueId }) {
         <span className={`tool-badge tool-badge-${status.tone}`}>{status.label}</span>
       </div>
       <span className="tool-muted">
-        {asset.latest_inspection ? formatDateTime(asset.latest_inspection.inspected_at) : 'Belum ada inspeksi'}
+        {verifiedAt ? formatDateTime(verifiedAt) : 'Belum ada inspeksi'}
       </span>
       {asset.latest_inspection && (
         <span className="tool-muted">{asset.latest_inspection.inspected_by_name || 'Petugas inspeksi'}</span>
+      )}
+      {!asset.latest_inspection && handover && (
+        <span className="tool-muted">Serah terima oleh {handover.resolved_by_name || 'petugas'}</span>
       )}
       {asset.commissioned_at && (
         <span className="tool-muted">Alat pengganti · mulai pakai {formatDateTime(asset.commissioned_at)}</span>
@@ -84,6 +89,12 @@ function UnitDetailCard({ asset, highlightedIssueId }) {
       {issue?.note && <span className="tool-unit-note">{issue.note}</span>}
       {issue?.damaged_before_life && <span className="tool-warning">Rusak sebelum masa pakai</span>}
       <EvidenceThumbs paths={asset.latest_inspection?.photo_paths || []} />
+      {handover && (
+        <>
+          <span className="tool-muted">Bukti serah terima</span>
+          <EvidenceThumbs paths={handover.photo_paths || []} />
+        </>
+      )}
     </div>
   )
 }
@@ -280,7 +291,7 @@ export default function UlpToolInspectionMatrix({
         photoPaths: paths,
         expectedRevision: issue.revision,
       })
-      onMessage?.(`Issue ${editor.asset.equipment_name} unit ${editor.asset.asset_sequence} selesai. Alat pengganti menempati unit ${editor.asset.asset_sequence} yang sama.`)
+      onMessage?.(`Issue ${editor.asset.equipment_name} unit ${editor.asset.asset_sequence} selesai. Alat pengganti menempati unit ${editor.asset.asset_sequence} yang sama dan tercatat sudah diperiksa.`)
       setEditor(null)
       await onChanged?.()
     } catch (submitError) {
@@ -663,7 +674,7 @@ export default function UlpToolInspectionMatrix({
               </FormField>
               <Alert tone="info">
                 Waktu serah terima menjadi awal masa pakai alat pengganti dan bukti penyerahan dari K3 ke ULP.
-                Alat pengganti tetap memakai nomor unit yang sama.
+                Alat pengganti tetap memakai nomor unit yang sama dan tercatat sudah diperiksa.
               </Alert>
             </form>
           )

@@ -21,7 +21,7 @@ try{
   `}))
   await page.route('**/src/data/toolEvidence.js*',route=>route.fulfill({contentType:'application/javascript',body:'export const prepareToolEvidence=async(file)=>file; export const prepareVehicleEvidence=async(file)=>file;'}))
   await page.route('**/src/data/toolInspectionRepository.js*',route=>route.fulfill({contentType:'application/javascript',body:`
-    export const getToolInspectionBundle=async()=>({vehicles:[{id:'vehicle',assets:[{id:'asset',equipment_id:'tool',equipment_name:'Teropong',asset_sequence:1,commissioned_at:window.replaced?'2026-11-02T03:00:00Z':null,open_issue:window.damaged?{id:'issue',revision:1,opened_at:'2026-10-09T00:00:00Z'}:null}]}],history:[],openIssues:window.damaged?[{id:'issue',vehicle_id:'vehicle',equipment_name:'Teropong'}]:[]});
+    export const getToolInspectionBundle=async()=>({vehicles:[{id:'vehicle',assets:[{id:'asset',equipment_id:'tool',equipment_name:'Teropong',asset_sequence:1,commissioned_at:window.replaced?'2026-11-02T03:00:00Z':null,handover:window.replaced?{resolved_at:'2026-11-02T03:00:00Z',resolved_by_name:'Widodo',photo_paths:['replacement.png']}:null,open_issue:window.damaged?{id:'issue',revision:1,opened_at:'2026-10-09T00:00:00Z'}:null}]}],history:[],openIssues:window.damaged?[{id:'issue',vehicle_id:'vehicle',equipment_name:'Teropong'}]:[]});
     export const listVehicleLastInspections=async()=>[];
     export const submitToolInspection=async()=>{window.damaged=true;window.checked=true;return {issue:{id:'issue'}}};
     export const resolveToolIssue=async()=>{window.damaged=false;window.checked=false;window.replaced=true;return {}};
@@ -39,14 +39,17 @@ try{
     const r=await import('/node_modules/.vite/deps/react.js'), React=r.default??r
     const dom=await import('/node_modules/.vite/deps/react-dom_client.js')
     const {default:Report}=await import('/src/components/sla/UlpConditionReport.jsx')
-    window.damaged=false;window.checked=false
-    window.fixtureReport=month=>({report:null,vehicles:[{id:'vehicle',label:'Roda 2',plate_display:'KB 1234',vehicle_type_name:'Roda 2',assignment_name:'Inspeksi'}],history:[],
-      items:[{key:'vehicle:vehicle',vehicle_id:'vehicle',kind:'vehicle',required_qty:1,good_qty:1,bad_qty:0},
-        {key:'vehicle:tool',vehicle_id:'vehicle',equipment_id:'tool',kind:'equipment',name:'Teropong',unit:'unit',required_qty:1,good_qty:window.damaged?0:1,bad_qty:window.damaged?1:0,note:''}],
-      inspection_summary:[{vehicle_id:'vehicle',total:1,inspected:window.checked&&month==='2026-10'?1:0,uninspected:window.checked&&month==='2026-10'?0:1,open_issues:window.damaged?1:0}]})
+    window.damaged=false;window.checked=false;window.replaced=false
+    window.fixtureReport=month=>{
+      const inspected=(window.checked&&month==='2026-10')||(window.replaced&&month==='2026-11')
+      return {report:null,vehicles:[{id:'vehicle',label:'Roda 2',plate_display:'KB 1234',vehicle_type_name:'Roda 2',assignment_name:'Inspeksi'}],history:[],
+        items:[{key:'vehicle:vehicle',vehicle_id:'vehicle',kind:'vehicle',required_qty:1,good_qty:1,bad_qty:0},
+          {key:'vehicle:tool',vehicle_id:'vehicle',equipment_id:'tool',kind:'equipment',name:'Teropong',unit:'unit',required_qty:1,good_qty:window.damaged?0:1,bad_qty:window.damaged?1:0,note:''}],
+        inspection_summary:[{vehicle_id:'vehicle',total:1,inspected:inspected?1:0,uninspected:inspected?0:1,open_issues:window.damaged?1:0}]}
+    }
     ;(dom.createRoot??dom.default.createRoot)(document.getElementById('root')).render(React.createElement(Report,{contractUuid:'contract',up3Uuid:'up3',ownUlpUuid:'ulp',canManage:true,canInspect:true,canResolveIssue:true,canPickUlp:false,initialMonth:'2026-10',units:[{uuid:'ulp',type:'ULP',displayName:'ULP'}]}))
   })
-  await page.getByText('1 unit belum diinspeksi bulan ini',{exact:true}).waitFor()
+  await page.getByText('1 unit belum diperiksa bulan ini',{exact:true}).waitFor()
   await page.locator('.uc-vehicle-card').click()
   const row=page.locator('.tool-matrix-row').filter({hasText:'Teropong'})
   await row.waitFor()
@@ -63,9 +66,9 @@ try{
   assert.equal(await row.locator('.tool-matrix-qty').nth(1).innerText(),'1')
   assert.equal(await row.locator('.tool-percent-value').innerText(),'0%')
   await page.getByRole('button',{name:'Kembali ke daftar kendaraan'}).click()
-  await page.getByText('Semua alat sudah diinspeksi bulan ini',{exact:true}).waitFor()
+  await page.getByText('Semua alat sudah diperiksa bulan ini',{exact:true}).waitFor()
   await page.locator('input[type=month]').fill('2026-11')
-  await page.getByText('1 unit belum diinspeksi bulan ini',{exact:true}).waitFor()
+  await page.getByText('1 unit belum diperiksa bulan ini',{exact:true}).waitFor()
   assert((await page.locator('.uc-vehicle-card').innerText()).includes('1 issue unit'))
   await page.locator('.uc-vehicle-card').click()
   await row.getByRole('button',{name:'Serah Terima',exact:true}).click()
@@ -75,9 +78,9 @@ try{
   assert.equal(await row.locator('.tool-matrix-qty').nth(0).innerText(),'1')
   assert.equal(await row.locator('.tool-matrix-qty').nth(1).innerText(),'0')
   assert.equal((await row.locator('.tool-unit-id').innerText()).toLowerCase(),'unit 1')
-  assert.equal(await row.locator('.tool-unit-state').innerText(),'Alat pengganti · belum diperiksa')
+  assert.equal(await row.locator('.tool-unit-state').innerText(),'Baik · sudah diperiksa')
   await page.getByRole('button',{name:'Kembali ke daftar kendaraan'}).click()
-  await page.getByText('1 unit belum diinspeksi bulan ini',{exact:true}).waitFor()
+  await page.getByText('Semua alat sudah diperiksa bulan ini',{exact:true}).waitFor()
   assert.deepEqual(errors,[])
   console.log('Tool sync browser checks passed: read-only counts, inspection refresh, month-specific card, carryover, handover refresh.')
 }catch(error){console.error(error.message,errors,(await page?.locator('body').innerText())?.slice(0,2000));process.exitCode=1}

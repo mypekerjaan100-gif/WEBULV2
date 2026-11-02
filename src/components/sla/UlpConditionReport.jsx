@@ -526,7 +526,7 @@ export default function UlpConditionReport({
         {modalError && <p className="uc-alert uc-alert--error" role="alert">{modalError}</p>}
         {modalMessage && <p className="uc-alert" role="status">{modalMessage}</p>}
         {editable && selectedIsDefault && !dirty && (
-          <p className="uc-alert" role="status">Jumlah alat mengikuti inspeksi. Unit belum diperiksa memakai kondisi awal Baik; ini bukan tanda sudah diinspeksi.</p>
+          <p className="uc-alert" role="status">Jumlah alat mengikuti inspeksi dan Serah Terima. Unit belum diperiksa memakai kondisi awal Baik; ini bukan tanda sudah diinspeksi.</p>
         )}
         <section className="uc-vehicle-hero">
           <div className="uc-vehicle-hero-head">
@@ -752,7 +752,7 @@ export default function UlpConditionReport({
     </div> : bundle && !bundle.vehicles.length ? <div className="uc-empty"><h3>Kendaraan belum ditetapkan</h3><p>Belum ada kendaraan untuk {unitName} pada {conditionMonthLabel(month)}. Admin UP3 perlu menetapkan kendaraan beserta penugasan dan template alatnya terlebih dahulu.</p></div> : bundle ? <>
       <div className="uc-reference"><div><span>Unit Layanan</span><strong>{unitName}</strong></div><div><span>Periode</span><strong>{conditionMonthLabel(month)}</strong></div><div><span>{historical ? `Riwayat revisi ${historical.revision}` : 'Hasil Pemeriksaan'}</span><Status value={summary.status} /></div></div>
       <div className="uc-summary" aria-live="polite"><div><strong>{summary.vehicleCount}</strong><span>Kendaraan Ditetapkan</span></div><div><strong>{summary.filled}<small>/{summary.total}</small></strong><span>Kondisi Terisi</span></div><div className={summary.failed ? 'uc-summary--danger' : ''}><strong>{summary.failed}</strong><span>Item Perlu Perhatian</span></div><div><strong>{summary.missingPlates}</strong><span>Nopol Belum Dilengkapi</span></div></div>
-      <p className="uc-instruction">Kondisi alat otomatis mengikuti inspeksi dan serah terima. Jumlah belum diinspeksi dihitung per unit fisik pada bulan yang dipilih; kondisi awal Baik bukan berarti sudah diperiksa.</p>
+      <p className="uc-instruction">Kondisi alat otomatis mengikuti inspeksi dan serah terima. Serah Terima pengganti dengan bukti dihitung sebagai pemeriksaan pada bulan serah terima. Jumlah belum diperiksa dihitung per unit fisik pada bulan yang dipilih; kondisi awal Baik bukan berarti sudah diperiksa.</p>
       {future && <p className="uc-alert">Periode mendatang hanya untuk melihat penetapan. Nopol dan kondisi belum dapat disimpan dari periode ini.</p>}
       {historical && <p className="uc-alert">Melihat riwayat {timestamp(historical.created_at)}. <button type="button" className="sla-btn" onClick={() => setHistorical(null)}>Kembali ke Laporan Terkini</button></p>}
       {!historical && toolStatus === 'error' && <p className="uc-alert">Rincian inspeksi per unit tidak dapat dimuat: {toolError}</p>}
@@ -858,9 +858,9 @@ export default function UlpConditionReport({
               {isDefault && <span className="uc-status uc-status--default">Default 100%</span>}
               {vehicleIssueCount > 0 && <span className="uc-status uc-status--non_compliant">{vehicleIssueCount} issue unit</span>}
               {!historical && (inspection ? <>
-                <span className="uc-vehicle-card-reasons">Inspeksi alat: {inspection.inspected}/{inspection.total} unit · {conditionMonthLabel(month)}</span>
+                <span className="uc-vehicle-card-reasons">Pemeriksaan alat: {inspection.inspected}/{inspection.total} unit · {conditionMonthLabel(month)}</span>
                 <span className={`uc-status uc-status--${inspection.uninspected > 0 ? 'draft' : 'compliant'}`}>
-                  {inspection.uninspected > 0 ? `${inspection.uninspected} unit belum diinspeksi bulan ini` : inspection.total > 0 ? 'Semua alat sudah diinspeksi bulan ini' : 'Tidak ada alat pada template'}
+                  {inspection.uninspected > 0 ? `${inspection.uninspected} unit belum diperiksa bulan ini` : inspection.total > 0 ? 'Semua alat sudah diperiksa bulan ini' : 'Tidak ada alat pada template'}
                 </span>
               </> : <span className="uc-status uc-status--draft">Ringkasan inspeksi belum tersedia</span>)}
               {reasons.length > 0 && <span className="uc-vehicle-card-reasons">{reasons.join(' · ')}</span>}

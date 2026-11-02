@@ -51,7 +51,7 @@ export default function UlpToolUnitPanel({
     return () => onEditorStateChange?.({ dirty: false, busy: false })
   }, [inspectTarget, resolveTarget, submitting, onEditorStateChange])
 
-  const checkedCount = assets.filter((asset) => asset.latest_inspection).length
+  const checkedCount = assets.filter((asset) => asset.latest_inspection || asset.handover?.resolved_at).length
   const issueCount = assets.filter((asset) => asset.open_issue).length
 
   const openInspect = (asset) => {
@@ -147,7 +147,7 @@ export default function UlpToolUnitPanel({
         photoPaths: paths,
         expectedRevision: resolveTarget.revision,
       })
-      onMessage?.(`Issue ${resolveTarget.equipment_name} selesai. Masa pakai alat pengganti dimulai dari waktu serah terima.`)
+      onMessage?.(`Issue ${resolveTarget.equipment_name} selesai. Alat pengganti menempati unit yang sama dan tercatat sudah diperiksa.`)
       setResolveTarget(null)
       onChanged?.()
     } catch (submitError) {
@@ -206,6 +206,12 @@ export default function UlpToolUnitPanel({
                         <span>{formatDateTime(asset.latest_inspection.inspected_at)}</span>
                         <span className="tool-muted">{asset.latest_inspection.inspected_by_name || 'Petugas inspeksi'}</span>
                         <EvidenceThumbs paths={asset.latest_inspection.photo_paths || []} />
+                      </>
+                    ) : asset.handover?.resolved_at ? (
+                      <>
+                        <span>{formatDateTime(asset.handover.resolved_at)}</span>
+                        <span className="tool-muted">Serah terima oleh {asset.handover.resolved_by_name || 'petugas'}</span>
+                        <EvidenceThumbs paths={asset.handover.photo_paths || []} />
                       </>
                     ) : <span className="tool-muted">Belum ada inspeksi</span>}
                   </td>
@@ -383,7 +389,8 @@ export default function UlpToolUnitPanel({
             />
           </FormField>
           <Alert tone="info">
-            Waktu serah terima ini menjadi awal masa pakai alat pengganti dan bukti penyerahan dari K3 ke ULP.
+            Waktu serah terima ini menjadi awal masa pakai alat pengganti, bukti penyerahan dari K3 ke ULP,
+            dan verifikasi bahwa unit pengganti sudah diperiksa.
           </Alert>
         </form>
       </Modal>
