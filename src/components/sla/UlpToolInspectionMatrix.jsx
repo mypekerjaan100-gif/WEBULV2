@@ -101,7 +101,6 @@ export default function UlpToolInspectionMatrix({
   up3Uuid,
   ulpId,
   highlightedIssueId = null,
-  onQuantityChange,
   onNoteChange,
   onChanged,
   onMessage,
@@ -116,7 +115,6 @@ export default function UlpToolInspectionMatrix({
   const [expandedUnitsKey, setExpandedUnitsKey] = useState(null)
   const [query, setQuery] = useState('')
   const [onlyAttention, setOnlyAttention] = useState(false)
-  const quantityRefs = useRef(new Map())
   const detailRefs = useRef(new Map())
   const editorInitRef = useRef(null)
   const columnCount = showInspections ? 8 : 7
@@ -243,7 +241,7 @@ export default function UlpToolInspectionMatrix({
         ? `Kerusakan ${editor.asset.equipment_name} dicatat. Issue terbuka sampai penggantian diserahkan.`
         : `Kondisi ${editor.asset.equipment_name} unit ${editor.asset.asset_sequence} tersimpan sebagai Baik.`)
       setEditor(null)
-      onChanged?.()
+      await onChanged?.()
     } catch (submitError) {
       setFormError(submitError.message)
     } finally {
@@ -281,23 +279,12 @@ export default function UlpToolInspectionMatrix({
       })
       onMessage?.(`Issue ${editor.asset.equipment_name} unit ${editor.asset.asset_sequence} selesai. Masa pakai alat pengganti dimulai dari waktu serah terima.`)
       setEditor(null)
-      onChanged?.()
+      await onChanged?.()
     } catch (submitError) {
       setFormError(submitError.message)
     } finally {
       setSubmitting(false)
     }
-  }
-
-  const moveQuantityFocus = (event, item, field) => {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    const ordered = items
-    const index = ordered.findIndex((row) => row.key === item.key)
-    const next = field === 'good_qty'
-      ? `${item.key}:bad_qty`
-      : `${ordered[index + 1]?.key}:good_qty`
-    quantityRefs.current.get(next)?.focus()
   }
 
   if (!items.length) {
@@ -403,42 +390,10 @@ export default function UlpToolInspectionMatrix({
                       <td className="tool-matrix-number tool-matrix-contract"><span className="tool-qty-value">{item.required_qty}</span></td>
                       <td className="tool-matrix-number tool-matrix-present"><span className="tool-qty-value">{item.required_qty}</span></td>
                       <td className="tool-matrix-number tool-matrix-qty">
-                        {canManage ? (
-                          <input
-                            ref={(node) => {
-                              if (node) quantityRefs.current.set(`${item.key}:good_qty`, node)
-                              else quantityRefs.current.delete(`${item.key}:good_qty`)
-                            }}
-                            className="uc-count tool-matrix-input"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            value={item.good_qty ?? ''}
-                            placeholder="Isi"
-                            aria-label={`Baik ${item.name}`}
-                            aria-invalid={result.status === 'invalid'}
-                            onChange={(event) => onQuantityChange?.(item, 'good_qty', event.target.value)}
-                            onKeyDown={(event) => moveQuantityFocus(event, item, 'good_qty')}
-                          />
-                        ) : <span className="tool-qty-value">{item.good_qty ?? '-'}</span>}
+                        <span className="tool-qty-value" title="Otomatis dari inspeksi dan serah terima">{item.good_qty ?? '-'}</span>
                       </td>
                       <td className="tool-matrix-number tool-matrix-qty">
-                        {canManage ? (
-                          <input
-                            ref={(node) => {
-                              if (node) quantityRefs.current.set(`${item.key}:bad_qty`, node)
-                              else quantityRefs.current.delete(`${item.key}:bad_qty`)
-                            }}
-                            className="uc-count tool-matrix-input"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            value={item.bad_qty ?? ''}
-                            placeholder="Isi"
-                            aria-label={`Rusak ${item.name}`}
-                            aria-invalid={result.status === 'invalid'}
-                            onChange={(event) => onQuantityChange?.(item, 'bad_qty', event.target.value)}
-                            onKeyDown={(event) => moveQuantityFocus(event, item, 'bad_qty')}
-                          />
-                        ) : <span className="tool-qty-value">{item.bad_qty ?? '-'}</span>}
+                        <span className="tool-qty-value" title="Otomatis dari inspeksi dan serah terima">{item.bad_qty ?? '-'}</span>
                       </td>
                       <td className="tool-matrix-number tool-matrix-percent">
                         {percentage == null ? (
