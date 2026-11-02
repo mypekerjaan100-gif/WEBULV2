@@ -21,10 +21,10 @@ try{
   `}))
   await page.route('**/src/data/toolEvidence.js*',route=>route.fulfill({contentType:'application/javascript',body:'export const prepareToolEvidence=async(file)=>file; export const prepareVehicleEvidence=async(file)=>file;'}))
   await page.route('**/src/data/toolInspectionRepository.js*',route=>route.fulfill({contentType:'application/javascript',body:`
-    export const getToolInspectionBundle=async()=>({vehicles:[{id:'vehicle',assets:[{id:'asset',equipment_id:'tool',equipment_name:'Teropong',asset_sequence:1,open_issue:window.damaged?{id:'issue',revision:1,opened_at:'2026-10-09T00:00:00Z'}:null}]}],history:[],openIssues:window.damaged?[{id:'issue',vehicle_id:'vehicle',equipment_name:'Teropong'}]:[]});
+    export const getToolInspectionBundle=async()=>({vehicles:[{id:'vehicle',assets:[{id:'asset',equipment_id:'tool',equipment_name:'Teropong',asset_sequence:1,commissioned_at:window.replaced?'2026-11-02T03:00:00Z':null,open_issue:window.damaged?{id:'issue',revision:1,opened_at:'2026-10-09T00:00:00Z'}:null}]}],history:[],openIssues:window.damaged?[{id:'issue',vehicle_id:'vehicle',equipment_name:'Teropong'}]:[]});
     export const listVehicleLastInspections=async()=>[];
     export const submitToolInspection=async()=>{window.damaged=true;window.checked=true;return {issue:{id:'issue'}}};
-    export const resolveToolIssue=async()=>{window.damaged=false;window.checked=false;return {}};
+    export const resolveToolIssue=async()=>{window.damaged=false;window.checked=false;window.replaced=true;return {}};
     export const uploadToolEvidence=async()=> 'fixture.png';
     export const getToolEvidenceUrl=async()=>'';
     export const submitVehicleInspection=async()=>{};
@@ -74,6 +74,8 @@ try{
   await row.getByText('Memenuhi',{exact:true}).waitFor()
   assert.equal(await row.locator('.tool-matrix-qty').nth(0).innerText(),'1')
   assert.equal(await row.locator('.tool-matrix-qty').nth(1).innerText(),'0')
+  assert.equal((await row.locator('.tool-unit-id').innerText()).toLowerCase(),'unit 1')
+  assert.equal(await row.locator('.tool-unit-state').innerText(),'Alat pengganti · belum diperiksa')
   await page.getByRole('button',{name:'Kembali ke daftar kendaraan'}).click()
   await page.getByText('1 unit belum diinspeksi bulan ini',{exact:true}).waitFor()
   assert.deepEqual(errors,[])

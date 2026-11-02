@@ -74,6 +74,9 @@ function UnitDetailCard({ asset, highlightedIssueId }) {
       {asset.latest_inspection && (
         <span className="tool-muted">{asset.latest_inspection.inspected_by_name || 'Petugas inspeksi'}</span>
       )}
+      {asset.commissioned_at && (
+        <span className="tool-muted">Alat pengganti · mulai pakai {formatDateTime(asset.commissioned_at)}</span>
+      )}
       <span className="tool-muted">
         {agePhrase(age)} · standar {life == null ? 'belum diisi' : ageLabel(life)}
         {!issue && asset.remaining_months != null ? ` · sisa ${ageLabel(Math.max(0, asset.remaining_months))}` : ''}
@@ -277,7 +280,7 @@ export default function UlpToolInspectionMatrix({
         photoPaths: paths,
         expectedRevision: issue.revision,
       })
-      onMessage?.(`Issue ${editor.asset.equipment_name} unit ${editor.asset.asset_sequence} selesai. Masa pakai alat pengganti dimulai dari waktu serah terima.`)
+      onMessage?.(`Issue ${editor.asset.equipment_name} unit ${editor.asset.asset_sequence} selesai. Alat pengganti menempati unit ${editor.asset.asset_sequence} yang sama.`)
       setEditor(null)
       await onChanged?.()
     } catch (submitError) {
@@ -660,6 +663,7 @@ export default function UlpToolInspectionMatrix({
               </FormField>
               <Alert tone="info">
                 Waktu serah terima menjadi awal masa pakai alat pengganti dan bukti penyerahan dari K3 ke ULP.
+                Alat pengganti tetap memakai nomor unit yang sama.
               </Alert>
             </form>
           )

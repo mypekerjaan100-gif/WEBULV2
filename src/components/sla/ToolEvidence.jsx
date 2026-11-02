@@ -47,6 +47,7 @@ export function assetStatus(asset) {
   if (asset.open_issue) return { tone: 'danger', label: 'Rusak · issue terbuka' }
   if (asset.latest_inspection?.condition === 'DAMAGED') return { tone: 'danger', label: 'Rusak' }
   if (asset.latest_inspection?.condition === 'GOOD') return { tone: 'success', label: 'Baik' }
+  if (asset.commissioned_at) return { tone: 'neutral', label: 'Alat pengganti · belum diperiksa' }
   return { tone: 'neutral', label: 'Belum diperiksa' }
 }
 
