@@ -320,6 +320,7 @@ export default function SLALembur({
   up3Id,
   unitId,
   periodMonth,
+  periods = [],
   records,
   canMutate,
   isAdminUp3,
@@ -371,7 +372,7 @@ export default function SLALembur({
   activeActivityIdRef.current = activeActivityId
   const activeRevisionEntryIdRef = useRef(activeRevisionEntryId)
   activeRevisionEntryIdRef.current = activeRevisionEntryId
-  const [filters, setFilters] = useState({ ulp: '', unitLayanan: '', jenis: 'Semua', pegawai: '', status: 'Semua', periode: '' })
+  const [filters, setFilters] = useState({ ulp: '', unitLayanan: '', jenis: 'Semua', pegawai: '', status: 'Semua' })
   const canViewFinancial = isAdminUp3 || isSuperAdmin || isManagement
   const isReadOnlyManagement = isManagement
   // Lembur kantor UP3: pegawai bertugas langsung di unit UP3 diajukan Admin
@@ -2002,7 +2003,6 @@ export default function SLALembur({
 
   const sorted = [...records].sort((a,b)=> String(b.startedAt).localeCompare(String(a.startedAt)))
   const jenisLabel = (record) => record.type==='WORK' ? (WORK_CATEGORIES[record.workCategory]?.label || record.workCategory) : (REPLACEMENT_TYPES[record.type]?.label || record.type)
-  const uniquePeriods = [...new Set(sorted.map(r=> r.periodMonth || String(r.date||'').slice(0,7)))].filter(Boolean).sort()
   const uniqueStatuses = [...new Set(sorted.map(r=> displayStatus(r)))].filter(Boolean)
   // For UP management, unitLayanan filter currently maps 1:1 to UP3 Singkawang (only mapped). We derive options from orgUnits parent but keep simple for M4.
   const unitLayananOptions = isUpManagement ? [{ id: 'ul-singkawang', name: 'Unit Layanan Singkawang' }] : []
@@ -2015,7 +2015,6 @@ export default function SLALembur({
       // Currently only Singkawang mapped; any other selection yields no data (future multi-mapping will filter by UP3)
       if (filters.unitLayanan !== 'ul-singkawang') return false
     }
-    if (filters.periode && String(r.periodMonth||'').slice(0,7) !== filters.periode && String(r.date||'').slice(0,7) !== filters.periode) return false
     return true
   })
   const exportExcel = () => {
@@ -2052,7 +2051,7 @@ export default function SLALembur({
         { value: getUlpName(record.unitId) ?? '' },
       ]
     })
-    const periodKey = filters.periode || String(periodMonth ?? '').slice(0, 7) || String(filtered[0]?.date ?? '').slice(0, 7)
+    const periodKey = String(periodMonth ?? '').slice(0, 7) || String(filtered[0]?.date ?? '').slice(0, 7)
     const [year, month] = periodKey.split('-')
     const monthName = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][Number(month) - 1]
     const periodLabel = monthName && year ? `${monthName}_${year}` : 'Semua_Periode'
@@ -2439,6 +2438,21 @@ export default function SLALembur({
           <p>Pengajuan dan monitoring lembur pegawai</p>
         </div>
         <div className="lembur-landing-actions">
+          {onOpenPeriod && (
+            <label className="sla-context-field lembur-period-picker">
+              <span className="sla-context-label">Periode Lembur</span>
+              <select aria-label="Periode Lembur" className="sla-context-select" value={periodMonth ?? ''} disabled={isSubmitting} onChange={(event) => {
+                const date = event.target.value
+                if (date === periodMonth) return
+                if (formOpen && dirty && !window.confirm(`Perubahan yang belum disimpan akan hilang. Buka periode ${periodLabelForDate(date)}?`)) return
+                onOpenPeriod(date)
+              }}>
+                {[...new Set([...periods, periodMonth].filter(Boolean))].sort().map((month) => (
+                  <option key={month} value={month}>{periodLabelForDate(month)}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {(up3ScopeName || contractScope.region || ulpCount > 0) && <span className="lembur-scope-badge">{up3ScopeName ?? contractScope.region ?? 'Scope UP3'} · {ulpCount} ULP</span>}
           {canMutate && <Button variant="primary" onClick={openNewForm}>+ Tambah Lembur</Button>}
         </div>
@@ -2812,12 +2826,6 @@ export default function SLALembur({
           )}
 
           <FilterBar className="lembur-filter-bar">
-            <FilterField label="Periode" className="lembur-filter-field">
-              <Select value={filters.periode} onChange={e=> setFilters(f=>({ ...f, periode: e.target.value }))}>
-                <option value="">Semua</option>
-                {uniquePeriods.map(p=> <option key={p} value={p.slice(0,7)}>{p}</option>)}
-              </Select>
-            </FilterField>
             {isUpManagement && (
               <FilterField label="Unit Layanan" className="lembur-filter-field">
                 <Select value={filters.unitLayanan} onChange={e=> setFilters(f=>({ ...f, unitLayanan: e.target.value }))}>

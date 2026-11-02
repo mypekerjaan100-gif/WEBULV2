@@ -93,11 +93,14 @@ try {
     const { default: SLALembur } = await import('/src/components/sla/SLALembur.jsx')
     window.__savedDraft = null
     window.__openedPeriod = null
-    createRoot(document.getElementById('root')).render(React.createElement(SLALembur, {
+    const root = createRoot(document.getElementById('root'))
+    window.__renderPeriod = (periodMonth) => root.render(React.createElement(SLALembur, {
+      key: periodMonth,
       contractScope: { contractId, contractName: 'Pelayanan Teknik' },
       up3Id,
       unitId,
-      periodMonth: '2026-11-01',
+      periodMonth,
+      periods: ['2026-10-01', '2026-11-01', '2026-12-01', '2027-01-01'],
       records: [],
       canMutate: true,
       loading: false,
@@ -107,7 +110,10 @@ try {
       onRefresh: async (options) => {
         if (options?.background) return new Promise(() => {})
       },
-      onOpenPeriod: (date) => { window.__openedPeriod = date },
+      onOpenPeriod: (date) => {
+        window.__openedPeriod = date
+        if (window.__switchPeriod) window.__renderPeriod(`${date.slice(0, 7)}-01`)
+      },
       onSaveDraft: async (activityId, draft) => {
         window.__savedDraft = draft
         return { ok: true, activityId: '00000000-0000-4000-8000-000000000201', message: 'Draft disimpan.' }
@@ -118,6 +124,7 @@ try {
       onSaveWorkDraft: async () => ({ ok: false, message: 'Tidak digunakan pada uji ini.' }),
       onSubmitWork: async () => ({ ok: false, message: 'Tidak digunakan pada uji ini.' }),
     }))
+    window.__renderPeriod('2026-11-01')
   }, { contractId: CONTRACT_ID, up3Id: UP3_ID, unitId: UNIT_ID })
 
   await page.getByRole('button', { name: '+ Tambah Lembur', exact: true }).click()
@@ -163,6 +170,19 @@ try {
   await page.locator('.lembur-landing-message').filter({ hasText: 'Lembur diajukan dan menunggu approval. Tersimpan pada periode Oktober 2026.' }).waitFor()
   await page.locator('.ui-process-backdrop').waitFor({ state: 'hidden', timeout: 5000 })
   await page.getByRole('button', { name: 'Buka periode Oktober 2026', exact: true }).click()
+  await page.evaluate(() => { window.__switchPeriod = true })
+  const periodPicker = page.getByLabel('Periode Lembur', { exact: true })
+  assert.equal(await periodPicker.inputValue(), '2026-11-01')
+  await periodPicker.selectOption({ label: 'Oktober 2026' })
+  assert.equal(await periodPicker.inputValue(), '2026-10-01')
+  await periodPicker.selectOption({ label: 'Januari 2027' })
+  assert.equal(await periodPicker.inputValue(), '2027-01-01')
+  assert.equal(await page.locator('.lembur-filter-bar').getByText('Periode', { exact: true }).count(), 0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await periodPicker.selectOption({ label: 'November 2026' })
+  assert.equal(await periodPicker.inputValue(), '2026-11-01')
+  const pickerBounds = await periodPicker.boundingBox()
+  assert(pickerBounds.x >= 0 && pickerBounds.x + pickerBounds.width <= 390)
   assert.deepEqual(errors, [])
   console.log('Overtime cross-month browser checks passed: date outside selected period can be saved, period destination is shown, and period switch action works.')
 } catch (error) {

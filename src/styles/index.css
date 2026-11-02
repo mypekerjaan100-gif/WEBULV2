@@ -6662,6 +6662,7 @@ img.sp-pegawai-photo {
 .lembur-landing-header h1 { margin: 1px 0 0; color: var(--pln-navy); font-size: 18px; line-height: 24px; letter-spacing: 0; }
 .lembur-landing-header p { margin: 1px 0 0; color: var(--color-text-muted); font-size: 12px; line-height: 18px; }
 .lembur-landing-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.lembur-period-picker { min-width: 180px; }
 .lembur-scope-badge { min-height: 28px; padding: 4px 10px; display: inline-flex; align-items: center; border: 1px solid #c9deef; border-radius: 999px; background: #edf6fc; color: #17628f; font-size: 11px; line-height: 16px; font-weight: 700; white-space: nowrap; }
 .lembur-landing-message { margin: 0; }
 .lembur-kicker { color: var(--pln-blue); font-size: 10.5px; line-height: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }

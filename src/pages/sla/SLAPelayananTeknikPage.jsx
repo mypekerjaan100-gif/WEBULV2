@@ -1407,6 +1407,7 @@ export default function SLAPelayananTeknikPage({
             up3Id={orgMap.up3Uuid}
             unitId={lemburUnitUuid}
             periodMonth={lemburPeriodMonth}
+            periods={slaPeriods.map(periodKeyFromLabel)}
             records={lemburRecords}
             canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3 || (isCustomRole && customCanEdit('lembur'))}
             isExactAdminUp3={isAdminUp3}
