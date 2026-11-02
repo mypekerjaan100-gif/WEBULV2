@@ -75,7 +75,7 @@ try {
   await page.route('**/rest/v1/rpc/list_overtime_evidence', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: '[]',
+    body: JSON.stringify([{ id: 'evidence-cuti', activity_id: '00000000-0000-4000-8000-000000000201', evidence_type: 'FORM_CUTI', status: 'ACTIVE', original_filename: 'form-cuti.pdf', stored_mime_type: 'application/pdf' }]),
   }))
 
   await page.goto('http://127.0.0.1:4192/overtime-cross-month-test')
@@ -104,13 +104,17 @@ try {
       loadError: '',
       orgUnits: [],
       onRetry: () => {},
-      onRefresh: async () => {},
+      onRefresh: async (options) => {
+        if (options?.background) return new Promise(() => {})
+      },
       onOpenPeriod: (date) => { window.__openedPeriod = date },
       onSaveDraft: async (activityId, draft) => {
         window.__savedDraft = draft
         return { ok: true, activityId: '00000000-0000-4000-8000-000000000201', message: 'Draft disimpan.' }
       },
-      onSubmit: async () => ({ ok: true, message: 'Lembur diajukan.' }),
+      onSubmit: async () => new Promise((resolve) => {
+        window.__finishSubmit = () => resolve({ ok: true, message: 'Lembur diajukan.' })
+      }),
       onSaveWorkDraft: async () => ({ ok: false, message: 'Tidak digunakan pada uji ini.' }),
       onSubmitWork: async () => ({ ok: false, message: 'Tidak digunakan pada uji ini.' }),
     }))
@@ -152,6 +156,13 @@ try {
     startedAt: '2026-10-28T08:00:00+07:00',
     endedAt: '2026-10-28T10:00:00+07:00',
   })
+  await page.getByRole('button', { name: 'Ajukan Lembur', exact: true }).click()
+  await page.waitForFunction(() => typeof window.__finishSubmit === 'function')
+  await page.locator('.ui-process-backdrop').waitFor({ state: 'visible' })
+  await page.evaluate(() => window.__finishSubmit())
+  await page.locator('.lembur-landing-message').filter({ hasText: 'Lembur diajukan dan menunggu approval. Tersimpan pada periode Oktober 2026.' }).waitFor()
+  await page.locator('.ui-process-backdrop').waitFor({ state: 'hidden', timeout: 5000 })
+  await page.getByRole('button', { name: 'Buka periode Oktober 2026', exact: true }).click()
   assert.deepEqual(errors, [])
   console.log('Overtime cross-month browser checks passed: date outside selected period can be saved, period destination is shown, and period switch action works.')
 } catch (error) {

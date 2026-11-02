@@ -1572,14 +1572,16 @@ export default function SLALembur({
         : ''
       setMessage(resubmitting && revisionName ? `Revisi ${revisionName} berhasil diajukan kembali. Evidence peserta yang sudah disetujui tidak berubah.` : resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : `Lembur diajukan dan menunggu approval.${periodNote}`)
       setSavedCrossPeriodDate(submitCrossPeriodDate)
-      if(onRefresh) await onRefresh({ background: true }).catch(() => {})
+      setSubmitProcess({ status: 'success', error: '' })
+      // Pengajuan sudah diterima; refresh daftar tidak boleh menahan hasilnya.
+      if (onRefresh) void Promise.resolve().then(() => onRefresh({ background: true })).catch(() => {})
       return true
     } catch (error) {
-      if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
       setSavedCrossPeriodDate('')
       const errorMessage = friendlySaveError(error?.message, 'Draft, evidence, atau pengajuan Lembur gagal disimpan.')
       setMessage(errorMessage)
       setSubmitProcess({ status: 'error', error: errorMessage })
+      if (activeActivityIdRef.current) void refreshEvidence(activeActivityIdRef.current).catch(() => {})
       return false
     } finally { setSubmitting(false) }
   }
