@@ -1430,6 +1430,10 @@ export default function SLAPelayananTeknikPage({
             onSaveWorkDraft={saveWorkLembur}
             onSubmitWork={submitWorkLembur}
             onRefresh={refreshLemburAndApprovals}
+            onOpenPeriod={(date) => {
+              const target = periodLabelFromMonth(`${String(date).slice(0, 7)}-01`)
+              if (target && target !== period) setPeriod(target)
+            }}
             approvalTarget={canManageUp3Operations && periodKeyFromLabel(period) === approvalTarget?.periodMonth ? approvalTarget : null}
             onApprovalTargetHandled={onApprovalTargetHandled}
           />

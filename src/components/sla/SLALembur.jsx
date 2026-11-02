@@ -62,6 +62,21 @@ function formatPontianakDate(value) {
   }).format(value)
 }
 
+function periodLabelForDate(value) {
+  if (!/^\d{4}-\d{2}/.test(String(value ?? ''))) return ''
+  return new Intl.DateTimeFormat('id-ID', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Asia/Pontianak',
+  }).format(new Date(`${String(value).slice(0, 7)}-01T12:00:00+07:00`))
+}
+
+function isCrossPeriodDate(date, periodMonth) {
+  const dateKey = String(date ?? '').slice(0, 7)
+  const periodKey = String(periodMonth ?? '').slice(0, 7)
+  return Boolean(dateKey && periodKey && dateKey !== periodKey)
+}
+
 function initialDeadlineMessage(date, deadlineInfo) {
   if (!deadlineInfo?.effectiveDeadlineAt || deadlineInfo.overtimeDate !== date) return ''
   return `Batas H+${deadlineInfo.effectiveSubmissionDays} lembur ${formatPontianakDate(new Date(`${date}T12:00:00+07:00`))}: ${formatPontianakDate(new Date(deadlineInfo.effectiveDeadlineAt))}, pukul 23:59 WITA.`
@@ -319,6 +334,7 @@ export default function SLALembur({
   onSubmitWork,
   orgUnits,
   onRefresh,
+  onOpenPeriod,
   isManagement = false,
   isUlManagement = false,
   isUpManagement = false,
@@ -344,6 +360,7 @@ export default function SLALembur({
   // Model evidence V2: SPK/Proses/Selesai diunggah sekali sebagai evidence
   // bersama; Foto Briefing wajib diunggah per pegawai (scoped).
   const [message, setMessage] = useState(null)
+  const [savedCrossPeriodDate, setSavedCrossPeriodDate] = useState('')
   // Warning data belum lengkap: { message, target } dengan target = kunci
   // field pertama yang bermasalah agar dapat ditandai dan difokuskan.
   const [validationError, setValidationError] = useState(null)
@@ -592,6 +609,7 @@ export default function SLALembur({
     ?? activeRecords.find((record) => recordReviewStatus(record) === 'CORRECTION_REQUIRED')
     ?? activeRecords[0] ?? null
   const isRevision = recordReviewStatus(activeRecord) === 'CORRECTION_REQUIRED'
+  const draftCrossPeriod = !isRevision && isCrossPeriodDate(draft.date, periodMonth)
   const initialDeadline = deadlineInfo?.overtimeDate === draft.date && deadlineInfo.effectiveDeadlineAt
     ? new Date(deadlineInfo.effectiveDeadlineAt)
     : null
@@ -915,6 +933,7 @@ export default function SLALembur({
   }
   const updateDraft = (patch) => {
     setDraft(c=>({ ...c, ...patch }))
+    if (patch?.date !== undefined) setSavedCrossPeriodDate('')
     setDirty(true)
     setMessage(null)
     dismissFieldError(...Object.keys(patch ?? {}).map((key) => DRAFT_PATCH_ERROR_KEYS[key]).filter(Boolean))
@@ -938,6 +957,7 @@ export default function SLALembur({
     setEvidenceMode('LEGACY_SHARED')
     setDirty(true)
     setMessage(null)
+    setSavedCrossPeriodDate('')
     setValidationError(null)
   }
 
@@ -1029,6 +1049,7 @@ export default function SLALembur({
     setEvidenceMode(first.evidenceMode ?? 'LEGACY_SHARED')
     setDirty(false)
     setMessage(null)
+    setSavedCrossPeriodDate('')
     setValidationError(null)
     setFormStep('form')
     setFormOpen(true)
@@ -1047,7 +1068,6 @@ export default function SLALembur({
     if (!REPLACEMENT_TYPES[draft.lemburType]) return invalid('Pilih jenis Pengganti Cuti, Sakit, atau Izin.')
     if (!draft.date) return invalid('Tanggal lembur wajib diisi.', 'date')
     if (!range || range.durationMinutes <1) return invalid('Jam mulai dan jam selesai tidak valid.', 'time')
-    if (!draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
     if (!replacedEmployee) return invalid('Pilih pegawai yang digantikan.', 'replacedEmployee')
     if (!participantEmployee) return invalid('Pilih pegawai pengganti.', 'participantEmployee')
     if (replacedEmployee.id===participantEmployee.id) return invalid('Pegawai yang digantikan dan pengganti harus berbeda.', 'participantEmployee')
@@ -1059,9 +1079,8 @@ export default function SLALembur({
   const validateWork = () => {
     if (!workCategory) return invalid('Pilih kategori pekerjaan.')
     if (!draft.date) return invalid('Tanggal wajib diisi.', 'date')
-    // Revisi satu peserta boleh memindahkan tanggal batch (lintas periode);
-    // server memvalidasi deadline, eligibility, dan tarif tanggal baru.
-    if (!isEntryRevision && !draft.date.startsWith(String(periodMonth).slice(0,7))) return invalid('Tanggal lembur harus berada dalam periode yang dipilih.', 'date')
+    // Tanggal baru boleh lintas periode; server memvalidasi deadline,
+    // eligibility, dan tarif tanggal baru.
     if (!draft.description || !draft.description.trim()) return invalid('Keterangan pekerjaan wajib diisi.', 'description')
     if (isRowWork) {
       const varSpan = parseRowCount(draft.rowVarSpanCount)
@@ -1438,6 +1457,8 @@ export default function SLALembur({
     if (validation) { failValidation(validation); return }
     setValidationError(null)
     setSubmitting(true)
+    const draftDate = draft.date
+    const crossPeriodDate = !isRevision && isCrossPeriodDate(draftDate, periodMonth) ? draftDate : ''
     try {
       if (isEntryRevision) {
         const activityId = await persistRevision()
@@ -1451,16 +1472,19 @@ export default function SLALembur({
         }
         setDirty(false)
         setMessage('Revisi tersimpan — Data tersinkron.')
+        setSavedCrossPeriodDate('')
         await onRefresh?.()
         return
       }
       const activityId = await persistDraft()
       await uploadStagedEvidence(activityId)
       setDirty(false)
-      setMessage('Draft dan evidence berhasil disimpan — Data tersinkron.')
+      setSavedCrossPeriodDate(crossPeriodDate)
+      setMessage(`Draft dan evidence berhasil disimpan — Data tersinkron.${crossPeriodDate ? ` Draft masuk periode ${periodLabelForDate(crossPeriodDate)}.` : ''}`)
       if(onRefresh) await onRefresh()
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
+      setSavedCrossPeriodDate('')
       setMessage(friendlySaveError(error?.message, 'Draft atau evidence gagal disimpan.'))
     } finally { setSubmitting(false) }
   }
@@ -1515,6 +1539,7 @@ export default function SLALembur({
     setValidationError(null)
     setSubmitting(true)
     setSubmitProcess({ status: 'loading', error: '' })
+    const submitCrossPeriodDate = !isRevision && isCrossPeriodDate(draft.date, periodMonth) ? draft.date : ''
     try {
       const resubmitting = isRevision
       let activityId = activeActivityId
@@ -1542,12 +1567,16 @@ export default function SLALembur({
       const revisionName = isPartialApprovalRevision ? activeRevisionParticipantName : ''
       resetForm()
       setFormOpen(false)
-      setMessage(resubmitting && revisionName ? `Revisi ${revisionName} berhasil diajukan kembali. Evidence peserta yang sudah disetujui tidak berubah.` : resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : 'Lembur diajukan dan menunggu approval.')
-      setSubmitProcess({ status: 'success', error: '' })
+      const periodNote = submitCrossPeriodDate
+        ? ` Tersimpan pada periode ${periodLabelForDate(submitCrossPeriodDate)}.`
+        : ''
+      setMessage(resubmitting && revisionName ? `Revisi ${revisionName} berhasil diajukan kembali. Evidence peserta yang sudah disetujui tidak berubah.` : resubmitting ? 'Revisi Lembur berhasil diajukan kembali.' : `Lembur diajukan dan menunggu approval.${periodNote}`)
+      setSavedCrossPeriodDate(submitCrossPeriodDate)
       if(onRefresh) await onRefresh({ background: true }).catch(() => {})
       return true
     } catch (error) {
       if (activeActivityIdRef.current) await refreshEvidence(activeActivityIdRef.current).catch(() => {})
+      setSavedCrossPeriodDate('')
       const errorMessage = friendlySaveError(error?.message, 'Draft, evidence, atau pengajuan Lembur gagal disimpan.')
       setMessage(errorMessage)
       setSubmitProcess({ status: 'error', error: errorMessage })
@@ -2390,6 +2419,12 @@ export default function SLALembur({
   const up3ScopeName = (orgUnits ?? []).find((unit) => unit.uuid === up3Id || unit.legacyKey === up3Id)?.displayName
   const showUlpColumn = isSuperAdmin || isManagement || !canMutate || isExactAdminUp3
   // Dialog hapus selalu satu peserta (baris yang diklik).
+  const openSavedPeriod = () => {
+    if (!savedCrossPeriodDate || !onOpenPeriod) return
+    if (formOpen && dirty && !window.confirm(`Perubahan yang belum disimpan akan hilang. Buka periode ${periodLabelForDate(savedCrossPeriodDate)}?`)) return
+    onOpenPeriod(savedCrossPeriodDate)
+  }
+
   const deleteParticipantName = deleteTarget?.participantName || '-'
   const deleteTotal = Number(deleteTarget?.total ?? 0)
 
@@ -2413,7 +2448,16 @@ export default function SLALembur({
         <StatePanel state="loading" title="Memuat data lembur" />
       ) : (
         <>
-          {!formOpen && message && <Alert tone="info" className="lembur-landing-message">{message}</Alert>}
+          {!formOpen && message && (
+            <Alert tone="info" className="lembur-landing-message">
+              {message}
+              {savedCrossPeriodDate && onOpenPeriod && (
+                <button type="button" className="sla-btn" onClick={openSavedPeriod}>
+                  Buka periode {periodLabelForDate(savedCrossPeriodDate)}
+                </button>
+              )}
+            </Alert>
+          )}
           {canMutate && formOpen && (
             <div className="rekap-detail-overlay lembur-form-overlay" onMouseDown={(event)=>{ if(event.target===event.currentTarget) closeForm() }}>
             <div className={`lembur-form-card ${formStep === 'form' ? 'lembur-form-modal-wide' : 'lembur-picker-modal'}`} onMouseDown={(event)=>event.stopPropagation()}>
@@ -2465,6 +2509,11 @@ export default function SLALembur({
                    <div className={`lembur-form-grid ${formLayoutClass}`}>
                       <div className="sla-context-field"><span className="sla-context-label">Jenis Lembur</span><div className="lembur-readonly-value">{currentTypeLabel}</div></div>
                       <label className="sla-context-field"><span className="sla-context-label">Tanggal Lembur{isEntryRevision ? ' Batch' : ''} *</span><input type="date" ref={fieldRef('date')} className={`sla-context-select${fieldInvalidClass('date')}`} value={draft.date} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ date:e.target.value })} /></label>
+                      {draftCrossPeriod && (
+                        <p className="sla-table-hint lembur-grid-full">
+                          Tanggal ini masuk periode <strong>{periodLabelForDate(draft.date)}</strong>, berbeda dari periode yang sedang dibuka ({periodLabelForDate(periodMonth)}). Setelah disimpan, buka periode tersebut untuk melihat datanya.
+                        </p>
+                      )}
                       {isEntryRevision && !isEvidenceOnlyRevision && <p className="sla-table-hint">Perubahan tanggal berlaku untuk seluruh peserta batch. Jam dan evidence peserta lain tetap.</p>}
                       {isMultiWork && <><label className="sla-context-field"><span className="sla-context-label">Uraian / Nama Pekerjaan *</span><input ref={fieldRef('workTitle')} className={`sla-context-select${fieldInvalidClass('workTitle')}`} value={draft.workTitle} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workTitle:e.target.value })} placeholder={WORK_TITLE_PLACEHOLDERS[workCategory] ?? 'Contoh: Nama pekerjaan'} /></label><label className="sla-context-field"><span className="sla-context-label">Lokasi *</span><input ref={fieldRef('workLocation')} className={`sla-context-select${fieldInvalidClass('workLocation')}`} value={draft.workLocation} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ workLocation:e.target.value })} placeholder="Contoh: Desa Sungai Raya" /></label></>}
                        {isWork && <label className="sla-context-field lembur-grid-full"><span className="sla-context-label">Keterangan Pekerjaan *</span><textarea ref={fieldRef('description')} className={`sla-context-select${fieldInvalidClass('description')}`} value={draft.description} disabled={isEvidenceOnlyRevision} onChange={e=>updateDraft({ description:e.target.value })} placeholder="Jelaskan pekerjaan lembur" rows={2} /></label>}
@@ -2734,7 +2783,16 @@ export default function SLALembur({
                   </section>
                 </div>
 
-                  {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && <Alert tone="info" className="lembur-message">{message}</Alert>}
+                  {message && !(initialDeadlinePassed && message.startsWith('Batas pengajuan')) && (
+                    <Alert tone="info" className="lembur-message">
+                      {message}
+                      {savedCrossPeriodDate && onOpenPeriod && (
+                        <button type="button" className="sla-btn" onClick={openSavedPeriod}>
+                          Buka periode {periodLabelForDate(savedCrossPeriodDate)}
+                        </button>
+                      )}
+                    </Alert>
+                  )}
                    <div className="lembur-form-actions"><Button variant="secondary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly} onClick={saveDraft}>{isSubmitting ? 'Memproses...' : isEntryRevision && activeRevisionParticipantName ? `Simpan Revisi ${activeRevisionParticipantName}` : 'Simpan Draft'}</Button><div className="lembur-form-actions-right"><Button variant="ghost" onClick={closeForm}>Batal</Button><Button variant="primary" disabled={submitting||initialDeadlinePassed||deadlineUnavailable||formReadOnly||!evidenceComplete} onClick={submitDraft}>{isEntryRevision && activeRevisionParticipantName ? `Ajukan Ulang ${activeRevisionParticipantName}` : 'Ajukan Lembur'}</Button></div></div>
               </fieldset>
               </>
