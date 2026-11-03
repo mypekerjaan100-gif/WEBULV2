@@ -107,7 +107,7 @@ assert(component.includes('(isAdminUp3||isSuperAdmin) && detailCanApprove && !de
 assert(component.includes('Lembur kantor UP3 hanya dapat disetujui atau ditolak oleh Super Admin'), 'Keterangan approval kantor UP3 hilang')
 assert(component.includes('isSuperAdmin || isManagement || !canMutate || isExactAdminUp3'), 'Kolom unit harus tampil untuk Admin UP3')
 assert(component.includes('Anda dapat mengajukan lembur untuk pegawai yang bertugas di kantor UP3'), 'Notifikasi input kantor UP3 hilang')
-assert(component.includes("u.type==='UP3' && u.uuid===up3Id"), 'Filter unit harus ada opsi kantor UP3')
+assert(component.includes("unit.type === 'UP3' && unit.uuid === up3Id"), 'Filter unit harus ada opsi kantor UP3')
 assert(component.includes("deleteTarget?.unitId === up3Id ? 'ADMIN UP3' : 'ADMIN ULP'"), 'Kicker dialog hapus kantor UP3 hilang')
 
 // ---------------------------------------------------------------------------

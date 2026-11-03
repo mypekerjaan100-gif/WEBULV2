@@ -30,6 +30,7 @@ import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
 import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 import EvidenceUploadCard from './EvidenceUploadCard.jsx'
 import OvertimePeriodPicker from './OvertimePeriodPicker.jsx'
+import OvertimeFilterSelect from './OvertimeFilterSelect.jsx'
 import Icon from '../Icon.jsx'
 import {
   Alert,
@@ -40,7 +41,6 @@ import {
   IconButton,
   ProcessModal,
   SearchInput,
-  Select,
   StatePanel,
   StatusBadge,
 } from '../ui/Primitives.jsx'
@@ -193,6 +193,15 @@ function statusTone(record) {
   if (status === 'SUBMITTED') return 'info'
   if (status === 'CORRECTION_REQUIRED') return 'warning'
   if (status === 'CLOSED' && recordClosureReason(record) === 'FINAL_REJECTED') return 'danger'
+  return 'neutral'
+}
+
+function statusFilterTone(label) {
+  const value = String(label ?? '').toLocaleLowerCase('id-ID')
+  if (value.includes('tolak')) return 'danger'
+  if (value.includes('revisi') || value.includes('perbaikan')) return 'warning'
+  if (value.includes('disetujui')) return 'success'
+  if (value.includes('menunggu') || value.includes('diajukan')) return 'info'
   return 'neutral'
 }
 
@@ -2826,37 +2835,56 @@ export default function SLALembur({
           <FilterBar className="lembur-filter-bar">
             {isUpManagement && (
               <FilterField label="Unit Layanan" className="lembur-filter-field">
-                <Select value={filters.unitLayanan} onChange={e=> setFilters(f=>({ ...f, unitLayanan: e.target.value }))}>
-                  <option value="">Semua</option>
-                  {unitLayananOptions.map(u=> <option key={u.id} value={u.id}>{u.name}</option>)}
-                </Select>
+                <OvertimeFilterSelect
+                  label="Unit Layanan"
+                  value={filters.unitLayanan}
+                  options={[{ value: '', label: 'Semua' }, ...unitLayananOptions.map((unit) => ({ value: unit.id, label: unit.name }))]}
+                  onChange={(value) => setFilters((current) => ({ ...current, unitLayanan: value }))}
+                />
               </FilterField>
             )}
             {showUlpColumn && (
               <FilterField label="ULP" className="lembur-filter-field">
-                <Select value={filters.ulp} onChange={e=> setFilters(f=>({ ...f, ulp: e.target.value }))}>
-                  <option value="">Semua</option>
-                  {(orgUnits||[]).filter((u)=> u.type==='ULP' || (u.type==='UP3' && u.uuid===up3Id)).map(u=> <option key={u.uuid} value={u.uuid}>{u.displayName}</option>)}
-                </Select>
+                <OvertimeFilterSelect
+                  label="ULP"
+                  value={filters.ulp}
+                  searchable
+                  options={[
+                    { value: '', label: 'Semua' },
+                    ...(orgUnits ?? [])
+                      .filter((unit) => unit.type === 'ULP' || (unit.type === 'UP3' && unit.uuid === up3Id))
+                      .map((unit) => ({ value: unit.uuid, label: unit.displayName })),
+                  ]}
+                  onChange={(value) => setFilters((current) => ({ ...current, ulp: value }))}
+                />
               </FilterField>
             )}
             <FilterField label="Jenis" className="lembur-filter-field">
-              <Select value={filters.jenis} onChange={e=> setFilters(f=>({ ...f, jenis: e.target.value }))}>
-                <option value="Semua">Semua</option>
-                <option value="Pengganti Cuti">Pengganti Cuti</option>
-                <option value="Pengganti Sakit">Pengganti Sakit</option>
-                <option value="Pengganti Izin">Pengganti Izin</option>
-                {Object.values(WORK_CATEGORIES).map((category)=><option key={category.label} value={category.label}>{category.label}</option>)}
-              </Select>
+              <OvertimeFilterSelect
+                label="Jenis"
+                value={filters.jenis}
+                options={[
+                  { value: 'Semua', label: 'Semua' },
+                  ...['Pengganti Cuti', 'Pengganti Sakit', 'Pengganti Izin'].map((label) => ({ value: label, label })),
+                  ...Object.values(WORK_CATEGORIES).map((category) => ({ value: category.label, label: category.label })),
+                ]}
+                onChange={(value) => setFilters((current) => ({ ...current, jenis: value }))}
+              />
             </FilterField>
             <FilterField label="Pegawai" className="lembur-filter-field lembur-filter-search">
-              <SearchInput value={filters.pegawai} onChange={e=> setFilters(f=>({ ...f, pegawai: e.target.value }))} placeholder="Cari pegawai" />
+              <SearchInput aria-label="Cari pegawai" value={filters.pegawai} onChange={e=> setFilters(f=>({ ...f, pegawai: e.target.value }))} placeholder="Cari pegawai" />
             </FilterField>
             <FilterField label="Status" className="lembur-filter-field">
-              <Select value={filters.status} onChange={e=> setFilters(f=>({ ...f, status: e.target.value }))}>
-                <option value="Semua">Semua</option>
-                {uniqueStatuses.map(s=> <option key={s} value={s}>{s}</option>)}
-              </Select>
+              <OvertimeFilterSelect
+                label="Status"
+                value={filters.status}
+                statusTone
+                options={[
+                  { value: 'Semua', label: 'Semua' },
+                  ...uniqueStatuses.map((status) => ({ value: status, label: status, tone: statusFilterTone(status) })),
+                ]}
+                onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
+              />
             </FilterField>
           </FilterBar>
 
