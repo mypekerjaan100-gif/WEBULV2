@@ -1419,6 +1419,11 @@ export default function SLAPelayananTeknikPage({
             loading={lemburLoadStatus === 'loading' || !employeesLoaded}
             loadError={lemburLoadError || employeeLoadError}
             orgUnits={orgMap.units}
+            employees={employees}
+            jabatan={jabatan}
+            employeeLocations={employeeLocations}
+            jabatanScopeContractId={slaContractScope.contractId}
+            jabatanScopeUp3Id={up3Id}
             onRetry={() => {
               if (employeeLoadError) {
                 setEmployeesLoaded(false)

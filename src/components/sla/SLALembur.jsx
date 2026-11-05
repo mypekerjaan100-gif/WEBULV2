@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   approveOvertime,
   approveOvertimeEntry,
@@ -27,6 +27,12 @@ import {
 import { splitOvertimeExportTimes } from '../../data/overtimeExport.js'
 import { selectOvertimeHistoryForDisplay } from '../../data/overtimeHistoryPresentation.js'
 import { WORK_CATEGORIES } from '../../data/overtimeWorkL3.js'
+import { jabatanOfScope } from '../../data/jabatanPelayananTeknik.js'
+import {
+  employeeDirectoryAssignmentAt,
+  UNRESOLVED_EMPLOYEE_DIRECTORY_VALUE,
+  workLocationNameAt,
+} from '../../data/overtimeEmployeeDirectory.js'
 import { buildTableXlsx, downloadExportFile } from '../../utils/slaExportFile.js'
 import EvidenceUploadCard from './EvidenceUploadCard.jsx'
 import OvertimePeriodPicker from './OvertimePeriodPicker.jsx'
@@ -47,6 +53,7 @@ import {
 
 const formatRp = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })
 const MAX_TIMEOUT_MS = 2147483647
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const WORK_TITLE_PLACEHOLDERS = {
   GARDU: 'Contoh: Pemeliharaan Gardu',
   JTM: 'Contoh: Penanganan Tiang Tumbang',
@@ -346,6 +353,11 @@ export default function SLALembur({
   orgUnits,
   onRefresh,
   onOpenPeriod,
+  employees = [],
+  jabatan = [],
+  employeeLocations = [],
+  jabatanScopeContractId = contractScope?.contractId,
+  jabatanScopeUp3Id = up3Id,
   isManagement = false,
   isUlManagement = false,
   isUpManagement = false,
@@ -353,6 +365,35 @@ export default function SLALembur({
   approvalTarget = null,
   onApprovalTargetHandled,
 }) {
+  const participantEmployeesById = useMemo(
+    () => new Map((employees ?? []).map((employee) => [employee.id, employee])),
+    [employees],
+  )
+  const scopedPositionsById = useMemo(() => {
+    const scoped = jabatanOfScope(jabatan ?? [], jabatanScopeContractId, jabatanScopeUp3Id)
+    return new Map(scoped.map((position) => [position.id, position.name]))
+  }, [jabatan, jabatanScopeContractId, jabatanScopeUp3Id])
+  const activeSupabasePositionsById = useMemo(
+    () => new Map((jabatan ?? [])
+      .filter((position) => UUID_LIKE.test(position.id ?? '') && (position.status ?? 'Aktif') === 'Aktif')
+      .map((position) => [position.id, position.name])),
+    [jabatan],
+  )
+  const participantLocationsById = useMemo(
+    () => new Map((employeeLocations ?? []).map((location) => [location.id, location])),
+    [employeeLocations],
+  )
+  const participantUnitNamesById = useMemo(() => {
+    const names = new Map()
+    for (const unit of orgUnits ?? []) {
+      const name = unit.displayName || unit.name || unit.label
+      if (!name) continue
+      for (const id of [unit.uuid, unit.legacyKey, unit.id]) {
+        if (id) names.set(id, name)
+      }
+    }
+    return names
+  }, [orgUnits])
   const [draft, setDraft] = useState(() => initialDraft(periodMonth))
   const [activeActivityId, setActiveActivityId] = useState(null)
   const [activeRevisionEntryId, setActiveRevisionEntryId] = useState(null)
@@ -3036,7 +3077,7 @@ export default function SLALembur({
             </div>
           </div>
           {detailActivityId && (
-            <div className="rekap-detail-overlay" data-approval-id={detailActivityId} onClick={closeDetail}>
+            <div className="rekap-detail-overlay lembur-detail-overlay" data-approval-id={detailActivityId} onClick={closeDetail}>
               <div className="rekap-detail-modal lembur-detail-modal" onClick={e=>e.stopPropagation()}>
                 {detailActivity && (
                   <>
@@ -3055,7 +3096,20 @@ export default function SLALembur({
                             const fin = detailFinancial.find(f=>f.entryId===r.entryId)
                             const profilePhoto = r.participantEmployeeId ? detailProfileByEmployee[r.participantEmployeeId] : null
                             const profileUrl = profilePhoto ? detailProfileUrls[profilePhoto.id] : null
-                            return <tr key={r.entryId}><td><span className="lembur-participant-identity">{profilePhoto && profileUrl ? <button type="button" className="sp-pegawai-photo-thumb lembur-profile-thumb" onClick={()=>setProfilePreview({ name: r.participantName, url: profileUrl })} aria-label={`Lihat foto profil ${r.participantName}`} title={`Lihat foto profil ${r.participantName}`}><img src={profileUrl} alt={`Foto profil ${r.participantName}`} /></button> : <span className="sp-pegawai-photo sp-pegawai-photo-thumb sp-pegawai-photo-placeholder" role="img" aria-label="Foto profil belum tersedia" title="Foto profil belum tersedia">{profileInitials(r.participantName)}</span>}<span>{r.participantName}</span></span></td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{canViewFinancial && <td>{fin ? `Rp ${formatRp(fin.hourlyRate)}/jam` : '—'}</td>}{canViewFinancial && <td>{fin ? `${fin.durationHours.toFixed(2)} jam · ${fin.multiplierHours.toFixed(2)} jam × Rp ${formatRp(fin.total)}` : '—'}</td>}</tr>
+                            const employee = participantEmployeesById.get(r.participantEmployeeId)
+                            const assignment = employeeDirectoryAssignmentAt(employee, detailActivity.date ?? r.date)
+                            const positionName = assignment.positionId
+                              ? (UUID_LIKE.test(String(assignment.positionId))
+                                ? activeSupabasePositionsById.get(assignment.positionId)
+                                : scopedPositionsById.get(assignment.positionId))
+                              : null
+                            const location = participantLocationsById.get(assignment.workLocationId)
+                            const locationName = workLocationNameAt(
+                              location,
+                              detailActivity.date ?? r.date,
+                              participantUnitNamesById.get(location?.unitId),
+                            )
+                            return <tr key={r.entryId}><td><span className="lembur-participant-identity">{profilePhoto && profileUrl ? <button type="button" className="sp-pegawai-photo-thumb lembur-profile-thumb" onClick={()=>setProfilePreview({ name: r.participantName, url: profileUrl })} aria-label={`Lihat foto profil ${r.participantName}`} title={`Lihat foto profil ${r.participantName}`}><img src={profileUrl} alt={`Foto profil ${r.participantName}`} /></button> : <span className="sp-pegawai-photo sp-pegawai-photo-thumb sp-pegawai-photo-placeholder" role="img" aria-label="Foto profil belum tersedia" title="Foto profil belum tersedia">{profileInitials(r.participantName)}</span>}<span className="lembur-participant-info"><strong className="lembur-participant-name">{r.participantName}</strong><span className="lembur-participant-meta"><span>Jabatan</span><strong>{positionName || UNRESOLVED_EMPLOYEE_DIRECTORY_VALUE}</strong><span>Lokasi Penempatan</span><strong>{locationName || UNRESOLVED_EMPLOYEE_DIRECTORY_VALUE}</strong></span></span></span></td><td>{t.startTime}–{t.endTime} · {formatDurationMinutes(r.durationHours*60)}</td><td>Rp {formatRp(r.total)}</td>{canViewFinancial && <td>{fin ? `Rp ${formatRp(fin.hourlyRate)}/jam` : '—'}</td>}{canViewFinancial && <td>{fin ? `${fin.durationHours.toFixed(2)} jam · ${fin.multiplierHours.toFixed(2)} jam × Rp ${formatRp(fin.total)}` : '—'}</td>}</tr>
                           })}
                         </tbody>
                       </table></div>
