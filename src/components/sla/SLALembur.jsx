@@ -159,6 +159,7 @@ const initialDraft = (periodMonth) => ({
   description: '',
   workTitle: '',
   workLocation: '',
+  // Hidden legacy value: retain it when an existing ROW draft is saved/revised.
   rowVarSpanCount: '',
   rowPruningSpanCount: '',
   rowFelling2040Count: '',
@@ -280,7 +281,6 @@ function workCategoryOf(lemburType) {
 }
 
 const ROW_OPTIONAL_COUNT_LABELS = {
-  rowPruningSpanCount: 'Jumlah gawang pangkas',
   rowFelling2040Count: 'Jumlah tebang 20–40 cm',
   rowFelling4160Count: 'Jumlah tebang 41–60 cm',
 }
@@ -937,7 +937,6 @@ export default function SLALembur({
     participantEmployeeId: 'participantEmployee',
     startTime: 'time',
     endTime: 'time',
-    rowVarSpanCount: 'rowVarSpanCount',
     rowPruningSpanCount: 'rowPruningSpanCount',
     rowFelling2040Count: 'rowFelling2040Count',
     rowFelling4160Count: 'rowFelling4160Count',
@@ -1094,15 +1093,15 @@ export default function SLALembur({
     // eligibility, dan tarif tanggal baru.
     if (!draft.description || !draft.description.trim()) return invalid('Keterangan pekerjaan wajib diisi.', 'description')
     if (isRowWork) {
-      const varSpan = parseRowCount(draft.rowVarSpanCount)
-      // Revisi data ROW lama: angka volume boleh kosong karena input
-      // terkunci dan memang belum pernah terisi; peserta hanya memperbaiki
-      // jam dan evidence. Pengajuan baru tetap wajib Var ROW minimal 1.
-      if (isRevision) {
-        if (varSpan != null && (!Number.isInteger(varSpan) || varSpan < 1)) return invalid('Jumlah gawang Var ROW harus bilangan bulat minimal 1.', 'rowVarSpanCount')
-      } else {
-        if (varSpan == null) return invalid('Jumlah gawang Var ROW wajib diisi.', 'rowVarSpanCount')
-        if (!Number.isInteger(varSpan) || varSpan < 1) return invalid('Jumlah gawang Var ROW harus bilangan bulat minimal 1.', 'rowVarSpanCount')
+      // Var ROW tidak lagi diinput/diwajibkan. Nilai lama tetap berada di
+      // draft agar payload simpan/revisi tidak mengosongkan data historis.
+      // Pangkas wajib untuk pengajuan baru; revisi mempertahankan snapshot lama.
+      if (!isRevision) {
+        const pruningCount = parseRowCount(draft.rowPruningSpanCount)
+        if (pruningCount == null) return invalid('Jumlah gawang pangkas wajib diisi.', 'rowPruningSpanCount')
+        if (!Number.isInteger(pruningCount) || pruningCount < 1) {
+          return invalid('Jumlah gawang pangkas harus bilangan bulat minimal 1.', 'rowPruningSpanCount')
+        }
       }
       for (const [key, label] of Object.entries(ROW_OPTIONAL_COUNT_LABELS)) {
         const count = parseRowCount(draft[key])
@@ -1190,6 +1189,8 @@ export default function SLALembur({
         description: draft.description,
         workTitle: draft.workTitle,
         workLocation: draft.workLocation,
+        // Keep this legacy value in the payload; the server preserves the
+        // stored value for existing activities and accepts null for new ones.
         rowVarSpanCount: isRowWork ? parseRowCount(draft.rowVarSpanCount) : null,
         rowPruningSpanCount: isRowWork ? parseRowCount(draft.rowPruningSpanCount) : null,
         rowFelling2040Count: isRowWork ? parseRowCount(draft.rowFelling2040Count) : null,
@@ -2546,20 +2547,13 @@ export default function SLALembur({
                         <div className="lembur-row-volume lembur-grid-full">
                           <div className="lembur-row-volume-heading">
                             <strong>Volume Pekerjaan ROW</strong>
-                            <span>Isi hasil pekerjaan dalam satuan gawang dan batang.{isRevision ? ' Volume pekerjaan dikunci saat revisi.' : ''}</span>
+                            <span>Isi hasil pangkas dan tebang bila tersedia, dalam satuan gawang dan batang.{isRevision ? ' Volume pekerjaan dikunci saat revisi.' : ''}</span>
                           </div>
                           <div className="lembur-row-volume-grid">
                             <label className="sla-context-field">
-                              <span className="sla-context-label">Jumlah Gawang Var ROW *</span>
+                              <span className="sla-context-label">Jumlah Gawang Pangkas *</span>
                               <div className="lembur-row-count">
-                                <input type="number" min="1" step="1" inputMode="numeric" ref={fieldRef('rowVarSpanCount')} className={`sla-context-select${fieldInvalidClass('rowVarSpanCount')}`} value={draft.rowVarSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowVarSpanCount:e.target.value })} placeholder="Min. 1" />
-                                <span>gawang</span>
-                              </div>
-                            </label>
-                            <label className="sla-context-field">
-                              <span className="sla-context-label">Jumlah Gawang Pangkas</span>
-                              <div className="lembur-row-count">
-                                <input type="number" min="0" step="1" inputMode="numeric" ref={fieldRef('rowPruningSpanCount')} className={`sla-context-select${fieldInvalidClass('rowPruningSpanCount')}`} value={draft.rowPruningSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowPruningSpanCount:e.target.value })} placeholder="Opsional" />
+                                <input type="number" min="1" step="1" inputMode="numeric" ref={fieldRef('rowPruningSpanCount')} className={`sla-context-select${fieldInvalidClass('rowPruningSpanCount')}`} value={draft.rowPruningSpanCount} disabled={isEvidenceOnlyRevision || isRevision} onChange={e=>updateDraft({ rowPruningSpanCount:e.target.value })} placeholder="Min. 1" />
                                 <span>gawang</span>
                               </div>
                             </label>
