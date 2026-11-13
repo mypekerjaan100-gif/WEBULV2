@@ -430,7 +430,12 @@ export default function SLADatabasePegawai({
       return false
     }
     if (filterJabatan && data.positionId !== filterJabatan) return false
-    if (filterStatus && data.employmentStatus !== filterStatus) return false
+    if (
+      filterStatus &&
+      effectiveEmploymentStatusOf(data, todayStr, pensionPolicy).status !== filterStatus
+    ) {
+      return false
+    }
     if (filterEmploymentType) {
       if (filterEmploymentType === '__none__') {
         if (data.employmentType) return false
@@ -531,7 +536,7 @@ export default function SLADatabasePegawai({
         { value: data.bank ?? '' },
         { value: data.accountNumber ?? '' },
         { value: data.hourlyRate && data.hourlyRate > 0 ? `Rp ${Number(data.hourlyRate).toLocaleString('id-ID')}/jam` : '\u2014' },
-        { value: data.employmentStatus ?? '' },
+        { value: effectiveEmploymentStatusOf(data, todayStr, pensionPolicy).status },
         { value: data.employmentType || 'Belum diisi' },
         { value: approvalOf(row) },
       ]
@@ -593,6 +598,10 @@ export default function SLADatabasePegawai({
   const openEdit = (row) => {
     const e = row.employee
     const existingActive = activePhotoOf(e.id)
+    // Form mengikuti baris status terakhir yang tercatat, bukan status efektif
+    // hari ini. Ini menjaga edit lokasi/PKWT tidak membatalkan status terjadwal.
+    const openStatus = [...(e.statusHistory ?? [])].find((entry) => entry.validTo == null)
+    const formStatus = openStatus?.status ?? e.employmentStatus
     setForm({
       nip: e.nip,
       name: e.name,
@@ -606,11 +615,13 @@ export default function SLADatabasePegawai({
       birthDate: e.birthDate ?? '',
       retirementDateOverride: e.retirementDateOverride ?? '',
       pensionOverrideReason: e.pensionOverrideReason ?? '',
-      employmentStatus: e.employmentStatus,
+      employmentStatus: formStatus,
       employmentType: e.employmentType ?? '',
-      statusReason: e.statusReason ?? '',
-      statusReasonNote: e.statusReasonNote ?? '',
-      statusEffectiveDate: e.statusEffectiveDate ?? '',
+      statusReason: openStatus?.reason ?? e.statusReason ?? '',
+      statusReasonNote: openStatus?.note ?? e.statusReasonNote ?? '',
+      statusEffectiveDate: formStatus === 'Nonaktif'
+        ? (openStatus?.effectiveDate ?? e.statusEffectiveDate ?? '')
+        : '',
       photoAssetId: '',
       existingPhotoId: existingActive?.id ?? '',
       hasExistingPhoto: Boolean(existingActive),
@@ -2182,6 +2193,7 @@ export default function SLADatabasePegawai({
               <th>Foto</th>
               <th>NIP</th>
               <th>Nama</th>
+              <th>Status</th>
               <th>Unit</th>
               <th>Lokasi Penempatan</th>
               <th>Jabatan</th>
@@ -2190,7 +2202,6 @@ export default function SLADatabasePegawai({
               <th>Bank</th>
               <th>No Rekening</th>
               <th>Tarif Lembur/Jam</th>
-              <th>Status</th>
               <th>Perjanjian</th>
               <th>Approval</th>
               <th>Aksi</th>
@@ -2200,6 +2211,7 @@ export default function SLADatabasePegawai({
             {visibleRows.map((row) => {
               const data = row.employee ?? row.request.proposed
               const pension = pensionStateOf(data, todayStr, pensionPolicy)
+              const effectiveStatus = effectiveEmploymentStatusOf(data, todayStr, pensionPolicy)
               const pensionMonths = pension.retirementDate
                 ? monthsBetween(todayStr, pension.retirementDate)
                 : null
@@ -2242,6 +2254,16 @@ export default function SLADatabasePegawai({
                     >
                       {data.name}
                     </button>
+                  </td>
+                  <td>
+                    <span
+                      className={`sla-status-badge ${effectiveStatus.status === 'Aktif' ? 'sla-status-active' : 'sla-status-archive'}`}
+                    >
+                      {effectiveStatus.status}
+                    </span>
+                    {effectiveStatus.status === 'Nonaktif' && effectiveStatus.reason && (
+                      <div className="sla-table-sub">{effectiveStatus.reason}</div>
+                    )}
                   </td>
                   <td>{unitName(data.unitId)}</td>
                   <td>
@@ -2286,13 +2308,6 @@ export default function SLADatabasePegawai({
                     {data.hourlyRate && data.hourlyRate > 0
                       ? `Rp ${Number(data.hourlyRate).toLocaleString('id-ID')}/jam`
                       : '\u2014'}
-                  </td>
-                  <td>
-                    <span
-                      className={`sla-status-badge ${data.employmentStatus === 'Aktif' ? 'sla-status-active' : 'sla-status-archive'}`}
-                    >
-                      {data.employmentStatus}
-                    </span>
                   </td>
                   <td>
                     {data.employmentType ? (

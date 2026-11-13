@@ -159,7 +159,10 @@ export async function fetchEmployeesFromSupabase({
     mapped.employmentStatus = currentStatus?.status ?? 'Aktif'
     mapped.statusReason = currentStatus?.reason ?? null
     mapped.statusReasonNote = currentStatus?.note ?? null
-    mapped.statusEffectiveDate = currentStatus?.effectiveDate ?? null
+    // Tanggal status hanya berlaku untuk Nonaktif. Tanggal awal masa aktif
+    // tidak boleh terbawa ke form edit sebagai tanggal resign.
+    mapped.statusEffectiveDate =
+      currentStatus?.status === 'Nonaktif' ? (currentStatus?.effectiveDate ?? null) : null
     mapped.hourlyRate = currentRate?.rate ?? 0
 
     mapped.unitHistory = unitHistory.map((e) => ({
