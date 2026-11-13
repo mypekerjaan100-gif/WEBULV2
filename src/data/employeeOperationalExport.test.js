@@ -78,4 +78,22 @@ for (const name of parsed.SheetNames) {
   for (const cell of Object.values(sheet)) assert.equal(cell?.f, undefined, 'Nilai teks tidak menjadi formula Excel')
 }
 assert.equal(parsed.SheetNames.map((name) => XLSX.utils.sheet_to_json(parsed.Sheets[name]).length).reduce((a, b) => a + b), 4)
-console.log('Employee operational export: grouping, roundtrip, sheet collisions, sensitive fields and text cells passed')
+const selectedWorkbook = buildEmployeeOperationalWorkbook(XLSX, [
+  base,
+  { ...base, unitId: 'other', unitName: 'Unit Lain' },
+], ['name', 'nip', 'bank'])
+const selectedParsed = XLSX.read(XLSX.write(selectedWorkbook, { bookType: 'xlsx', type: 'array' }), { type: 'array' })
+assert.equal(selectedParsed.SheetNames.length, 2, 'Pengelompokan tetap bekerja saat kolom unit/lokasi tidak dipilih')
+for (const name of selectedParsed.SheetNames) {
+  const sheet = selectedParsed.Sheets[name]
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+  assert.deepEqual(rows[0], ['No', 'NIP', 'Nama'], 'Hanya kolom yang diizinkan dan dipilih, dengan urutan standar')
+  assert.deepEqual(rows[1], [1, '00001234', '=Nama Pegawai'])
+  assert.equal(sheet.B2.t, 's')
+  assert.equal(sheet['!autofilter'].ref, 'A1:C2')
+}
+const nameOnly = buildEmployeeOperationalWorkbook(XLSX, [base], ['name'])
+assert.deepEqual(XLSX.utils.sheet_to_json(nameOnly.Sheets[nameOnly.SheetNames[0]], { header: 1 }), [['No', 'Nama'], [1, '=Nama Pegawai']])
+assert.throws(() => buildEmployeeOperationalWorkbook(XLSX, [base], []), /minimal satu kolom/)
+assert.throws(() => buildEmployeeOperationalWorkbook(XLSX, [base], ['bank']), /minimal satu kolom/)
+console.log('Employee operational export: grouping, column selection, roundtrip, sheet collisions, sensitive fields and text cells passed')

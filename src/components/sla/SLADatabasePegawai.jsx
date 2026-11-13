@@ -26,7 +26,7 @@ import {
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 import { downloadExportFile } from '../../utils/slaExportFile.js'
 import ModernDatePicker from './ModernDatePicker.jsx'
-import { activeEmployeeExportRows, buildEmployeeOperationalWorkbook, employeeExportPositionOptions, filterEmployeeExportRows } from '../../data/employeeOperationalExport.js'
+import { activeEmployeeExportRows, buildEmployeeOperationalWorkbook, EMPLOYEE_EXPORT_COLUMN_OPTIONS, employeeExportPositionOptions, filterEmployeeExportRows } from '../../data/employeeOperationalExport.js'
 import {
   approveEmployeeChange,
   downloadImportTemplate,
@@ -124,6 +124,7 @@ export default function SLADatabasePegawai({
   const [downloadLocation, setDownloadLocation] = useState('')
   const [downloadPosition, setDownloadPosition] = useState('')
   const [downloadBusy, setDownloadBusy] = useState(false)
+  const [downloadColumns, setDownloadColumns] = useState(() => EMPLOYEE_EXPORT_COLUMN_OPTIONS.map((column) => column.key))
   const [downloadError, setDownloadError] = useState('')
   const [search, setSearch] = useState('')
   const [filterJabatan, setFilterJabatan] = useState('')
@@ -390,7 +391,7 @@ export default function SLADatabasePegawai({
   const downloadGroupCount = new Set(selectedDownloadEmployees.map((employee) => JSON.stringify([employee.unitId, employee.workLocationId || null]))).size
 
   const downloadOperational = async () => {
-    if (!canDownloadOperational || !employeeDataReady || downloadBusy || !selectedDownloadEmployees.length) return
+    if (!canDownloadOperational || !employeeDataReady || downloadBusy || !selectedDownloadEmployees.length || !downloadColumns.length) return
     setDownloadBusy(true)
     setDownloadError('')
     try {
@@ -411,7 +412,7 @@ export default function SLADatabasePegawai({
         }
       })
       const XLSX = await import('xlsx')
-      const workbook = buildEmployeeOperationalWorkbook(XLSX, rows)
+      const workbook = buildEmployeeOperationalWorkbook(XLSX, rows, downloadColumns)
       const scope = unitName(downloadUnit || resolvedUp3Uuid).replace(/[^A-Za-z0-9]+/g, '_')
       downloadExportFile(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }), `Data_Pegawai_${scope}_${todayStr}.xlsx`)
       setDownloadOpen(false)
@@ -1932,11 +1933,31 @@ export default function SLADatabasePegawai({
                   </select>
                 </label>
               </div>
-              <p className="sla-flat-note">{selectedDownloadEmployees.length} pegawai · {downloadGroupCount} sheet. Data operasional: NIP, nama, unit, lokasi, jabatan, tanggal lahir, status, jenis perjanjian, dan masa pensiun.</p>
+              <fieldset className="employee-export-columns" disabled={downloadBusy}>
+                <legend>Pilih Kolom Excel</legend>
+                <div className="sla-master-actions">
+                  <button type="button" className="sla-btn" onClick={() => setDownloadColumns(EMPLOYEE_EXPORT_COLUMN_OPTIONS.map((column) => column.key))}>Pilih Semua</button>
+                  <button type="button" className="sla-btn" onClick={() => setDownloadColumns([])}>Kosongkan</button>
+                </div>
+                <div className="employee-export-column-grid">
+                  {EMPLOYEE_EXPORT_COLUMN_OPTIONS.map((column) => (
+                    <label key={column.key}>
+                      <input type="checkbox" checked={downloadColumns.includes(column.key)} onChange={(event) => {
+                        const checked = event.target.checked
+                        setDownloadColumns((current) => checked ? [...current, column.key] : current.filter((key) => key !== column.key))
+                      }} />
+                      <span>{column.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="sla-flat-note">Kolom No otomatis disertakan. Pengelompokan sheet tetap berdasarkan unit dan lokasi.</p>
+                {!downloadColumns.length && <p className="sla-blocked-note" role="status">Pilih minimal satu kolom data untuk diunduh.</p>}
+              </fieldset>
+              <p className="sla-flat-note">{selectedDownloadEmployees.length} pegawai · {downloadGroupCount} sheet · {downloadColumns.length} kolom data dipilih.</p>
               {downloadError && <p className="sla-blocked-note" role="alert">{downloadError}</p>}
               <div className="sla-master-actions">
                 <button type="button" className="sla-btn" disabled={downloadBusy} onClick={() => setDownloadOpen(false)}>Batal</button>
-                <button type="button" className="sla-btn sla-btn-primary" disabled={downloadBusy || !employeeDataReady || !selectedDownloadEmployees.length} onClick={downloadOperational}>{downloadBusy ? 'Menyiapkan Excel...' : 'Download Excel'}</button>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={downloadBusy || !employeeDataReady || !selectedDownloadEmployees.length || !downloadColumns.length} onClick={downloadOperational}>{downloadBusy ? 'Menyiapkan Excel...' : 'Download Excel'}</button>
               </div>
             </div>
           </div>

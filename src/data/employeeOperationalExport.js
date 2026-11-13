@@ -1,6 +1,17 @@
 import { effectiveEmploymentStatusOf } from './pensiunPelayananTeknik.js'
 
-export const EMPLOYEE_EXPORT_COLUMNS = ['No', 'NIP', 'Nama', 'Unit / ULP', 'Lokasi Penempatan', 'Jabatan', 'Tanggal Lahir', 'Status', 'Jenis Perjanjian Kerja', 'Masa Pensiun']
+export const EMPLOYEE_EXPORT_COLUMN_OPTIONS = [
+  { key: 'nip', label: 'NIP', width: 22 },
+  { key: 'name', label: 'Nama', width: 32 },
+  { key: 'unitName', label: 'Unit / ULP', width: 26 },
+  { key: 'locationName', label: 'Lokasi Penempatan', width: 32 },
+  { key: 'positionName', label: 'Jabatan', width: 30 },
+  { key: 'birthDate', label: 'Tanggal Lahir', width: 18 },
+  { key: 'status', label: 'Status', width: 16 },
+  { key: 'employmentType', label: 'Jenis Perjanjian Kerja', width: 24 },
+  { key: 'pension', label: 'Masa Pensiun', width: 34 },
+]
+export const EMPLOYEE_EXPORT_COLUMNS = ['No', ...EMPLOYEE_EXPORT_COLUMN_OPTIONS.map((column) => column.label)]
 
 export function activeEmployeeExportRows(employees, date, pensionPolicy) {
   return employees.filter((employee) => effectiveEmploymentStatusOf(employee, date, pensionPolicy).status === 'Aktif')
@@ -34,7 +45,9 @@ export function employeeExportPositionOptions(positions, employees) {
     .sort((a, b) => a.name.localeCompare(b.name, 'id'))
 }
 
-export function buildEmployeeOperationalWorkbook(XLSX, rows) {
+export function buildEmployeeOperationalWorkbook(XLSX, rows, selectedColumns = EMPLOYEE_EXPORT_COLUMN_OPTIONS.map((column) => column.key)) {
+  const columns = EMPLOYEE_EXPORT_COLUMN_OPTIONS.filter((column) => selectedColumns.includes(column.key))
+  if (!columns.length) throw new Error('Pilih minimal satu kolom data untuk diunduh.')
   const groups = new Map()
   for (const row of rows) {
     const key = JSON.stringify([row.unitId, row.locationId || null])
@@ -56,11 +69,10 @@ export function buildEmployeeOperationalWorkbook(XLSX, rows) {
     }
     usedNames.add(name.toLowerCase())
     const values = group.sort((a, b) => a.name.localeCompare(b.name, 'id')).map((row, i) => [
-      i + 1, String(row.nip ?? ''), row.name, row.unitName, row.locationName,
-      row.positionName, row.birthDate, row.status, row.employmentType, row.pension,
+      i + 1, ...columns.map((column) => String(row[column.key] ?? '')),
     ])
-    const sheet = XLSX.utils.aoa_to_sheet([EMPLOYEE_EXPORT_COLUMNS, ...values])
-    sheet['!cols'] = [6, 22, 32, 26, 32, 30, 18, 16, 24, 34].map((wch) => ({ wch }))
+    const sheet = XLSX.utils.aoa_to_sheet([['No', ...columns.map((column) => column.label)], ...values])
+    sheet['!cols'] = [6, ...columns.map((column) => column.width)].map((wch) => ({ wch }))
     sheet['!autofilter'] = { ref: sheet['!ref'] }
     XLSX.utils.book_append_sheet(workbook, sheet, name)
   }
