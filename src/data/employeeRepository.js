@@ -109,6 +109,7 @@ export async function fetchEmployeesFromSupabase({
     status: 'status',
     reason: 'reason',
     reason_note: 'note',
+    effective_from: 'effectiveDate',
   })
   const rateHistByEmp = histByEmployee(rateHist, { hourly_rate: 'rate' })
   const locHistByEmp = histByEmployee(locHist, { location_id: 'workLocationId' })

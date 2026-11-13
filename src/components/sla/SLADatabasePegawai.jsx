@@ -25,7 +25,7 @@ import {
 } from '../../data/pensiunPelayananTeknik.js'
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 import { downloadExportFile } from '../../utils/slaExportFile.js'
-import ModernDatePicker from './ModernDatePicker.jsx'
+import ModernDatePicker, { formatIndonesianDate } from './ModernDatePicker.jsx'
 import { activeEmployeeExportRows, buildEmployeeOperationalWorkbook, EMPLOYEE_EXPORT_COLUMN_OPTIONS, employeeExportPositionOptions, filterEmployeeExportRows } from '../../data/employeeOperationalExport.js'
 import {
   approveEmployeeChange,
@@ -964,6 +964,10 @@ export default function SLADatabasePegawai({
         ? lastWorkingDateFor(data.birthDate, policyAge)
         : null
       const pension = pensionStateOf(data, todayStr, pensionPolicy)
+      const effectiveStatus = effectiveEmploymentStatusOf(data, todayStr, pensionPolicy)
+      const inactiveDateLabel = effectiveStatus.reason === 'Resign' ? 'Tanggal Resign'
+        : effectiveStatus.reason === 'PHK' ? 'Tanggal PHK'
+          : effectiveStatus.reason === 'Pensiun' ? 'Tanggal Pensiun' : 'Tanggal Efektif Nonaktif'
       const monthsLeft = pension.retirementDate
         ? monthsBetween(todayStr, pension.retirementDate)
         : null
@@ -1039,13 +1043,13 @@ export default function SLADatabasePegawai({
             }
           />
           <Field label="Jabatan" value={positionName(data.positionId) ?? 'Belum Ditentukan'} />
-          <Field label="Status Pegawai" value={data.employmentStatus} />
+          <Field label="Status Pegawai" value={effectiveStatus.status} />
           <Field label="Jenis Perjanjian Kerja" value={data.employmentType || 'Belum diisi'} />
-          {data.employmentStatus === 'Nonaktif' && (
+          {effectiveStatus.status === 'Nonaktif' && (
             <>
-              <Field label="Alasan Nonaktif" value={data.statusReason ?? '\u2014'} />
+              <Field label="Alasan Nonaktif" value={effectiveStatus.reason || '\u2014'} />
               <Field label="Keterangan" value={data.statusReasonNote || '\u2014'} />
-              <Field label="Tanggal Efektif" value={data.statusEffectiveDate ?? '\u2014'} />
+              <Field label={inactiveDateLabel} value={formatIndonesianDate(effectiveStatus.effectiveDate) || '\u2014'} />
             </>
           )}
           <Field label="Tanggal Lahir" value={data.birthDate || '\u2014'} />
