@@ -1,6 +1,23 @@
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
-import { buildEmployeeOperationalWorkbook, EMPLOYEE_EXPORT_COLUMNS } from './employeeOperationalExport.js'
+import { buildEmployeeOperationalWorkbook, EMPLOYEE_EXPORT_COLUMNS, employeeExportPositionOptions, filterEmployeeExportRows } from './employeeOperationalExport.js'
+
+const employees = [
+  { id: 'a', unitId: 'u1', workLocationId: 'l1', positionId: 'yantek' },
+  { id: 'b', unitId: 'u1', workLocationId: 'l1', positionId: 'other' },
+  { id: 'c', unitId: 'u2', workLocationId: 'l2', positionId: 'yantek' },
+  { id: 'd', unitId: 'u1', workLocationId: null, positionId: null },
+]
+assert.equal(filterEmployeeExportRows(employees).length, 4)
+assert.deepEqual(filterEmployeeExportRows(employees, { positionId: 'yantek' }).map((e) => e.id), ['a', 'c'])
+assert.deepEqual(filterEmployeeExportRows(employees, { unitId: 'u1', locationId: 'l1', positionId: 'yantek' }).map((e) => e.id), ['a'])
+assert.deepEqual(filterEmployeeExportRows(employees, { positionId: '__none__' }).map((e) => e.id), ['d'])
+assert.equal(filterEmployeeExportRows(employees, { unitId: 'u2', positionId: 'other' }).length, 0)
+assert.deepEqual(employeeExportPositionOptions([
+  { id: 'yantek', name: 'Pelayanan Teknik', status: 'Aktif' },
+  { id: 'other', name: 'Jabatan Lama', status: 'Nonaktif' },
+  { id: 'unused', name: 'Tidak Dipakai', status: 'Nonaktif' },
+], employees).map((p) => p.id), ['other', 'yantek'])
 
 const base = {
   unitId: 'ulp-1', locationId: 'loc-1', unitName: 'ULP Nama Unit Sangat Panjang Sekali',

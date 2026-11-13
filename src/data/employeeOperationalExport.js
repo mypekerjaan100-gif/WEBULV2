@@ -1,5 +1,19 @@
 export const EMPLOYEE_EXPORT_COLUMNS = ['No', 'NIP', 'Nama', 'Unit / ULP', 'Lokasi Penempatan', 'Jabatan', 'Tanggal Lahir', 'Status', 'Jenis Perjanjian Kerja', 'Masa Pensiun']
 
+export function filterEmployeeExportRows(employees, { unitId = '', locationId = '', positionId = '' } = {}) {
+  const matches = (value, selection) => !selection || (selection === '__none__' ? !value : value === selection)
+  return employees.filter((employee) => matches(employee.unitId, unitId) &&
+    matches(employee.workLocationId, locationId) && matches(employee.positionId, positionId))
+}
+
+export function employeeExportPositionOptions(positions, employees) {
+  const usedIds = new Set(employees.map((employee) => employee.positionId).filter(Boolean))
+  return [...new Map(positions
+    .filter((position) => (position.status ?? 'Aktif') === 'Aktif' || usedIds.has(position.id))
+    .map((position) => [position.id, position])).values()]
+    .sort((a, b) => a.name.localeCompare(b.name, 'id'))
+}
+
 export function buildEmployeeOperationalWorkbook(XLSX, rows) {
   const groups = new Map()
   for (const row of rows) {
