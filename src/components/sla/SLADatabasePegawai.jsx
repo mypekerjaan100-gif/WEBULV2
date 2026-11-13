@@ -375,9 +375,10 @@ export default function SLADatabasePegawai({
   )
 
   const query = search.trim().toLowerCase()
+  const effectiveDownloadUnit = role === 'ulp' ? selectedPreviewUnitUuid : downloadUnit
   const downloadEmployees = activeEmployeeExportRows(allRows.filter((row) => row.employee).map((row) => row.employee), todayStr, pensionPolicy)
   const downloadLocations = scopedLocations.filter((location) =>
-    (!downloadUnit || location.unitId === downloadUnit) && downloadEmployees.some((employee) => employee.workLocationId === location.id))
+    (!effectiveDownloadUnit || location.unitId === effectiveDownloadUnit) && downloadEmployees.some((employee) => employee.workLocationId === location.id))
   const downloadPositions = employeeExportPositionOptions([
     ...scopedJabatan.filter((position) => !UUID_LIKE.test(position.id ?? '')),
     ...(jabatan ?? []).filter((position) => UUID_LIKE.test(position.id ?? '') &&
@@ -385,13 +386,14 @@ export default function SLADatabasePegawai({
   ], downloadEmployees).filter((position) => downloadEmployees.some((employee) => position.positionIds.includes(employee.positionId)))
   const downloadPositionNames = new Map(downloadPositions.flatMap((position) => position.positionIds.map((id) => [id, position.name])))
   const selectedDownloadEmployees = filterEmployeeExportRows(downloadEmployees, {
-    unitId: downloadUnit, locationId: downloadLocation, positionId: downloadPosition,
+    unitId: effectiveDownloadUnit, locationId: downloadLocation, positionId: downloadPosition,
     positionIds: downloadPositions.find((position) => position.id === downloadPosition)?.positionIds ?? null,
   })
   const downloadGroupCount = new Set(selectedDownloadEmployees.map((employee) => JSON.stringify([employee.unitId, employee.workLocationId || null]))).size
 
   const downloadOperational = async () => {
     if (!canDownloadOperational || !employeeDataReady || downloadBusy || !selectedDownloadEmployees.length || !downloadColumns.length) return
+    if (role === 'ulp' && !selectedPreviewUnitUuid) return
     setDownloadBusy(true)
     setDownloadError('')
     try {
@@ -413,7 +415,7 @@ export default function SLADatabasePegawai({
       })
       const XLSX = await import('xlsx')
       const workbook = buildEmployeeOperationalWorkbook(XLSX, rows, downloadColumns)
-      const scope = unitName(downloadUnit || resolvedUp3Uuid).replace(/[^A-Za-z0-9]+/g, '_')
+      const scope = unitName(effectiveDownloadUnit || resolvedUp3Uuid).replace(/[^A-Za-z0-9]+/g, '_')
       downloadExportFile(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }), `Data_Pegawai_${scope}_${todayStr}.xlsx`)
       setDownloadOpen(false)
     } catch (error) {
@@ -1917,10 +1919,11 @@ export default function SLADatabasePegawai({
               <p className="sla-flat-note">Satu file Excel, satu sheet untuk setiap kombinasi unit dan lokasi penempatan. Hanya pegawai tersimpan yang aktif per hari ini, terlepas dari filter tabel. Pegawai nonaktif dan yang sudah efektif pensiun tidak disertakan.</p>
               <div className="sla-detail-fields">
                 <label className="sla-context-field"><span className="sla-context-label">Unit / ULP</span>
-                  <select autoFocus className="sla-context-select" disabled={downloadBusy} value={downloadUnit} onChange={(event) => { setDownloadUnit(event.target.value); setDownloadLocation('') }}>
-                    <option value="">Semua unit dalam cakupan</option>
-                    {scopeUnitIds.map((id) => <option key={id} value={id}>{unitName(id)}</option>)}
+                  <select autoFocus className="sla-context-select" disabled={downloadBusy || role === 'ulp'} value={effectiveDownloadUnit || ''} onChange={(event) => { setDownloadUnit(event.target.value); setDownloadLocation('') }}>
+                    {role !== 'ulp' && <option value="">Semua unit dalam cakupan</option>}
+                    {scopedUnitIds.map((id) => <option key={id} value={id}>{unitName(id)}</option>)}
                   </select>
+                  {role === 'ulp' && <span className="sla-table-hint">Terikat ULP login. Hanya pegawai aktif ULP ini yang dapat diunduh.</span>}
                 </label>
                 <label className="sla-context-field"><span className="sla-context-label">Lokasi Penempatan</span>
                   <select className="sla-context-select" disabled={downloadBusy} value={downloadLocation} onChange={(event) => setDownloadLocation(event.target.value)}>
