@@ -17,11 +17,13 @@ export function activeEmployeeExportRows(employees, date, pensionPolicy) {
   return employees.filter((employee) => effectiveEmploymentStatusOf(employee, date, pensionPolicy).status === 'Aktif')
 }
 
-export function filterEmployeeExportRows(employees, { unitId = '', locationId = '', positionId = '', positionIds = null } = {}) {
+export function filterEmployeeExportRows(employees, { unitId = '', locationId = '', positionId = '', positionIds = null, includeUnassignedPosition = false } = {}) {
   const matches = (value, selection) => !selection || (selection === '__none__' ? !value : value === selection)
   return employees.filter((employee) => matches(employee.unitId, unitId) &&
     matches(employee.workLocationId, locationId) &&
-    (positionIds ? positionIds.includes(employee.positionId) : matches(employee.positionId, positionId)))
+    (positionIds
+      ? (employee.positionId ? positionIds.includes(employee.positionId) : includeUnassignedPosition)
+      : matches(employee.positionId, positionId)))
 }
 
 export function employeeExportPositionOptions(positions, employees) {

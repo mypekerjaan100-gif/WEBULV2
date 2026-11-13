@@ -21,6 +21,11 @@ assert.deepEqual(filterEmployeeExportRows(employees, { positionId: 'yantek' }).m
 assert.deepEqual(filterEmployeeExportRows(employees, { unitId: 'u1', locationId: 'l1', positionId: 'yantek' }).map((e) => e.id), ['a'])
 assert.deepEqual(filterEmployeeExportRows(employees, { positionId: '__none__' }).map((e) => e.id), ['d'])
 assert.equal(filterEmployeeExportRows(employees, { unitId: 'u2', positionId: 'other' }).length, 0)
+assert.deepEqual(filterEmployeeExportRows(employees, { positionIds: ['yantek'] }).map((e) => e.id), ['a', 'c'], 'Checklist jabatan mendukung satu pilihan')
+assert.deepEqual(filterEmployeeExportRows(employees, { positionIds: ['yantek', 'other'] }).map((e) => e.id), ['a', 'b', 'c'], 'Checklist jabatan mendukung banyak pilihan')
+assert.deepEqual(filterEmployeeExportRows(employees, { positionIds: [], includeUnassignedPosition: true }).map((e) => e.id), ['d'], 'Hanya pegawai tanpa jabatan saat semua jabatan dikosongkan')
+assert.equal(filterEmployeeExportRows(employees, { positionIds: [] }).length, 0, 'Tanpa jabatan terpilih tidak boleh ada pegawai')
+assert.deepEqual(filterEmployeeExportRows(employees, { positionIds: ['yantek'], includeUnassignedPosition: true }).map((e) => e.id), ['a', 'c', 'd'], 'Pilihan Belum Ditentukan harus disertakan')
 assert.deepEqual(employeeExportPositionOptions([
   { id: 'yantek', name: 'Pelayanan Teknik', status: 'Aktif' },
   { id: 'other', name: 'Jabatan Lama', status: 'Nonaktif' },

@@ -123,7 +123,7 @@ export default function SLADatabasePegawai({
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [downloadUnit, setDownloadUnit] = useState('')
   const [downloadLocation, setDownloadLocation] = useState('')
-  const [downloadPosition, setDownloadPosition] = useState('')
+  const [downloadPositionIds, setDownloadPositionIds] = useState(null)
   const [downloadBusy, setDownloadBusy] = useState(false)
   const [downloadColumns, setDownloadColumns] = useState(() => EMPLOYEE_EXPORT_COLUMN_OPTIONS.map((column) => column.key))
   const [downloadError, setDownloadError] = useState('')
@@ -409,10 +409,27 @@ export default function SLADatabasePegawai({
       position.contractId === resolvedContractUuid && (!position.up3Id || position.up3Id === resolvedUp3Uuid)),
   ], downloadEmployees).filter((position) => downloadEmployees.some((employee) => position.positionIds.includes(employee.positionId)))
   const downloadPositionNames = new Map(downloadPositions.flatMap((position) => position.positionIds.map((id) => [id, position.name])))
+  const downloadHasUnassignedPosition = downloadEmployees.some((employee) => !employee.positionId)
+  const selectedDownloadPositionIds = downloadPositionIds === null
+    ? null
+    : downloadPositions
+      .filter((position) => downloadPositionIds.includes(position.id))
+      .flatMap((position) => position.positionIds)
   const selectedDownloadEmployees = filterEmployeeExportRows(downloadEmployees, {
-    unitId: effectiveDownloadUnit, locationId: downloadLocation, positionId: downloadPosition,
-    positionIds: downloadPositions.find((position) => position.id === downloadPosition)?.positionIds ?? null,
+    unitId: effectiveDownloadUnit, locationId: downloadLocation,
+    positionIds: selectedDownloadPositionIds,
+    includeUnassignedPosition: downloadPositionIds === null || downloadPositionIds.includes('__none__'),
   })
+  const toggleDownloadPosition = (positionId) => {
+    setDownloadPositionIds((current) => {
+      const selected = current === null
+        ? [...downloadPositions.map((position) => position.id), ...(downloadHasUnassignedPosition ? ['__none__'] : [])]
+        : current
+      return selected.includes(positionId)
+        ? selected.filter((value) => value !== positionId)
+        : [...selected, positionId]
+    })
+  }
   const downloadGroupCount = new Set(selectedDownloadEmployees.map((employee) => JSON.stringify([employee.unitId, employee.workLocationId || null]))).size
 
   const downloadOperational = async () => {
@@ -1705,7 +1722,7 @@ export default function SLADatabasePegawai({
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Master Pegawai</h2>
         <div className="sla-toolbar-actions">
-          {canDownloadOperational && <button type="button" className="sla-btn" disabled={!employeeDataReady} onClick={() => { setDownloadUnit(''); setDownloadLocation(''); setDownloadPosition(''); setDownloadError(''); setDownloadOpen(true) }}>Download Data Pegawai</button>}
+          {canDownloadOperational && <button type="button" className="sla-btn" disabled={!employeeDataReady} onClick={() => { setDownloadUnit(''); setDownloadLocation(''); setDownloadPositionIds(null); setDownloadError(''); setDownloadOpen(true) }}>Download Data Pegawai</button>}
           {role === 'up3' && (
             <button
               type="button"
@@ -1956,7 +1973,7 @@ export default function SLADatabasePegawai({
               <button type="button" className="sla-modal-close" aria-label="Tutup download" disabled={downloadBusy} onClick={() => setDownloadOpen(false)}>×</button>
             </div>
             <div className="sla-modal-body">
-              <p className="sla-flat-note">Satu file Excel, satu sheet untuk setiap kombinasi unit dan lokasi penempatan. Hanya pegawai tersimpan yang aktif per hari ini, terlepas dari filter tabel. Pegawai nonaktif dan yang sudah efektif pensiun tidak disertakan.</p>
+              <p className="sla-flat-note">Satu file Excel, satu sheet untuk setiap kombinasi unit dan lokasi penempatan. Hanya pegawai tersimpan yang aktif per hari ini, terlepas dari filter tabel. Pegawai nonaktif dan yang sudah efektif pensiun tidak disertakan. Gunakan checklist jabatan untuk membatasi jabatan yang diunduh.</p>
               <div className="sla-detail-fields">
                 <label className="sla-context-field"><span className="sla-context-label">Unit / ULP</span>
                   <select autoFocus className="sla-context-select" disabled={downloadBusy || role === 'ulp'} value={effectiveDownloadUnit || ''} onChange={(event) => { setDownloadUnit(event.target.value); setDownloadLocation('') }}>
@@ -1972,14 +1989,31 @@ export default function SLADatabasePegawai({
                     {downloadLocations.map((location) => <option key={location.id} value={location.id}>{locationName(location.id)} ({unitName(location.unitId)})</option>)}
                   </select>
                 </label>
-                <label className="sla-context-field"><span className="sla-context-label">Jabatan</span>
-                  <select className="sla-context-select" disabled={downloadBusy} value={downloadPosition} onChange={(event) => setDownloadPosition(event.target.value)}>
-                    <option value="">Semua Jabatan</option>
-                    <option value="__none__">Belum Ditentukan</option>
-                    {downloadPositions.map((position) => <option key={position.id} value={position.id}>{position.name}{position.status === 'Nonaktif' ? ' (Nonaktif)' : ''}</option>)}
-                  </select>
-                </label>
               </div>
+              <fieldset className="employee-export-columns" disabled={downloadBusy}>
+                <legend>Jabatan</legend>
+                <div className="sla-master-actions">
+                  <button type="button" className="sla-btn" onClick={() => setDownloadPositionIds(null)}>Pilih Semua</button>
+                  <button type="button" className="sla-btn" onClick={() => setDownloadPositionIds([])}>Kosongkan</button>
+                </div>
+                <div className="employee-export-column-grid">
+                  {downloadPositions.map((position) => (
+                    <label key={position.id}>
+                      <input type="checkbox" checked={downloadPositionIds === null || downloadPositionIds.includes(position.id)} onChange={() => toggleDownloadPosition(position.id)} />
+                      <span>{position.name}{position.status === 'Nonaktif' ? ' (Nonaktif)' : ''}</span>
+                    </label>
+                  ))}
+                  {downloadHasUnassignedPosition && (
+                    <label key="__none__">
+                      <input type="checkbox" checked={downloadPositionIds === null || downloadPositionIds.includes('__none__')} onChange={() => toggleDownloadPosition('__none__')} />
+                      <span>Belum Ditentukan</span>
+                    </label>
+                  )}
+                </div>
+                <p className="sla-flat-note">Centang satu atau lebih jabatan. Jabatan dengan nama sama otomatis digabung.</p>
+                {downloadPositionIds !== null && downloadPositionIds.length === 0 && <p className="sla-blocked-note" role="status">Pilih minimal satu jabatan.</p>}
+                {downloadPositionIds !== null && downloadPositionIds.length > 0 && !selectedDownloadEmployees.length && <p className="sla-blocked-note" role="status">Tidak ada pegawai aktif pada jabatan terpilih.</p>}
+              </fieldset>
               <fieldset className="employee-export-columns" disabled={downloadBusy}>
                 <legend>Pilih Kolom Excel</legend>
                 <div className="sla-master-actions">
