@@ -26,6 +26,7 @@ import {
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 import { downloadExportFile } from '../../utils/slaExportFile.js'
 import ModernDatePicker from './ModernDatePicker.jsx'
+import { buildEmployeeOperationalWorkbook } from '../../data/employeeOperationalExport.js'
 import {
   approveEmployeeChange,
   downloadImportTemplate,
@@ -115,7 +116,14 @@ export default function SLADatabasePegawai({
   onRefreshEmployees,
   onRefreshChangeRequests,
   onRefreshPensionPolicies,
+  canDownloadOperational = false,
+  employeeDataReady = true,
 }) {
+  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [downloadUnit, setDownloadUnit] = useState('')
+  const [downloadLocation, setDownloadLocation] = useState('')
+  const [downloadBusy, setDownloadBusy] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
   const [search, setSearch] = useState('')
   const [filterJabatan, setFilterJabatan] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
@@ -365,6 +373,46 @@ export default function SLADatabasePegawai({
   )
 
   const query = search.trim().toLowerCase()
+  const downloadEmployees = allRows.filter((row) => row.employee).map((row) => row.employee)
+  const downloadLocations = scopedLocations.filter((location) =>
+    (!downloadUnit || location.unitId === downloadUnit) && downloadEmployees.some((employee) => employee.workLocationId === location.id))
+  const selectedDownloadEmployees = downloadEmployees.filter((employee) =>
+    (!downloadUnit || employee.unitId === downloadUnit) &&
+    (!downloadLocation || (downloadLocation === '__none__' ? !employee.workLocationId : employee.workLocationId === downloadLocation)))
+  const downloadGroupCount = new Set(selectedDownloadEmployees.map((employee) => JSON.stringify([employee.unitId, employee.workLocationId || null]))).size
+
+  const downloadOperational = async () => {
+    if (!canDownloadOperational || !employeeDataReady || downloadBusy || !selectedDownloadEmployees.length) return
+    setDownloadBusy(true)
+    setDownloadError('')
+    try {
+      const rows = selectedDownloadEmployees.map((employee) => {
+        const pension = pensionStateOf(employee, todayStr, pensionPolicy)
+        return {
+          unitId: employee.unitId,
+          locationId: employee.workLocationId,
+          nip: employee.nip,
+          name: employee.name || '',
+          unitName: unitName(employee.unitId),
+          locationName: locationName(employee.workLocationId) || 'Belum Ditentukan',
+          positionName: positionName(employee.positionId) || 'Belum Ditentukan',
+          birthDate: employee.birthDate || '',
+          status: effectiveEmploymentStatusOf(employee, todayStr, pensionPolicy).status,
+          employmentType: employee.employmentType || 'Belum diisi',
+          pension: pension.retirementDate ? `${pension.state} (${pension.retirementDate})` : pension.state || '',
+        }
+      })
+      const XLSX = await import('xlsx')
+      const workbook = buildEmployeeOperationalWorkbook(XLSX, rows)
+      const scope = unitName(downloadUnit || resolvedUp3Uuid).replace(/[^A-Za-z0-9]+/g, '_')
+      downloadExportFile(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }), `Data_Pegawai_${scope}_${todayStr}.xlsx`)
+      setDownloadOpen(false)
+    } catch (error) {
+      setDownloadError(error.message || 'Gagal membuat file Excel.')
+    } finally {
+      setDownloadBusy(false)
+    }
+  }
   const filtered = allRows.filter((row) => {
     const data = row.employee ?? row.request.proposed
     if (query && !(data.name.toLowerCase().includes(query) || String(data.nip).includes(query))) {
@@ -1600,6 +1648,7 @@ export default function SLADatabasePegawai({
       <div className="sla-settings-toolbar">
         <h2 className="sla-settings-title">Master Pegawai</h2>
         <div className="sla-toolbar-actions">
+          {canDownloadOperational && <button type="button" className="sla-btn" disabled={!employeeDataReady} onClick={() => { setDownloadUnit(''); setDownloadLocation(''); setDownloadError(''); setDownloadOpen(true) }}>Download Data Pegawai</button>}
           {role === 'up3' && (
             <button
               type="button"
@@ -1839,6 +1888,41 @@ export default function SLADatabasePegawai({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {downloadOpen && canDownloadOperational && (
+        <div className="sla-modal-overlay" onClick={() => { if (!downloadBusy) setDownloadOpen(false) }}>
+          <div className="sla-modal sp-pegawai-modal" role="dialog" aria-modal="true" aria-labelledby="employee-download-title" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape' && !downloadBusy) setDownloadOpen(false) }}>
+            <div className="sla-modal-header">
+              <h3 className="sla-modal-title" id="employee-download-title">Download Data Pegawai</h3>
+              <button type="button" className="sla-modal-close" aria-label="Tutup download" disabled={downloadBusy} onClick={() => setDownloadOpen(false)}>×</button>
+            </div>
+            <div className="sla-modal-body">
+              <p className="sla-flat-note">Satu file Excel, satu sheet untuk setiap kombinasi unit dan lokasi penempatan. Pilihan ini mencakup pegawai tersimpan, terlepas dari filter tabel.</p>
+              <div className="sla-detail-fields">
+                <label className="sla-context-field"><span className="sla-context-label">Unit / ULP</span>
+                  <select autoFocus className="sla-context-select" disabled={downloadBusy} value={downloadUnit} onChange={(event) => { setDownloadUnit(event.target.value); setDownloadLocation('') }}>
+                    <option value="">Semua unit dalam cakupan</option>
+                    {scopeUnitIds.map((id) => <option key={id} value={id}>{unitName(id)}</option>)}
+                  </select>
+                </label>
+                <label className="sla-context-field"><span className="sla-context-label">Lokasi Penempatan</span>
+                  <select className="sla-context-select" disabled={downloadBusy} value={downloadLocation} onChange={(event) => setDownloadLocation(event.target.value)}>
+                    <option value="">Semua lokasi</option>
+                    <option value="__none__">Belum Ditentukan</option>
+                    {downloadLocations.map((location) => <option key={location.id} value={location.id}>{locationName(location.id)} ({unitName(location.unitId)})</option>)}
+                  </select>
+                </label>
+              </div>
+              <p className="sla-flat-note">{selectedDownloadEmployees.length} pegawai · {downloadGroupCount} sheet. Data operasional: NIP, nama, unit, lokasi, jabatan, tanggal lahir, status, jenis perjanjian, dan masa pensiun.</p>
+              {downloadError && <p className="sla-blocked-note" role="alert">{downloadError}</p>}
+              <div className="sla-master-actions">
+                <button type="button" className="sla-btn" disabled={downloadBusy} onClick={() => setDownloadOpen(false)}>Batal</button>
+                <button type="button" className="sla-btn sla-btn-primary" disabled={downloadBusy || !employeeDataReady || !selectedDownloadEmployees.length} onClick={downloadOperational}>{downloadBusy ? 'Menyiapkan Excel...' : 'Download Excel'}</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

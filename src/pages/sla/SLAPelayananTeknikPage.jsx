@@ -1245,6 +1245,8 @@ export default function SLAPelayananTeknikPage({
           onRefreshEmployees={refreshEmployees}
           onRefreshChangeRequests={refreshEmployeeChangeRequests}
           onRefreshPensionPolicies={refreshPensionPolicies}
+          canDownloadOperational={!isCustomRole && (previewActive ? viewAsRoleCode === 'ADMIN_UP3' : canManageUp3Operations)}
+          employeeDataReady={employeesLoaded && !employeeLoadError && locationLoadStatus === 'ready'}
         />
       ) : moduleId === 'sla' ? (
         role === 'ulp' && !effectiveUnitId ? (
