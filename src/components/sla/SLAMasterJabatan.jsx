@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { jabatanOfScope } from '../../data/jabatanPelayananTeknik.js'
+import { dedupePositionOptions } from '../../data/employeePositionOptions.js'
 import { savePositionToSupabase } from '../../data/employeeRepository.js'
 
 const inputClass = 'sla-input sla-input-text'
@@ -32,7 +33,12 @@ export default function SLAMasterJabatan({
         (item.up3Id == null || item.up3Id === up3Uuid),
     )
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.name < b.name ? -1 : 1))
-  const scopedJabatan = [...databaseScoped, ...localScoped.filter((item) => !isDatabaseRow(item))]
+  // Baris legacy yang namanya sama dengan master database digabung agar tidak
+  // tampil dua kali. ID database tetap menjadi baris utama yang dapat diedit.
+  const scopedJabatan = dedupePositionOptions({
+    supabasePositions: databaseScoped,
+    legacyPositions: localScoped.filter((item) => !isDatabaseRow(item)),
+  })
 
   const inScope = (item) =>
     isDatabaseRow(item)

@@ -4,6 +4,7 @@ import {
   ulpIdsOfUp3,
 } from '../../data/organisasiPelayananTeknik.js'
 import { jabatanOfScope } from '../../data/jabatanPelayananTeknik.js'
+import { dedupePositionOptions } from '../../data/employeePositionOptions.js'
 import {
   DEFAULT_POSITION_ID,
   applyProposedChange,
@@ -267,15 +268,36 @@ export default function SLADatabasePegawai({
   const scopedUnitIds = scopeUnitIds.filter(Boolean)
   const scopedJabatan = jabatanOfScope(jabatan, contractScope.contractId, up3Id)
   const jabatanById = new Map(scopedJabatan.map((j) => [j.id, j]))
-  // Positions dari Supabase memakai UUID + contract_id/up3_id UUID sehingga
-  // lolos dari filter scope string lokal. Lookup khusus agar position_id
-  // yang tersimpan di DB tetap terresolve ke nama jabatan.
   const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  const supabaseJabatan = (jabatan ?? [])
+  // Master Supabase memakai UUID + contract_id/up3_id UUID. Filter scope di
+  // sini agar jabatan dari UP3 lain tidak ikut masuk dropdown.
+  const supabaseJabatanAll = (jabatan ?? [])
     .filter((j) => UUID_LIKE.test(j.id ?? '') && (j.status ?? 'Aktif') === 'Aktif')
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.name < b.name ? -1 : 1))
-  const supabaseJabatanById = new Map(supabaseJabatan.map((j) => [j.id, j]))
-  const jabatanOptions = [...supabaseJabatan, ...scopedJabatan.filter((j) => !UUID_LIKE.test(j.id ?? ''))]
+  const supabaseJabatan = supabaseJabatanAll.filter(
+    (j) =>
+      j.contractId === resolvedContractUuid &&
+      (!j.up3Id || j.up3Id === resolvedUp3Uuid),
+  )
+  const supabaseJabatanNameById = new Map(supabaseJabatanAll.map((j) => [j.id, j.name]))
+  // Satu nama jabatan hanya boleh muncul sekali. ID Supabase dipakai sebagai
+  // nilai utama, sedangkan ID legacy tetap menjadi alias yang valid.
+  const jabatanOptions = dedupePositionOptions({
+    supabasePositions: supabaseJabatan,
+    legacyPositions: scopedJabatan.filter((j) => !UUID_LIKE.test(j.id ?? '')),
+  })
+  const canonicalPositionById = new Map()
+  const positionNameById = new Map()
+  for (const option of jabatanOptions) {
+    canonicalPositionById.set(option.id, option.id)
+    positionNameById.set(option.id, option.name)
+    for (const id of option.positionIds) {
+      canonicalPositionById.set(id, option.id)
+      positionNameById.set(id, option.name)
+    }
+  }
+  const canonicalPositionId = (posId) =>
+    posId ? (canonicalPositionById.get(posId) ?? posId) : posId
   const scopedLocations = locations.filter(
     (l) =>
       l.contractId === resolvedContractUuid &&
@@ -295,7 +317,9 @@ export default function SLADatabasePegawai({
   }
   const positionName = (posId) => {
     if (!posId) return null
-    if (UUID_LIKE.test(String(posId))) return supabaseJabatanById.get(posId)?.name ?? null
+    const mapped = positionNameById.get(posId)
+    if (mapped) return mapped
+    if (UUID_LIKE.test(String(posId))) return supabaseJabatanNameById.get(posId) ?? null
     return jabatanById.get(posId)?.name ?? null
   }
   const isUuidLike = (value) => UUID_LIKE.test(String(value ?? ''))
@@ -429,7 +453,12 @@ export default function SLADatabasePegawai({
     if (query && !(data.name.toLowerCase().includes(query) || String(data.nip).includes(query))) {
       return false
     }
-    if (filterJabatan && data.positionId !== filterJabatan) return false
+    if (
+      filterJabatan &&
+      canonicalPositionId(data.positionId) !== canonicalPositionId(filterJabatan)
+    ) {
+      return false
+    }
     if (
       filterStatus &&
       effectiveEmploymentStatusOf(data, todayStr, pensionPolicy).status !== filterStatus
@@ -1251,7 +1280,7 @@ export default function SLADatabasePegawai({
           <span className="sla-context-label">Jabatan (Master Jabatan)</span>
           <select
             className="sla-context-select"
-            value={form.positionId ?? ''}
+            value={canonicalPositionId(form.positionId) ?? ''}
             onChange={(e) => setForm((prev) => ({ ...prev, positionId: e.target.value }))}
           >
             {jabatanOptions.map((j) => (
