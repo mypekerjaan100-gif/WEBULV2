@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
-import { buildEmployeeOperationalWorkbook, EMPLOYEE_EXPORT_COLUMNS, employeeExportPositionOptions, filterEmployeeExportRows } from './employeeOperationalExport.js'
+import { activeEmployeeExportRows, buildEmployeeOperationalWorkbook, EMPLOYEE_EXPORT_COLUMNS, employeeExportPositionOptions, filterEmployeeExportRows } from './employeeOperationalExport.js'
+
+assert.deepEqual(activeEmployeeExportRows([
+  { id: 'active', employmentStatus: 'Aktif' },
+  ...['Resign', 'PHK', 'Pensiun', 'Lainnya'].map((statusReason) => ({ id: statusReason, employmentStatus: 'Nonaktif', statusReason })),
+  { id: 'retired-today', employmentStatus: 'Aktif', retirementDateOverride: '2026-11-13' },
+  { id: 'retired-before', employmentStatus: 'Aktif', retirementDateOverride: '2026-11-12' },
+  { id: 'future-retirement', employmentStatus: 'Aktif', retirementDateOverride: '2026-11-14' },
+], '2026-11-13', null).map((employee) => employee.id), ['active', 'future-retirement'])
 
 const employees = [
   { id: 'a', unitId: 'u1', workLocationId: 'l1', positionId: 'yantek' },
@@ -18,6 +26,27 @@ assert.deepEqual(employeeExportPositionOptions([
   { id: 'other', name: 'Jabatan Lama', status: 'Nonaktif' },
   { id: 'unused', name: 'Tidak Dipakai', status: 'Nonaktif' },
 ], employees).map((p) => p.id), ['other', 'yantek'])
+
+const duplicatePositions = employeeExportPositionOptions([
+  { id: 'old', name: '  Pelayanan   Teknik ', status: 'Nonaktif' },
+  { id: 'new', name: 'PELAYANAN TEKNIK', status: 'Aktif' },
+  { id: 'retired', name: 'Jabatan Lama', status: 'Nonaktif' },
+], [{ positionId: 'old' }, { positionId: 'retired' }])
+assert.equal(duplicatePositions.length, 2)
+const technical = duplicatePositions.find((option) => option.positionIds.includes('new'))
+assert.deepEqual(technical.positionIds, ['old', 'new'])
+assert.equal(technical.status, 'Aktif')
+assert.equal(technical.name, 'Pelayanan Teknik')
+assert.equal(duplicatePositions.find((option) => option.id === 'retired').status, 'Nonaktif')
+const groupedEmployees = [
+  { id: 'old-employee', positionId: 'old', unitId: 'u1', workLocationId: 'l1' },
+  { id: 'new-employee', positionId: 'new', unitId: 'u1', workLocationId: 'l1' },
+  { id: 'other-unit', positionId: 'new', unitId: 'u2', workLocationId: 'l2' },
+  { id: 'unrelated', positionId: 'retired', unitId: 'u1', workLocationId: 'l1' },
+]
+assert.deepEqual(filterEmployeeExportRows(groupedEmployees, {
+  positionIds: technical.positionIds, unitId: 'u1', locationId: 'l1',
+}).map((employee) => employee.id), ['old-employee', 'new-employee'])
 
 const base = {
   unitId: 'ulp-1', locationId: 'loc-1', unitName: 'ULP Nama Unit Sangat Panjang Sekali',

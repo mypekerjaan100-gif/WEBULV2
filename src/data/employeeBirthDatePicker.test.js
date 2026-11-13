@@ -38,6 +38,15 @@ const section = component.slice(Math.max(0, bindingIndex - 600), bindingIndex + 
 assert(section.includes('ModernDatePicker'), 'ModernDatePicker harus terikat ke form.birthDate')
 assert(section.includes('Tanggal Lahir'), 'Label Tanggal Lahir hilang')
 
+const statusBindingIndex = component.indexOf('statusEffectiveDate: next')
+assert(statusBindingIndex >= 0, 'Tanggal efektif nonaktif harus terikat ke date picker')
+const statusSection = component.slice(Math.max(0, statusBindingIndex - 1200), statusBindingIndex + 100)
+assert(statusSection.includes('<ModernDatePicker'), 'Tanggal nonaktif harus menggunakan kalender custom')
+for (const label of ['Tanggal Resign', 'Tanggal PHK', 'Tanggal Pensiun', 'Tanggal Efektif Nonaktif']) {
+  assert(statusSection.includes(label), `Label dinamis ${label} harus tersedia`)
+}
+assert(component.includes("if (!form.statusEffectiveDate) return 'Tanggal Efektif wajib diisi.'"), 'Tanggal nonaktif tetap wajib diisi')
+
 const cssUrl = new URL('../styles/index.css', import.meta.url)
 const css = readFileSync(fileURLToPath(cssUrl), 'utf8')
 assert(css.includes('.mdp-trigger'), 'Style trigger date picker hilang')

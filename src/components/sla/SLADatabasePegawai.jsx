@@ -26,7 +26,7 @@ import {
 import { currentLocationNameOf } from '../../data/lokasiPelayananTeknik.js'
 import { downloadExportFile } from '../../utils/slaExportFile.js'
 import ModernDatePicker from './ModernDatePicker.jsx'
-import { buildEmployeeOperationalWorkbook, employeeExportPositionOptions, filterEmployeeExportRows } from '../../data/employeeOperationalExport.js'
+import { activeEmployeeExportRows, buildEmployeeOperationalWorkbook, employeeExportPositionOptions, filterEmployeeExportRows } from '../../data/employeeOperationalExport.js'
 import {
   approveEmployeeChange,
   downloadImportTemplate,
@@ -374,17 +374,18 @@ export default function SLADatabasePegawai({
   )
 
   const query = search.trim().toLowerCase()
-  const downloadEmployees = allRows.filter((row) => row.employee).map((row) => row.employee)
+  const downloadEmployees = activeEmployeeExportRows(allRows.filter((row) => row.employee).map((row) => row.employee), todayStr, pensionPolicy)
   const downloadLocations = scopedLocations.filter((location) =>
     (!downloadUnit || location.unitId === downloadUnit) && downloadEmployees.some((employee) => employee.workLocationId === location.id))
   const downloadPositions = employeeExportPositionOptions([
     ...scopedJabatan.filter((position) => !UUID_LIKE.test(position.id ?? '')),
     ...(jabatan ?? []).filter((position) => UUID_LIKE.test(position.id ?? '') &&
       position.contractId === resolvedContractUuid && (!position.up3Id || position.up3Id === resolvedUp3Uuid)),
-  ], downloadEmployees)
-  const downloadPositionNames = new Map(downloadPositions.map((position) => [position.id, position.name]))
+  ], downloadEmployees).filter((position) => downloadEmployees.some((employee) => position.positionIds.includes(employee.positionId)))
+  const downloadPositionNames = new Map(downloadPositions.flatMap((position) => position.positionIds.map((id) => [id, position.name])))
   const selectedDownloadEmployees = filterEmployeeExportRows(downloadEmployees, {
     unitId: downloadUnit, locationId: downloadLocation, positionId: downloadPosition,
+    positionIds: downloadPositions.find((position) => position.id === downloadPosition)?.positionIds ?? null,
   })
   const downloadGroupCount = new Set(selectedDownloadEmployees.map((employee) => JSON.stringify([employee.unitId, employee.workLocationId || null]))).size
 
@@ -1299,12 +1300,14 @@ export default function SLADatabasePegawai({
               </div>
             )}
             <div className="sla-context-field">
-              <span className="sla-context-label">Tanggal Efektif (YYYY-MM-DD)</span>
-              <input
-                className={inputClass}
+              <span className="sla-context-label">{form.statusReason === 'Resign' ? 'Tanggal Resign' : form.statusReason === 'PHK' ? 'Tanggal PHK' : form.statusReason === 'Pensiun' ? 'Tanggal Pensiun' : 'Tanggal Efektif Nonaktif'} *</span>
+              <ModernDatePicker
                 value={form.statusEffectiveDate}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, statusEffectiveDate: e.target.value }))
+                disabled={saving}
+                placeholder="Pilih tanggal efektif nonaktif"
+                ariaLabel={form.statusReason === 'Resign' ? 'Pilih tanggal resign' : form.statusReason === 'PHK' ? 'Pilih tanggal PHK' : form.statusReason === 'Pensiun' ? 'Pilih tanggal pensiun' : 'Pilih tanggal efektif nonaktif'}
+                onChange={(next) =>
+                  setForm((prev) => ({ ...prev, statusEffectiveDate: next }))
                 }
               />
             </div>
@@ -1906,7 +1909,7 @@ export default function SLADatabasePegawai({
               <button type="button" className="sla-modal-close" aria-label="Tutup download" disabled={downloadBusy} onClick={() => setDownloadOpen(false)}>×</button>
             </div>
             <div className="sla-modal-body">
-              <p className="sla-flat-note">Satu file Excel, satu sheet untuk setiap kombinasi unit dan lokasi penempatan. Pilihan ini mencakup pegawai tersimpan, terlepas dari filter tabel.</p>
+              <p className="sla-flat-note">Satu file Excel, satu sheet untuk setiap kombinasi unit dan lokasi penempatan. Hanya pegawai tersimpan yang aktif per hari ini, terlepas dari filter tabel. Pegawai nonaktif dan yang sudah efektif pensiun tidak disertakan.</p>
               <div className="sla-detail-fields">
                 <label className="sla-context-field"><span className="sla-context-label">Unit / ULP</span>
                   <select autoFocus className="sla-context-select" disabled={downloadBusy} value={downloadUnit} onChange={(event) => { setDownloadUnit(event.target.value); setDownloadLocation('') }}>

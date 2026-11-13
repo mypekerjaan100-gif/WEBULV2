@@ -1,16 +1,36 @@
+import { effectiveEmploymentStatusOf } from './pensiunPelayananTeknik.js'
+
 export const EMPLOYEE_EXPORT_COLUMNS = ['No', 'NIP', 'Nama', 'Unit / ULP', 'Lokasi Penempatan', 'Jabatan', 'Tanggal Lahir', 'Status', 'Jenis Perjanjian Kerja', 'Masa Pensiun']
 
-export function filterEmployeeExportRows(employees, { unitId = '', locationId = '', positionId = '' } = {}) {
+export function activeEmployeeExportRows(employees, date, pensionPolicy) {
+  return employees.filter((employee) => effectiveEmploymentStatusOf(employee, date, pensionPolicy).status === 'Aktif')
+}
+
+export function filterEmployeeExportRows(employees, { unitId = '', locationId = '', positionId = '', positionIds = null } = {}) {
   const matches = (value, selection) => !selection || (selection === '__none__' ? !value : value === selection)
   return employees.filter((employee) => matches(employee.unitId, unitId) &&
-    matches(employee.workLocationId, locationId) && matches(employee.positionId, positionId))
+    matches(employee.workLocationId, locationId) &&
+    (positionIds ? positionIds.includes(employee.positionId) : matches(employee.positionId, positionId)))
 }
 
 export function employeeExportPositionOptions(positions, employees) {
   const usedIds = new Set(employees.map((employee) => employee.positionId).filter(Boolean))
-  return [...new Map(positions
+  const eligible = [...new Map(positions
     .filter((position) => (position.status ?? 'Aktif') === 'Aktif' || usedIds.has(position.id))
     .map((position) => [position.id, position])).values()]
+  const groups = new Map()
+  for (const position of eligible) {
+    const name = String(position.name ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ')
+    const key = name.toLocaleLowerCase('id')
+    const existing = groups.get(key)
+    if (existing) {
+      existing.positionIds.push(position.id)
+      if ((position.status ?? 'Aktif') === 'Aktif') existing.status = 'Aktif'
+    } else {
+      groups.set(key, { ...position, name, status: position.status ?? 'Aktif', positionIds: [position.id] })
+    }
+  }
+  return [...groups.values()]
     .sort((a, b) => a.name.localeCompare(b.name, 'id'))
 }
 
