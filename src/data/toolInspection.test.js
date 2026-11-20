@@ -243,4 +243,16 @@ assert(report.includes('Inspeksi Kendaraan'), 'Tombol inspeksi kendaraan hilang'
 assert(report.includes('camera'), 'Ikon kamera inspeksi hilang')
 assert(report.includes('vehicleInspectionBusy'), 'Status modal inspeksi kendaraan harus digabung ke editor state halaman')
 
+// --- Verifikasi penyerahan alat rusak oleh Koordinator Area ---
+const coordinatorMigration = readFileSync(new URL('../../supabase/migrations/20261120073844_coordinator_tool_handover.sql', import.meta.url), 'utf8')
+assert(coordinatorMigration.includes('ops_verify_tool_issue_handover'), 'RPC verifikasi koordinator hilang')
+assert(coordinatorMigration.includes('Menunggu verifikasi penyerahan oleh Koordinator Area'), 'Kunci penyelesaian K3 hilang')
+assert(coordinatorMigration.includes('alat.issue.verify'), 'Izin verifikasi hilang')
+assert(coordinatorMigration.includes("'UP3'"), 'Cakupan UP3 hilang')
+assert(coordinatorMigration.includes('handover_verified_at'), 'Waktu verifikasi hilang')
+assert(matrix.includes('Menunggu verifikasi Koordinator Area'), 'Status menunggu verifikasi pada matriks hilang')
+assert(matrix.includes('handover_verified_at'), 'Verifikasi harus menjadi syarat tombol serah terima')
+assert(panel.includes('Menunggu verifikasi Koordinator Area'), 'Status menunggu verifikasi pada panel unit hilang')
+assert(repo.includes('verifyToolIssueHandover'), 'Repository verifikasi hilang')
+
 console.log(`toolInspection.test.js: ${passed} assertions passed`)

@@ -33,7 +33,7 @@ export async function handleAssignContractAccess(
     return { status: 400, body: { error: "invalid_contract_assignment" } };
   }
   if ((contractRole === "ADMIN_UP3" && request.operationalUnitId != null) ||
-    ((contractRole === "ADMIN_ULP" || contractRole.startsWith("CUSTOM_")) && !uuid(request.operationalUnitId))) {
+    (contractRole === "ADMIN_ULP" && !uuid(request.operationalUnitId))) {
     return { status: 400, body: { error: "invalid_role_scope" } };
   }
 
@@ -55,10 +55,14 @@ export async function handleAssignContractAccess(
   if (role.is_active === false) {
     return { status: 400, body: { error: "invalid_role_scope", message: "Role tidak aktif." } };
   }
-  if (role.is_custom && role.role_level !== "ULP") {
-    return { status: 400, body: { error: "invalid_role_scope", message: "Role custom hanya mendukung cakupan ULP." } };
+  if (role.is_custom && !["ULP", "UP3"].includes(role.role_level)) {
+    return { status: 400, body: { error: "invalid_role_scope" } };
   }
-  if (contractRole === "ADMIN_ULP" || role.is_custom) {
+  if (role.is_custom && role.role_level === "UP3" && request.operationalUnitId != null) {
+    return { status: 400, body: { error: "invalid_role_scope" } };
+  }
+  if (contractRole === "ADMIN_ULP" || (role.is_custom && role.role_level === "ULP")) {
+    if (!uuid(request.operationalUnitId)) return { status: 400, body: { error: "invalid_role_scope" } };
     const { data: ulp } = await adminClient
       .from("organization_units")
       .select("id")

@@ -51,7 +51,8 @@ assert(createUser.includes('role.startsWith("CUSTOM_")'), 'Scope ULP role custom
 
 const assign = read('../../supabase/functions/user-management/handlers/assignContractAccess.ts')
 assert(assign.includes('role.is_custom'), 'Assignment harus menerima role custom')
-assert(assign.includes('Role custom hanya mendukung cakupan ULP'), 'Assignment harus memvalidasi level ULP')
+assert(assign.includes('["ULP", "UP3"].includes(role.role_level)'), 'Assignment harus memvalidasi level ULP/UP3')
+assert(assign.includes('role.role_level === "UP3"'), 'Assignment UP3 tidak boleh memakai ULP')
 
 const app = read('../App.jsx')
 assert(app.includes('customMenuAccess'), 'App harus memakai menu akses custom')
@@ -69,6 +70,8 @@ assert(roleModal.includes('Manajemen Role'), 'Judul Manajemen Role hilang')
 assert(roleModal.includes('Tidak ada akses'), 'Pilihan tanpa akses hilang')
 assert(roleModal.includes('Hanya lihat'), 'Pilihan hanya lihat hilang')
 assert(roleModal.includes('Lihat & edit'), 'Pilihan edit hilang')
+assert(roleModal.includes('Lihat & verifikasi'), 'Pilihan verifikasi hilang')
+assert(roleModal.includes('value="UP3"'), 'Pilihan cakupan UP3 hilang')
 assert(roleModal.includes('alat_kendaraan'), 'Menu Alat & Kendaraan hilang')
 assert(!roleModal.includes('analisis_finansial'), 'Finansial belum boleh ditampilkan pada role dasar')
 assert(roleModal.includes('CUSTOM_'), 'Prefix kode role hilang')
@@ -84,5 +87,9 @@ assert(users.includes('options.customRoles'), 'Form pengguna belum memuat role c
 assert(users.includes('{custom.displayName}</option>'), 'Role buatan Super Admin harus tampil dengan nama saja')
 assert(!users.includes('optgroup'), 'Dropdown role tidak boleh mengelompokkan role custom terpisah')
 assert(users.includes('requiresUlp'), 'Form role custom harus meminta ULP')
+assert(users.includes("customRole.scopeLevel !== 'UP3'"), 'Form pengguna harus memisahkan ULP dan UP3')
+
+const guard = read('../lib/previewWriteGuard.js')
+assert(guard.includes('ops_verify_tool_issue_handover'), 'Verifikasi harus diblokir saat pratinjau')
 
 console.log(`customRoleAccess.test.js: ${passed} assertions passed`)

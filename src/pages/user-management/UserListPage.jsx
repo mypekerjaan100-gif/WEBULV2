@@ -176,6 +176,8 @@ function ContractAccessForm({ user, onSuccess }) {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const customRole = options.customRoles.find((item) => item.code === role)
+  const requiresUlp = role === 'ADMIN_ULP' || (Boolean(customRole) && customRole.scopeLevel !== 'UP3')
 
   useEffect(() => {
     let cancelled = false
@@ -300,7 +302,7 @@ function DetailModal({ user, onClose, isSuperAdmin, onRefresh }) {
   const currentAccess = user.isSuperAdmin
     ? { role: 'SUPER_ADMIN', scope: 'System' }
     : activeContract.length > 0
-      ? { role: activeContract[0].role, scope: activeContract[0].role === 'ADMIN_UP3' ? activeContract[0].up3Name : activeContract[0].ulpName }
+      ? { role: activeContract[0].role, scope: activeContract[0].role === 'ADMIN_UP3' || !activeContract[0].ulpName ? activeContract[0].up3Name : activeContract[0].ulpName }
       : activeOrg.length > 0
         ? { role: activeOrg[0].role, scope: activeOrg[0].unitName }
         : null
@@ -508,7 +510,7 @@ function CreateUserModal({ onClose, onSuccess }) {
   const scopes = options.scopes.filter((scope) => scope.contractId === contractId)
   const selectedScope = scopes.find((scope) => scope.up3Id === up3Id)
   const internalUnits = options.internalOrganizationUnits.filter((unit) => unit.type === organizationRole)
-  const requiresUlp = role === 'ADMIN_ULP' || Boolean(customRole)
+  const requiresUlp = role === 'ADMIN_ULP' || (Boolean(customRole) && customRole.scopeLevel !== 'UP3')
   const scopeComplete = role === 'SUPER_ADMIN'
     || (contractRole && contractId && up3Id && (!requiresUlp || ulpId))
     || (organizationRole && internalOrgUnitId)

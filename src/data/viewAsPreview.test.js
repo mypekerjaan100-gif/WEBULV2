@@ -41,6 +41,7 @@ for (const name of [
   'ops_save_vehicle_condition_subset',
   'ops_submit_tool_inspection',
   'ops_resolve_tool_issue',
+  'ops_verify_tool_issue_handover',
   'deactivate_feeder',
   'activate_feeder',
   'prepare_employee_photo_upload',

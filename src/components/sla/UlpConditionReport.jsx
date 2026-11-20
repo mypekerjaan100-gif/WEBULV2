@@ -13,6 +13,7 @@ import UlpToolInspectionMatrix from './UlpToolInspectionMatrix.jsx'
 import UlpToolUnitPanel from './UlpToolUnitPanel.jsx'
 import VehicleInspectionModal from './VehicleInspectionModal.jsx'
 import VehicleInspectionResultModal from './VehicleInspectionResultModal.jsx'
+import CoordinatorToolIssues from './CoordinatorToolIssues.jsx'
 
 function Status({ value }) {
   return <span className={`uc-status uc-status--${value || 'unfilled'}`}>{CONDITION_LABELS[value] || 'Belum Diisi'}</span>
@@ -41,7 +42,7 @@ function vehicleBadge(summary) {
 
 export default function UlpConditionReport({
   contractUuid, up3Uuid, ownUlpUuid, canManage, canManagePlate = false, canInspect = false,
-  canResolveIssue = false, canPickUlp, units = [], initialMonth, initialUlpId = null,
+  canResolveIssue = false, canVerifyIssue = false, canPickUlp, units = [], initialMonth, initialUlpId = null,
   overviewEnabled = true, onMonthChange, onEditorStateChange, onOpenStandards, issueTarget = null,
 }) {
   const ulps = units.filter((unit) => unit.type === 'ULP')
@@ -477,6 +478,7 @@ export default function UlpConditionReport({
 
   const handleToolChanged = async () => {
     setToolReloadToken((value) => value + 1)
+    if (!ulpId) { setReloadToken((value) => value + 1); return }
     const token = request.current
     try {
       const data = await getUlpConditionReport({ contractId: contractUuid, up3Id: up3Uuid, ulpId, month })
@@ -524,6 +526,7 @@ export default function UlpConditionReport({
     </div></header>
 
     {error && <div className="uc-alert uc-alert--error" role="alert">{error}<button type="button" className="sla-btn" disabled={saving} onClick={() => { if (canChangeContext()) setReloadToken((value) => value + 1) }}>Muat Ulang</button></div>}
+    {canVerifyIssue && <CoordinatorToolIssues contractId={contractUuid} up3Id={up3Uuid} ulpId={ulpId} units={units} reloadToken={toolReloadToken} onChanged={handleToolChanged} />}
     {message && <p className="uc-alert" role="status">{message}</p>}
 
     {selectedVehicle && selectedSummary ? (

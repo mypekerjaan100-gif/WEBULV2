@@ -112,7 +112,7 @@ export default function App() {
   const customMenuAccess = previewCustomRole
     ? (previewCustomRole.menuAccess ?? {})
     : customContractAccess?.menu_access ?? null
-  const customCanView = (menu) => ['read', 'edit'].includes(customMenuAccess?.[menu] ?? 'none')
+  const customCanView = (menu) => ['read', 'edit', 'verify'].includes(customMenuAccess?.[menu] ?? 'none')
   const canViewVehicles = effectiveIsSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope || isManagementUserRaw || customCanView('alat_kendaraan')
   const slaPrimaryModules = useMemo(
     () => {
@@ -265,7 +265,7 @@ export default function App() {
       ? contractAccess[0]
       : null
     if (!access?.contract_code || !access.operational_up3_id ||
-      ((access.role === 'ADMIN_ULP' || access.is_custom) && !access.operational_unit_id)) {
+      ((access.role === 'ADMIN_ULP' || (access.is_custom && access.role_level !== 'UP3')) && !access.operational_unit_id)) {
       setRealScope(null)
       setRealScopeLoaded(true)
       return undefined
@@ -274,7 +274,7 @@ export default function App() {
       .then((orgUnits) => {
         if (cancelled) return
         const up3 = orgUnits.find((unit) => unit.uuid === access.operational_up3_id && unit.type === 'UP3')
-        const unit = access.role === 'ADMIN_UP3'
+        const unit = access.role === 'ADMIN_UP3' || (access.is_custom && access.role_level === 'UP3')
           ? up3
           : orgUnits.find(
             (entry) => entry.uuid === access.operational_unit_id && entry.type === 'ULP' && entry.parentUuid === up3?.uuid,
@@ -289,7 +289,7 @@ export default function App() {
           contractId: contract.id,
           up3Id: up3.legacyKey,
           unitId: unit.legacyKey,
-          role: access.role === 'ADMIN_UP3' ? 'up3' : 'ulp',
+          role: access.role === 'ADMIN_UP3' || (access.is_custom && access.role_level === 'UP3') ? 'up3' : 'ulp',
         })
         setRealScopeLoaded(true)
       })
@@ -534,6 +534,7 @@ export default function App() {
     const custom = nextRole === 'ADMIN_ULP' ? null : customRoleList.find((role) => role.code === nextRole)
     if (nextRole !== 'ADMIN_ULP' && !custom) return
     setViewAsRoleCode(nextRole)
+    if (custom?.scopeLevel === 'UP3') { setRole('up3'); setUnitId(up3Id); return }
     setRole('ulp')
     setUnitId((current) => activeUlps.some((unit) => unit.id === current)
       ? current
@@ -685,6 +686,7 @@ export default function App() {
               initialPeriode={slaRouteRequest?.periode ?? null}
               routeRequest={slaRouteRequest}
               customMenuAccess={customMenuAccess}
+              customScopeLevel={previewCustomRole?.scopeLevel ?? customContractAccess?.role_level}
               viewAsRoleCode={previewActive ? viewAsRoleCode : null}
               viewAsLabel={previewLabel}
               toolIssueTarget={toolIssueTarget}

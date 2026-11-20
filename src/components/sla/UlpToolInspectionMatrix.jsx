@@ -197,7 +197,7 @@ export default function UlpToolInspectionMatrix({
   }
 
   const openResolve = (item, asset) => {
-    if (submitting || !canResolveIssue || !asset.open_issue || future) return
+    if (submitting || !canResolveIssue || !asset.open_issue?.handover_verified_at || future) return
     if (!confirmSwitch(asset.id)) return
     const init = {
       resolvedAt: pontianakInputValue(),
@@ -265,7 +265,7 @@ export default function UlpToolInspectionMatrix({
 
   const submitResolution = async (event) => {
     event.preventDefault()
-    if (!editor?.asset?.open_issue) return
+    if (!editor?.asset?.open_issue?.handover_verified_at) return
     setFormError('')
     if (!resolveForm.resolvedAt) { setFormError('Tanggal dan waktu serah terima wajib diisi.'); return }
     if (!resolveForm.note.trim()) { setFormError('Catatan serah terima wajib diisi.'); return }
@@ -436,7 +436,7 @@ export default function UlpToolInspectionMatrix({
                                     <span className={`tool-unit-state tool-unit-state--${status.tone}`}>{status.label}</span>
                                     <span className="tool-unit-summary-actions">
                                       {issue && canResolveIssue && !future && (
-                                        <button type="button" className="tool-action-btn is-warning" disabled={submitting} onClick={() => openResolve(item, asset)}>
+                                        <button type="button" className="tool-action-btn is-warning" disabled={submitting || !issue.handover_verified_at} onClick={() => openResolve(item, asset)}>
                                           <Icon name="refresh-cw" size={12} /> Serah Terima
                                         </button>
                                       )}
@@ -445,7 +445,7 @@ export default function UlpToolInspectionMatrix({
                                           <Icon name="shield" size={12} /> Inspeksi
                                         </button>
                                       )}
-                                      {issue && !canResolveIssue && <span className="tool-unit-hint"><Icon name="clock" size={11} /> Issue terbuka</span>}
+                                      {issue && <span className="tool-unit-hint"><Icon name="clock" size={11} /> {issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)}` : 'Menunggu verifikasi Koordinator Area'}</span>}
                                       {!issue && !canInspect && <span className="tool-unit-hint"><Icon name="shield" size={11} /> Hanya lihat</span>}
                                     </span>
                                   </div>
@@ -541,6 +541,7 @@ export default function UlpToolInspectionMatrix({
                                 <div>
                                   <strong>{entry.equipment_name}</strong>
                                   <span>Rusak {formatDateTime(entry.opened_at)} · diganti {formatDateTime(entry.resolved_at)}</span>
+                                  {entry.handover_verified_at && <span>Diverifikasi {formatDateTime(entry.handover_verified_at)} · {entry.handover_verified_by_name}</span>}
                                 </div>
                                 <div>
                                   <span className="tool-muted">{agePhrase(entry.age_at_failure_months, 'Umur saat rusak')} · standar {entry.standard_life_months == null ? 'belum diisi' : ageLabel(entry.standard_life_months)}</span>

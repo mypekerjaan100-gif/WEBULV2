@@ -12,6 +12,7 @@ const ACCESS_OPTIONS = [
   { value: 'none', label: 'Tidak ada akses' },
   { value: 'read', label: 'Hanya lihat' },
   { value: 'edit', label: 'Lihat & edit' },
+  { value: 'verify', label: 'Lihat & verifikasi' },
 ]
 
 const emptyMenuAccess = () => Object.fromEntries(MENU_OPTIONS.map((menu) => [menu.key, 'none']))
@@ -25,10 +26,10 @@ const roleCodeFromName = (value) => String(value ?? '')
   .slice(0, 60)
 
 const accessSummary = (menuAccess) => {
-  const read = MENU_OPTIONS.filter((menu) => menuAccess?.[menu.key] === 'read').length
+  const read = MENU_OPTIONS.filter((menu) => ['read', 'verify'].includes(menuAccess?.[menu.key])).length
   const edit = MENU_OPTIONS.filter((menu) => menuAccess?.[menu.key] === 'edit').length
   if (!read && !edit) return 'Tidak ada akses'
-  return [read ? `${read} hanya lihat` : '', edit ? `${edit} lihat & edit` : ''].filter(Boolean).join(' · ')
+  return [read ? `${read} lihat${menuAccess?.alat_kendaraan === 'verify' ? ' + verifikasi alat' : ''}` : '', edit ? `${edit} lihat & edit` : ''].filter(Boolean).join(' · ')
 }
 
 function RoleForm({ role, onCancel, onSaved }) {
@@ -39,6 +40,7 @@ function RoleForm({ role, onCancel, onSaved }) {
   ))
   const [codeTouched, setCodeTouched] = useState(false)
   const [description, setDescription] = useState(role?.description ?? '')
+  const [scopeLevel, setScopeLevel] = useState(role?.scopeLevel ?? 'ULP')
   const [menuAccess, setMenuAccess] = useState(() => ({ ...emptyMenuAccess(), ...(role?.menuAccess ?? {}) }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -74,7 +76,7 @@ function RoleForm({ role, onCancel, onSaved }) {
         code: isEdit ? role.code : codeSuffix.trim(),
         displayName: displayName.trim(),
         description: description.trim(),
-        scopeLevel: 'ULP',
+        scopeLevel,
         menuAccess,
         expectedRevision: role?.revision ?? null,
       })
@@ -113,8 +115,10 @@ function RoleForm({ role, onCancel, onSaved }) {
       </div>
 
       <div className="role-scope-note">
-        <strong>Cakupan data: ULP</strong>
-        <span>Unit ULP ditentukan saat role diberikan kepada pengguna.</span>
+        <label>Cakupan data <select value={scopeLevel} disabled={Boolean(role?.assignedUsers)} onChange={(event) => { setScopeLevel(event.target.value); setMenuAccess(emptyMenuAccess()) }}>
+          <option value="ULP">Satu ULP</option><option value="UP3">Seluruh ULP dalam UP3</option>
+        </select></label>
+        <span>Scope ditentukan saat role diberikan kepada pengguna. Cakupan UP3 mendukung pemantauan dan verifikasi Alat & Kendaraan.</span>
       </div>
 
       <div className="role-matrix" role="table" aria-label="Hak akses menu">
@@ -138,7 +142,9 @@ function RoleForm({ role, onCancel, onSaved }) {
                 <option
                   key={option.value}
                   value={option.value}
-                  disabled={menu.editDisabled && option.value === 'edit'}
+                  disabled={(menu.editDisabled && option.value === 'edit')
+                    || (option.value === 'verify' && (menu.key !== 'alat_kendaraan' || scopeLevel !== 'UP3'))
+                    || (scopeLevel === 'UP3' && option.value !== 'none' && (menu.key !== 'alat_kendaraan' || option.value === 'edit'))}
                 >
                   {option.label}
                 </option>

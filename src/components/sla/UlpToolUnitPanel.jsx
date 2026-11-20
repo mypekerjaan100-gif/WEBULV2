@@ -104,7 +104,7 @@ export default function UlpToolUnitPanel({
   }
 
   const openResolve = (asset) => {
-    if (!canResolveIssue || !asset.open_issue) return
+    if (!canResolveIssue || !asset.open_issue?.handover_verified_at) return
     setResolveTarget({
       ...asset.open_issue,
       asset_id: asset.id,
@@ -229,7 +229,7 @@ export default function UlpToolUnitPanel({
                   </td>
                   <td data-label="Aksi">
                     {issue && canResolveIssue && (
-                      <Button variant="primary" size="small" onClick={() => openResolve(asset)}>Selesaikan</Button>
+                      <Button variant="primary" size="small" disabled={!issue.handover_verified_at} onClick={() => openResolve(asset)}>Selesaikan</Button>
                     )}
                     {!issue && canInspect && (
                       <Button variant="secondary" size="small" disabled={!asset.id} onClick={() => openInspect(asset)}>
@@ -237,7 +237,7 @@ export default function UlpToolUnitPanel({
                       </Button>
                     )}
                     {!issue && !canInspect && <span className="tool-muted">Hanya lihat</span>}
-                    {issue && !canResolveIssue && <span className="tool-muted">Menunggu K3/Admin</span>}
+                    {issue && <span className="tool-muted">{issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)} · menunggu penggantian` : 'Menunggu verifikasi Koordinator Area'}</span>}
                   </td>
                 </tr>
               )
@@ -263,6 +263,7 @@ export default function UlpToolUnitPanel({
                 <div>
                   <strong>{entry.equipment_name}</strong>
                   <span>Rusak {formatDateTime(entry.opened_at)} · diganti {formatDateTime(entry.resolved_at)}</span>
+                  {entry.handover_verified_at && <span>Diverifikasi {formatDateTime(entry.handover_verified_at)} · {entry.handover_verified_by_name}</span>}
                 </div>
                 <div>
                   <span className="tool-muted">Umur saat rusak {ageLabel(entry.age_at_failure_months)} · standar {entry.standard_life_months == null ? 'belum diisi' : ageLabel(entry.standard_life_months)}</span>

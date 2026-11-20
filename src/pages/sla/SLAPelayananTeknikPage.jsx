@@ -177,6 +177,7 @@ export default function SLAPelayananTeknikPage({
   routeRequest = null,
   onRouteChange = null,
   customMenuAccess = null,
+  customScopeLevel = 'ULP',
   viewAsRoleCode = null,
   viewAsLabel = '',
   toolIssueTarget = null,
@@ -185,7 +186,7 @@ export default function SLAPelayananTeknikPage({
     if (customMenuAccess) {
       const allowed = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp'].filter((id) => {
         const menu = { 'sla': 'sla', 'variable-cost': 'variable_cost', 'lembur': 'lembur', 'kendaraan-ulp': 'alat_kendaraan' }[id]
-        return ['read', 'edit'].includes(customMenuAccess?.[menu] ?? 'none')
+        return ['read', 'edit', 'verify'].includes(customMenuAccess?.[menu] ?? 'none')
       })
       return initialModule && allowed.includes(initialModule) ? initialModule : (allowed[0] ?? 'sla')
     }
@@ -257,7 +258,8 @@ export default function SLAPelayananTeknikPage({
   const canViewReadOnlyMasterLocations = isAdminUlp
   const isCustomRole = Boolean(customMenuAccess)
   const customMenuLevel = (menu) => customMenuAccess?.[menu] ?? 'none'
-  const customCanRead = (menu) => ['read', 'edit'].includes(customMenuLevel(menu))
+  const customCanRead = (menu) => ['read', 'edit', 'verify'].includes(customMenuLevel(menu))
+  const isCustomUp3 = Boolean(customMenuAccess) && customScopeLevel === 'UP3'
   const customCanEdit = (menu) => customMenuLevel(menu) === 'edit'
   const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp || isManagement || customCanRead('alat_kendaraan')
   const canMutateMasterLocations = isSuperAdmin
@@ -1462,7 +1464,8 @@ export default function SLAPelayananTeknikPage({
           ownUlpUuid={adminUlpAccess?.operational_unit_id ?? (isCustomRole ? selectedUnitUuid : null)}
           initialUlpId={isManagement && !isSuperAdmin && !isAdminUp3 ? selectedUnitUuid : null}
           overviewEnabled={isSuperAdmin || isAdminUp3 || !isManagement}
-          canPickUlp={isSuperAdmin || isAdminUp3 || isManagement}
+          canPickUlp={isSuperAdmin || isAdminUp3 || isManagement || isCustomUp3}
+          canVerifyIssue={isSuperAdmin || (isCustomUp3 && customMenuLevel('alat_kendaraan') === 'verify')}
           canManage={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
           canManagePlate={isSuperAdmin || isAdminUlp}
           canInspect={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}

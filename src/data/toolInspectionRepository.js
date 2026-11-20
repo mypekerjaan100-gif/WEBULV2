@@ -50,6 +50,12 @@ export async function listOpenToolIssues({ contractId, up3Id }) {
   return data ?? []
 }
 
+export async function verifyToolIssueHandover({ issueId, verifiedAt, expectedRevision }) {
+  return rpc('ops_verify_tool_issue_handover', {
+    p_issue_id: issueId, p_verified_at: verifiedAt, p_expected_revision: expectedRevision,
+  })
+}
+
 export async function uploadToolEvidence({ contractId, up3Id, ulpId, assetId, file }) {
   const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
   const path = `${contractId}/${up3Id}/${ulpId}/${assetId}/${crypto.randomUUID()}.${extension}`
