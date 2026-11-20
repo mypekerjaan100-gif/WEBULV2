@@ -77,6 +77,7 @@ export default function UlpConditionReport({
   const [highlightIssueId, setHighlightIssueId] = useState(null)
   const [panelEditor, setPanelEditor] = useState({ dirty: false, busy: false })
   const [vehicleInspections, setVehicleInspections] = useState([])
+  const [vehicleInspectionStatus, setVehicleInspectionStatus] = useState('idle')
   const [vehicleInspectionOpen, setVehicleInspectionOpen] = useState(false)
   const [vehicleResultOpen, setVehicleResultOpen] = useState(false)
   const [vehicleInspectionBusy, setVehicleInspectionBusy] = useState({ dirty: false, busy: false })
@@ -125,7 +126,7 @@ export default function UlpConditionReport({
   const selectedOpenIssues = toolBundle.openIssues.filter((issue) => issue.vehicle_id === selectedVehicleId)
   const focusedToolVehicle = toolBundle.vehicles.find((vehicle) => vehicle.id === focusedToolVehicleId) || null
   const focusedToolHistory = toolBundle.history.filter((entry) => entry.vehicle_id === focusedToolVehicleId)
-  const selectedLastInspection = vehicleInspections.find((row) => row.slot_id === selectedVehicleId) || null
+  const selectedLastInspection = vehicleInspections.find((row) => row.slot_id === selectedVehicleId && row.period_month === `${month}-01`) || null
 
   const applyBundle = (data) => {
     const displayItems = applyMonthlyConditionDefaults(data.items || [])
@@ -181,15 +182,19 @@ export default function UlpConditionReport({
 
   useEffect(() => {
     let active = true
+    setVehicleInspections([])
+    setVehicleResultOpen(false)
+    setVehicleInspectionStatus('loading')
     if (isOverview || !contractUuid || !up3Uuid || !ulpId) {
       setVehicleInspections([])
+      setVehicleInspectionStatus('idle')
       return undefined
     }
-    listVehicleLastInspections({ contractId: contractUuid, up3Id: up3Uuid, ulpId })
-      .then((rows) => { if (active) setVehicleInspections(rows || []) })
-      .catch(() => { if (active) setVehicleInspections([]) })
+    listVehicleLastInspections({ contractId: contractUuid, up3Id: up3Uuid, ulpId, month })
+      .then((rows) => { if (active) { setVehicleInspections(rows || []); setVehicleInspectionStatus('ready') } })
+      .catch(() => { if (active) { setVehicleInspections([]); setVehicleInspectionStatus('error') } })
     return () => { active = false }
-  }, [contractUuid, up3Uuid, ulpId, isOverview, vehicleInspectionReloadToken])
+  }, [contractUuid, up3Uuid, ulpId, month, isOverview, vehicleInspectionReloadToken])
 
   useEffect(() => {
     if (!bundle || !highlightIssueId) return
@@ -565,7 +570,9 @@ export default function UlpConditionReport({
                 <Icon name="camera" size={12} />
                 {selectedLastInspection
                   ? `Inspeksi terakhir ${timestamp(selectedLastInspection.inspected_at)} · ${selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · ${selectedLastInspection.inspected_by_name || 'Petugas'}`
-                  : 'Belum diinspeksi'}
+                  : vehicleInspectionStatus === 'loading' ? 'Memuat inspeksi...'
+                    : vehicleInspectionStatus === 'error' ? 'Inspeksi gagal dimuat.'
+                      : `Belum ada inspeksi pada ${conditionMonthLabel(month)}`}
               </span>
               {selectedLastInspection && (
                 <button

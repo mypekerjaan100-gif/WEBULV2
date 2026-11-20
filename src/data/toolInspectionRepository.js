@@ -70,10 +70,12 @@ export async function getToolEvidenceUrl(path) {
 
 // Inspeksi kendaraan: riwayat terpisah per kendaraan (slot penugasan),
 // dengan 4 slot foto wajib di bucket ops-vehicle-inspections.
-export async function listVehicleLastInspections({ contractId, up3Id, ulpId }) {
+export async function listVehicleLastInspections({ contractId, up3Id, ulpId, month }) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month ?? '')) throw new Error('Periode inspeksi tidak valid.')
   const data = await rpc('ops_get_vehicle_last_inspections', {
     ...scope({ contractId, up3Id }),
     p_ulp_id: ulpId,
+    p_month: `${month}-01`,
   })
   return data ?? []
 }

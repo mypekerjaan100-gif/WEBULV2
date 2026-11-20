@@ -238,7 +238,7 @@ assert(/\.vehicle-photo-slot-frame\s*\{[^}]*height: 92px;/.test(style), 'Ukuran 
 
 assert(report.includes('VehicleInspectionModal'), 'Modal inspeksi kendaraan harus dirender di detail kendaraan')
 assert(report.includes('listVehicleLastInspections'), 'Inspeksi terakhir harus dimuat per scope ULP')
-assert(report.includes('Belum diinspeksi'), 'Keterangan belum diinspeksi hilang')
+assert(report.includes('Belum ada inspeksi pada ${conditionMonthLabel(month)}'), 'Keterangan belum diinspeksi harus sesuai periode')
 assert(report.includes('Inspeksi Kendaraan'), 'Tombol inspeksi kendaraan hilang')
 assert(report.includes('camera'), 'Ikon kamera inspeksi hilang')
 assert(report.includes('vehicleInspectionBusy'), 'Status modal inspeksi kendaraan harus digabung ke editor state halaman')
