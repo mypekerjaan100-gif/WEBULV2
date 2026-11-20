@@ -237,7 +237,7 @@ export default function UlpToolUnitPanel({
                       </Button>
                     )}
                     {!issue && !canInspect && <span className="tool-muted">Hanya lihat</span>}
-                    {issue && <span className="tool-muted">{issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)} · menunggu penggantian` : 'Menunggu verifikasi Koordinator Area'}</span>}
+                    {issue && <span className="tool-muted">{issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)} · menunggu serah terima ke ULP` : 'Menunggu verifikasi Koordinator Area'}</span>}
                   </td>
                 </tr>
               )
