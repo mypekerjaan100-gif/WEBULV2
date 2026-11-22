@@ -42,6 +42,9 @@
 .bbm-grid tbody tr:hover .bbm-row-actions,.bbm-grid tbody tr:focus-within .bbm-row-actions{opacity:1}
 .bbm-clear{border:0;background:transparent;color:#a34235;cursor:pointer;padding:2px;opacity:0;transition:opacity .15s}
 .bbm-grid tbody tr:hover .bbm-clear,.bbm-grid tbody tr:focus-within .bbm-clear{opacity:1}
+@media (hover: none) {
+  .bbm-row-actions, .bbm-clear { opacity: 1; }
+}
 .bbm-grid tfoot td,.bbm-grid tfoot th{font-weight:bold;background:#edf4f2;height:30px}
 .bbm-grid tfoot tr:last-child td:last-child{font-weight:normal;font-size:10px;color:#536775}
 .bbm-paper h4{margin:16px 0 5px}
