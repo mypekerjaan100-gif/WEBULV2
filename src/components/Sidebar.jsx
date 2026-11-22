@@ -77,7 +77,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
             aria-current={active ? 'page' : undefined}
             onClick={() => onNavigateModule?.(module.id)}
           >
-            <span className="nav-submenu-dot" aria-hidden="true" />
+            <span className="nav-submenu-marker">{module.icon ? <Icon name={module.icon} size={14} /> : <span className="nav-submenu-dot" aria-hidden="true" />}</span>
             <span className="nav-submenu-label">{module.name}</span>
             {badge > 0 && <span className="nav-count-badge">{badge}</span>}
           </button>

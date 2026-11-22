@@ -42,6 +42,7 @@ for (const name of [
   'ops_submit_tool_inspection',
   'ops_resolve_tool_issue',
   'ops_verify_tool_issue_handover',
+  'ops_save_bbm_sheet',
   'deactivate_feeder',
   'activate_feeder',
   'prepare_employee_photo_upload',

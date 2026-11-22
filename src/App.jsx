@@ -25,7 +25,7 @@ import {
 import { listManagementOperationalScopes } from './data/managementScopeRepository.js'
 
 const EMPTY_APPROVAL_NOTIFICATIONS = { scopeKey: null, count: 0, groups: [] }
-const SLA_PRIMARY_MODULE_IDS = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']
+const SLA_PRIMARY_MODULE_IDS = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp', 'laporan-bbm']
 
 function mergeApprovalNotifications(current, incoming) {
   const groups = incoming.groups.map((group) => {
@@ -127,10 +127,11 @@ export default function App() {
       }
       return pelayananTeknikModules.filter(
         (module) => SLA_PRIMARY_MODULE_IDS.includes(module.id)
-          && (module.id !== 'kendaraan-ulp' || canViewVehicles),
+          && (module.id !== 'kendaraan-ulp' || canViewVehicles)
+          && (module.id !== 'laporan-bbm' || effectiveIsSuperAdmin || hasAdminUp3Scope || hasAdminUlpScope),
       )
     },
-    [canViewVehicles, customMenuAccess],
+    [canViewVehicles, customMenuAccess, effectiveIsSuperAdmin, hasAdminUp3Scope, hasAdminUlpScope],
   )
   const slaConfigurationModules = useMemo(() => {
     if (customMenuAccess) return []

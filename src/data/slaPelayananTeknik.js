@@ -807,6 +807,7 @@ export const pelayananTeknikModules = [
   { id: 'variable-cost', name: 'Variable Cost' },
   { id: 'lembur', name: 'Lembur' },
   { id: 'kendaraan-ulp', name: 'Alat & Kendaraan' },
+  { id: 'laporan-bbm', name: 'Laporan BBM', icon: 'fuel' },
   { id: 'master-organisasi', name: 'Master Organisasi', adminOnly: true },
   { id: 'master-lokasi', name: 'Master Lokasi', adminOnly: true },
   { id: 'master-jabatan', name: 'Master Jabatan', adminOnly: true },

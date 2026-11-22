@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict'
+import { calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+assert.equal(monthDays('2024-02').length, 29)
+assert.equal(monthDays('2026-02').length, 28)
+const rows = [
+  { date: '2026-10-01', end: 120, photo: 'odo', purchases: [] },
+  { date: '2026-10-02', end: 150, photo: 'odo2', purchases: [{ fuel: 'Pertalite', liters: 2.5, price: 10000, photo: 'receipt' }, { fuel: 'Pertamax', liters: 1, price: 12000, photo: 'receipt2' }] },
+]
+const summary = calculateBbm('2026-10', rows, 0, { date: '2026-09-30', end: 100 })
+assert.equal(summary.km, 50)
+assert.equal(summary.total, 37000)
+assert.equal(summary.liters, 3.5)
+assert.equal(summary.days[1].start, 120)
+assert.equal(summary.recorded, 2)
+assert.equal(summary.gaps, 0)
+assert.equal(purchaseTotal({ liters: 0.333, price: 10000 }), 3330)
+assert.equal(calculateBbm('2026-10', [rows[1]], 100, null).ratio, 50 / 3.5)
+assert.equal(calculateBbm('2026-10', [rows[0]], '', null).days[0].distance, null)
+assert.equal(calculateBbm('2026-10', [rows[1]], 100, { date: '2026-09-30', end: 100 }).gaps, 1)
+validateBbm(rows, '', { end: 100 }, '2026-11-01')
+assert.throws(() => validateBbm(rows, '', null), /stand awal/)
+assert.throws(() => validateBbm([{ ...rows[0], end: 99 }], 100, null), /stand akhir/)
+assert.throws(() => validateBbm([{ ...rows[0], photo: '' }], 100, null), /foto odometer/)
+assert.throws(() => validateBbm([{ ...rows[1], purchases: [{ fuel: 'Pertalite', liters: 1, price: 10000 }] }], 100, null), /foto struk/)
+assert.throws(() => validateBbm(rows, 100, null, '2026-09-30'), /belum dapat/)
+assert.equal(calculateBbm('2026-10', [{ ...rows[0], end: 125 }, rows[1]], 100, null).days[1].distance, 25)
+console.log('BBM domain: dates, carryover, corrections, multiple purchases, totals, missing evidence passed.')

@@ -1,4 +1,8 @@
 const ICONS = {
+  fuel: <><path d="M3 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17M2 21h12M5 6h6v5H5zM13 12h2a2 2 0 0 1 2 2v3a2 2 0 0 0 4 0V8l-4-4M18 5v4h3" /></>,
+  gauge: <><path d="M4 19a10 10 0 1 1 16 0Z" /><path d="m12 13 5-6M6 12H4M12 5V3M20 12h-2" /><circle cx="12" cy="13" r="1" /></>,
+  lock: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
   operations: <><path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6l-2.4 2.4-2.3-2.3a4 4 0 0 0 5 5l7.4 7.4a2 2 0 0 1-2.8 2.8l-7.4-7.4" /><path d="m5.5 13.5-3 3a2.1 2.1 0 0 0 3 3l3-3" /></>,
   billing: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" /><path d="M9 7h6M9 11h6M9 15h3" /></>,

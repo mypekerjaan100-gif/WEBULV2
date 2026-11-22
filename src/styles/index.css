@@ -524,6 +524,14 @@ summary:focus-visible {
   color: #ffffff;
 }
 
+.nav-submenu-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: 0 0 14px;
+}
+
 .nav-submenu-dot {
   width: 5px;
   height: 5px;

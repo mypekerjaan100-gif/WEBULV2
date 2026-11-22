@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from '../../lib/AppAuth.jsx'
 import Icon from '../../components/Icon.jsx'
+import BbmReport from '../../components/sla/BbmReport.jsx'
 import { Alert, Button, StatePanel } from '../../components/ui/Primitives.jsx'
 import {
   fetchEmployeesFromSupabase,
@@ -692,6 +693,7 @@ export default function SLAPelayananTeknikPage({
       return Boolean(menuKey && customCanRead(menuKey))
     }
     if (module.id === 'kendaraan-ulp') return canViewVehicles
+    if (module.id === 'laporan-bbm') return isSuperAdmin || isAdminUp3 || isAdminUlp
     return (
       !module.adminOnly ||
       canViewAdminUp3Modules ||
@@ -708,7 +710,7 @@ export default function SLAPelayananTeknikPage({
 
   // Terapkan rute dari URL (refresh / Back-Forward); modul tak dikenal/diizinkan diabaikan.
   // Validasi modul menunggu orgMap karena izin modul admin bergantung padanya.
-  const primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp']
+  const primaryModuleIds = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp', 'laporan-bbm']
   const isCustomMenuVisible = (id) => {
     if (!isCustomRole) return true
     const menu = { sla: 'sla', 'variable-cost': 'variable_cost', lembur: 'lembur', 'kendaraan-ulp': 'alat_kendaraan' }[id]
@@ -1448,6 +1450,18 @@ export default function SLAPelayananTeknikPage({
             onApprovalTargetHandled={onApprovalTargetHandled}
           />
         )
+      ) : moduleId === 'laporan-bbm' ? (
+        orgMapStatus === 'loading' ? <StatePanel state="loading" title="Memuat laporan BBM" />
+          : !orgMap || orgMapStatus === 'error' ? <StatePanel state="error" title="Data organisasi belum tersedia">{orgMapError}</StatePanel>
+          : !(isSuperAdmin || isAdminUp3 || isAdminUlp) || isCustomRole ? <StatePanel state="empty" title="Tidak memiliki akses Laporan BBM" />
+          : <BbmReport
+              key={`${orgMap.contractUuid}:${orgMap.up3Uuid}:${viewAsRoleCode || 'actual'}:${periodMonth}:${isAdminUlp ? selectedUnitUuid : 'all'}`}
+              contractId={orgMap.contractUuid} up3Id={orgMap.up3Uuid} units={orgMap.units}
+              ownUlpId={isAdminUlp ? (adminUlpAccess?.operational_unit_id || selectedUnitUuid) : null}
+              canWrite={isAdminUlp} previewActive={previewActive} initialMonth={periodMonth}
+              onMonthChange={(month) => setPeriod(periodLabelFromMonth(month))}
+              onEditorStateChange={handleEditorStateChange}
+            />
       ) : moduleId === 'kendaraan-ulp' && VEHICLE_TAB_DISABLED ? (
         <StatePanel state="empty" title="Alat & Kendaraan sementara dinonaktifkan" />
       ) : moduleId === 'kendaraan-ulp' && orgMapStatus === 'loading' ? (
