@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
+import { periodLabelFromMonth } from './versiSlaPelayananTeknik.js'
+
+assert.equal(periodLabelFromMonth('2026-10'), 'Oktober 2026')
+assert.equal(periodLabelFromMonth('2026-10-01'), 'Oktober 2026')
+assert.equal(periodLabelFromMonth('2026-13'), null)
+assert.equal(periodLabelFromMonth(''), null)
 
 const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'error', plugins: [{
   name: 'bbm-test', configureServer(vite) {
@@ -15,8 +21,8 @@ try {
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.route('**/src/data/bbmRepository.js*', (route) => route.fulfill({ contentType: 'application/javascript', body: `
-    export const listBbmVehicles=async()=>[{id:'vehicle',ulp_id:'ulp',label:'RODA 4',plate_display:'KB 1382 AX',can_write:true}];
-    export const getBbmSheet=async()=>window.bbmSaved??{rows:[],details:{},revision:0,initial_odometer:null,previous:null,can_write:true};
+    export const listBbmVehicles=async({month})=>{if(!/^\\d{4}-\\d{2}$/.test(month??''))throw Error('invalid input syntax for type date: \"'+month+'-01\"');return [{id:'vehicle',ulp_id:'ulp',label:'RODA 4',plate_display:'KB 1382 AX',can_write:true}]};
+    export const getBbmSheet=async(v,month)=>{if(!/^\\d{4}-\\d{2}$/.test(month??''))throw Error('invalid input syntax for type date: \"'+month+'-01\"');return window.bbmSaved??{rows:[],details:{},revision:0,initial_odometer:null,previous:null,can_write:true}};
     export const saveBbmSheet=async(v,m,rev,initial,rows,details)=>{
       if(window.failSave)throw Error('Laporan berubah. Muat ulang');
       window.bbmSaved={revision:rev+1,rows,details,initial_odometer:Number(initial),previous:null,can_write:true};return window.bbmSaved;
@@ -33,10 +39,14 @@ try {
     const dom = await import('/node_modules/.vite/deps/react-dom_client.js')
     const { default: Report } = await import('/src/components/sla/BbmReport.jsx')
     const root = (dom.createRoot ?? dom.default.createRoot)(document.getElementById('root'))
-    window.renderBbm = (write, preview = false) => root.render(React.createElement(Report, { key: `${write}:${preview}`, contractId: 'contract', up3Id: 'up3', ownUlpId: write ? 'ulp' : null, units: [{ uuid: 'ulp', type: 'ULP', displayName: 'ULP Pemangkat' }], canWrite: write, previewActive: preview, initialMonth: '2026-10', onEditorStateChange: (s) => { window.editor = s } }))
-    window.renderBbm(true)
+    window.renderBbm = (write, preview = false, month = '2026-10') => root.render(React.createElement(Report, { key: `${write}:${preview}:${month}`, contractId: 'contract', up3Id: 'up3', ownUlpId: write ? 'ulp' : null, units: [{ uuid: 'ulp', type: 'ULP', displayName: 'ULP Pemangkat' }], canWrite: write, previewActive: preview, initialMonth: `${month}-01`, onMonthChange: (value) => window.renderBbm(write, preview, value), onEditorStateChange: (s) => { window.editor = s } }))
+    window.renderBbm(true, false, '2026-11')
   })
   await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
+  await page.getByLabel('Periode BBM').fill('2026-10')
+  await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
+  assert.equal(await page.getByLabel('Periode BBM').inputValue(), '2026-10')
+  assert.equal(await page.getByRole('alert').count(), 0)
   assert.equal(await page.locator('.bbm-grid').first().locator('tbody tr').count(), 31)
   await page.getByLabel('Stand awal pertama 2026-10-01').fill('40951')
   await page.getByLabel('Stand akhir 2026-10-01', { exact: true }).fill('41186')

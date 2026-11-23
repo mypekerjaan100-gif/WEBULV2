@@ -22,6 +22,13 @@ export function periodKeyFromLabel(label) {
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`
 }
 
+export function periodLabelFromMonth(periodMonth) {
+  const match = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(periodMonth ?? '')
+  if (!match) return null
+  const [, year, month] = match
+  return MONTHS[Number(month) - 1] ? `${MONTHS[Number(month) - 1]} ${year}` : null
+}
+
 export function formatDateKey(value) {
   if (!value) return null
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value))

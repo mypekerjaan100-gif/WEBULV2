@@ -74,7 +74,7 @@ import {
   submitOvertimeReplacement,
   submitOvertimeWork,
 } from '../../data/overtimeReplacementRepository.js'
-import { periodKeyFromLabel } from '../../data/versiSlaPelayananTeknik.js'
+import { periodKeyFromLabel, periodLabelFromMonth } from '../../data/versiSlaPelayananTeknik.js'
 
 
 const ROLE_NOTES = {
@@ -131,13 +131,6 @@ function versionCoversMonth(version, periodMonth) {
   end.setUTCDate(0)
   const monthEnd = end.toISOString().slice(0, 10)
   return version.periodStart <= monthEnd && version.periodEnd >= periodMonth
-}
-
-function periodLabelFromMonth(periodMonth) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodMonth ?? '')) return null
-  const [year, month] = periodMonth.split('-')
-  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-  return monthNames[Number(month) - 1] ? `${monthNames[Number(month) - 1]} ${year}` : null
 }
 
 // Gabung posisi database ke state lokal: baris lama selalu di-refresh
@@ -1459,7 +1452,10 @@ export default function SLAPelayananTeknikPage({
               contractId={orgMap.contractUuid} up3Id={orgMap.up3Uuid} units={orgMap.units}
               ownUlpId={isAdminUlp ? (adminUlpAccess?.operational_unit_id || selectedUnitUuid) : null}
               canWrite={isAdminUlp} previewActive={previewActive} initialMonth={periodMonth}
-              onMonthChange={(month) => setPeriod(periodLabelFromMonth(month))}
+              onMonthChange={(month) => {
+                const label = periodLabelFromMonth(`${month}-01`)
+                if (label) setPeriod(label)
+              }}
               onEditorStateChange={handleEditorStateChange}
             />
       ) : moduleId === 'kendaraan-ulp' && VEHICLE_TAB_DISABLED ? (
