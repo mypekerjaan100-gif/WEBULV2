@@ -61,6 +61,9 @@ try {
   for (const label of ['SLA', 'Variable Cost', 'Lembur', 'Alat & Kendaraan', 'Laporan BBM', 'Master Organisasi', 'Master Lokasi', 'Master Jabatan', 'Master Alat & Kendaraan', 'Master Pegawai', 'Pengaturan SLA', 'Pengaturan Lembur', 'Master Penandatangan']) {
     assert.equal(await page.locator('.nav-submenu-item', { hasText: label }).first().locator('svg.ui-icon').count(), 1, `Ikon submenu ${label} tidak tampil`)
   }
+  for (const label of ['Kontrak Lain', 'Billing Management', 'Operator Gardu Induk', 'Ground Patrol', 'Master Data', 'Komponen & Unit']) {
+    assert.equal(await page.locator('.sidebar-nav').getByText(label, { exact: true }).count(), 0, `Menu ${label} harus disembunyikan`)
+  }
   await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\sidebar-icons.png', fullPage: true })
   assert.deepEqual(errors, [])
   console.log('Sidebar icons: all primary and configuration submenus render icons.')

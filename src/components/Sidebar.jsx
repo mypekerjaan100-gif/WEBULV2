@@ -16,14 +16,8 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
   if (isManagementUser) allowedContractCodes.add('pelayanan-teknik')
 
   const pelayananTeknik = { id: 'pelayanan-teknik', title: 'Pelayanan Teknik', icon: 'operations' }
-  const kontrakLain = [
-    { id: 'billing-management', title: 'Billing Management', icon: 'billing' },
-    { id: 'operator-gardu-induk', title: 'Operator Gardu Induk', icon: 'substation' },
-    { id: 'ground-patrol', title: 'Ground Patrol', icon: 'patrol' },
-  ]
 
   const showPelayananTeknik = previewActive || isSuperAdmin || allowedContractCodes.has(pelayananTeknik.id)
-  const kontrakLainFiltered = kontrakLain.filter((c) => !previewActive && (isSuperAdmin || allowedContractCodes.has(c.id)))
   const actorEmail = authority?.actor?.email ?? authority?.actor?.user_email ?? ''
   const customRoleLabel = authority?.actor?.custom_role?.display_name
   const actorLabel = previewActive
@@ -163,29 +157,6 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
             )}
           </>
         )}
-
-        {kontrakLainFiltered.length > 0 && (
-          <>
-            <div className="nav-section-title">Kontrak Lain</div>
-            {kontrakLainFiltered.map((contract) => (
-              <button
-                key={contract.id}
-                type="button"
-                className={`nav-item ${activeContractId === contract.id ? 'nav-item-active' : ''}`}
-                onClick={() => onNavigate(contract.id)}
-              >
-                <span className="nav-icon"><Icon name={contract.icon} /></span>
-                <span className="nav-item-label">{contract.title}</span>
-              </button>
-            ))}
-          </>
-        )}
-
-        <div className="nav-section-title">Master Data</div>
-        <div className="nav-item nav-item-disabled" title="Kelola via Pelayanan Teknik">
-          <span className="nav-icon"><Icon name="layers" /></span>
-          <span className="nav-item-label">Komponen &amp; Unit</span>
-        </div>
 
         {isSuperAdmin && !previewActive && (
           <>
