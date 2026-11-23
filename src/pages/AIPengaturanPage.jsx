@@ -105,6 +105,7 @@ export default function AIPengaturanPage({ onBack }) {
   const changeModel = (value) => {
     if (value === OTHER_MODEL) {
       setCustomModel(true)
+      if (aiProvider(form.provider).models.includes(form.model)) update('model', '')
       return
     }
     setCustomModel(false)
