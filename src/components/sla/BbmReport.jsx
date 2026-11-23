@@ -120,9 +120,9 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     showNotice('danger', message, title)
   }, [showNotice])
 
-  // Validasi AI berjalan otomatis setelah foto odometer diunggah atau setelah
-  // Stand Akhir diisi. Permintaan dijalankan berurutan agar kuota penyedia
-  // tidak dibanjiri saat banyak foto diunggah berdekatan.
+  // Pemeriksaan odometer berjalan otomatis setelah foto diunggah atau setelah
+  // Stand Akhir diisi. Permintaan dijalankan berurutan agar layanan tidak
+  // dibanjiri saat banyak foto diunggah berdekatan.
   const aiCheckAllowed = Boolean(canWrite && !previewActive && sheet?.can_write)
   const invalidateAiCheck = (date) => {
     aiTokensRef.current.set(date, (aiTokensRef.current.get(date) ?? 0) + 1)
@@ -157,7 +157,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
         if (result.status === 'match') {
           const reading = Number(result.reading)
           const readingText = Number.isFinite(reading) ? fmt(reading, 1) : fmt(task.expected, 1)
-          showNotice('success', `AI membaca ${readingText} dan cocok dengan Stand Akhir ${fmt(task.expected, 1)}.`, 'Validasi AI: Cocok')
+          showNotice('success', `Angka pada foto terbaca ${readingText} dan sesuai dengan Stand Akhir ${fmt(task.expected, 1)}.`, 'Angka odometer sesuai')
         } else {
           setAiDetailDate((current) => current ?? task.date)
         }
@@ -226,7 +226,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const requestAiCheck = async ({ date, photo, expected }) => {
     if (!aiCheckAllowed || !photo) return
     if (expected === '' || expected == null || !Number.isFinite(Number(expected))) {
-      showNotice('info', 'Isi Stand Akhir pada baris ini agar AI dapat membandingkan angkanya dengan foto.', 'Validasi AI menunggu angka')
+      showNotice('info', 'Isi Stand Akhir pada baris ini agar angka pada foto dapat dibandingkan.', 'Pemeriksaan menunggu angka')
       return
     }
     const availability = await resolveAiEnabled()
@@ -234,9 +234,9 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       if (!aiDisabledNotifiedRef.current) {
         aiDisabledNotifiedRef.current = true
         if (availability === 'disabled') {
-          showNotice('info', 'Validasi AI belum diaktifkan oleh Super Admin. Foto tetap tersimpan dan laporan dapat dilanjutkan tanpa validasi AI.', 'Validasi AI nonaktif')
+          showNotice('info', 'Pemeriksaan angka belum diaktifkan oleh Super Admin. Foto tetap tersimpan dan laporan dapat dilanjutkan tanpa pemeriksaan otomatis.', 'Pemeriksaan belum aktif')
         } else {
-          showNotice('warning', 'Status layanan AI belum dapat diperiksa. Foto tetap tersimpan; silakan coba periksa lagi nanti.', 'Validasi AI belum tersedia')
+          showNotice('warning', 'Status layanan pemeriksaan belum dapat diperiksa. Foto tetap tersimpan; silakan coba periksa lagi nanti.', 'Pemeriksaan belum tersedia')
         }
       }
       return
@@ -375,7 +375,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
         if (expected !== '' && expected != null && Number.isFinite(Number(expected))) {
           void requestAiCheck({ date, photo: path, expected })
         } else {
-          showNotice('info', 'Foto odometer terunggah. Isi Stand Akhir pada baris ini agar AI dapat memeriksa kecocokan angkanya.', 'Foto odometer tersimpan')
+          showNotice('info', 'Foto odometer terunggah. Isi Stand Akhir pada baris ini agar kecocokan angkanya dapat diperiksa.', 'Foto odometer tersimpan')
         }
       } else {
         updatePurchase(date, index, { photo: path })
@@ -405,18 +405,18 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     const meta = aiCheckMeta(check.status)
     const spinning = check.status === 'checking'
     const reading = Number(check.reading)
-    const detail = !spinning && check.status !== 'error' && Number.isFinite(reading) ? ` · AI membaca ${fmt(reading, 1)}` : ''
+    const detail = !spinning && check.status !== 'error' && Number.isFinite(reading) ? ` · terbaca ${fmt(reading, 1)}` : ''
     const title = spinning
-      ? 'AI sedang memeriksa foto odometer'
+      ? 'Sedang membaca angka pada foto odometer'
       : check.status === 'error'
         ? `${meta.label}: ${check.message || 'Coba periksa lagi.'}`
-        : `Validasi AI: ${meta.label}${detail}`
+        : `Hasil pemeriksaan: ${meta.label}${detail}`
     return <button
       type="button"
       className={`bbm-ai-chip is-${check.status}`}
       disabled={spinning}
       title={title}
-      aria-label={`Buka hasil validasi AI ${date}: ${meta.label}`}
+      aria-label={`Lihat hasil pemeriksaan ${date}: ${meta.label}`}
       onClick={() => openAiDetail(date)}
     >
       <Icon name={meta.icon} size={12} className={spinning ? 'bbm-ai-spin' : ''} />
@@ -457,22 +457,22 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const aiDetailCheck = aiDetailDate ? aiChecks[aiDetailDate] : null
   const aiDetailMeta = aiCheckMeta(aiDetailCheck?.status)
   const aiDetailTitle = aiDetailCheck?.status === 'match'
-    ? 'Stand akhir cocok'
+    ? 'Angka odometer sesuai'
     : aiDetailCheck?.status === 'mismatch'
-      ? 'Stand akhir tidak cocok'
+      ? 'Angka odometer berbeda'
       : aiDetailCheck?.status === 'unreadable'
         ? 'Angka odometer tidak terbaca'
         : aiDetailCheck?.status === 'error'
-          ? (aiDetailCheck.title || 'Validasi AI gagal')
-          : 'Hasil validasi AI'
+          ? (aiDetailCheck.title || 'Pemeriksaan belum berhasil')
+          : 'Hasil pemeriksaan odometer'
   const aiDetailDescription = aiDetailCheck?.status === 'match'
-    ? (aiDetailCheck.message || 'Angka pada foto sesuai dengan Stand Akhir yang Anda isi.')
+    ? 'Angka pada foto sesuai dengan Stand Akhir yang Anda isi.'
     : aiDetailCheck?.status === 'mismatch'
-      ? 'AI membaca angka yang berbeda dari Stand Akhir pada baris ini. Periksa kembali foto dan angka sebelum menyimpan laporan.'
+      ? 'Angka pada foto berbeda dari Stand Akhir pada baris ini. Periksa kembali foto dan angka sebelum menyimpan laporan.'
       : aiDetailCheck?.status === 'unreadable'
-        ? 'AI tidak dapat membaca angka odometer dengan jelas. Foto tetap tersimpan; unggah ulang foto yang lebih jelas bila perlu.'
+        ? 'Angka pada foto belum dapat dibaca dengan jelas. Foto tetap tersimpan; unggah ulang foto yang lebih jelas bila perlu.'
         : aiDetailCheck?.status === 'error'
-          ? (aiDetailCheck.message || 'AI belum dapat memeriksa foto ini.')
+          ? (aiDetailCheck.message || 'Angka pada foto belum dapat diperiksa.')
           : ''
   const aiDetailReading = Number(aiDetailCheck?.reading)
   const aiDetailExpected = Number(aiDetailCheck?.expected)
@@ -512,7 +512,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       </div>
     </div>
     {loading ? <p role="status">Memuat lembar kerja BBM…</p> : !sheet ? <p>{error ? 'Laporan belum dapat dimuat. Gunakan Muat ulang.' : 'Belum ada kendaraan pada ULP/periode ini.'}</p> : <>
-      <div className="bbm-help"><span><Icon name="pencil" size={14} /> Sel putih: isian</span><span><Icon name="lock" size={14} /> Sel abu-abu: otomatis</span><span><Icon name="camera" size={14} /> Foto wajib setiap hari</span>{aiReady && !previewActive && <span><Icon name="sparkles" size={14} /> Foto odometer diperiksa AI otomatis</span>}<span>{calculated.recorded}/{calculated.days.length} hari tercatat{dirty ? ' · Belum disimpan' : ''}</span>
+      <div className="bbm-help"><span><Icon name="pencil" size={14} /> Sel putih: isian</span><span><Icon name="lock" size={14} /> Sel abu-abu: otomatis</span><span><Icon name="camera" size={14} /> Foto wajib setiap hari</span>{aiReady && !previewActive && <span><Icon name="sparkles" size={14} /> Pemeriksaan odometer otomatis</span>}<span>{calculated.recorded}/{calculated.days.length} hari tercatat{dirty ? ' · Belum disimpan' : ''}</span>
         <div className="bbm-zoom" role="group" aria-label="Zoom tabel BBM">
           <span>Zoom</span>
           <button type="button" aria-label="Perkecil tabel" title="Perkecil tabel" disabled={zoomIndex <= 0} onClick={() => stepZoom(-1)}>−</button>
@@ -577,7 +577,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     <Modal
       open={Boolean(aiDetailDate && aiDetailCheck)}
       onClose={() => setAiDetailDate(null)}
-      title="Validasi AI"
+      title="Pemeriksaan odometer"
       size="small"
       className={`bbm-ai-dialog is-${aiDetailMeta.tone}`}
       footer={aiDetailCheck ? (
@@ -609,32 +609,32 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
               <div className="is-difference"><dt>Selisih</dt><dd>{fmt(Math.abs(aiDetailReading - aiDetailExpected), 1)}</dd></div>
             )}
           </dl>
-          {aiDetailCheck.message && aiDetailCheck.status !== 'match' && aiDetailCheck.status !== 'error' && (
+          {aiDetailCheck.message && aiDetailCheck.status === 'unreadable' && (
             <p className="bbm-ai-dialog-note"><Icon name="info" size={14} /> {aiDetailCheck.message}</p>
           )}
           {aiDetailCheck.status === 'mismatch' && (
             <ul className="bbm-ai-dialog-guide">
               <li>Cocokkan angka pada foto dengan Stand Akhir yang Anda isi.</li>
               <li>Perbaiki Stand Akhir bila angkanya salah, atau unggah ulang foto bila tidak sesuai.</li>
-              <li>Hasil AI bersifat pendamping; laporan tetap dapat disimpan setelah Anda memeriksanya.</li>
+              <li>Hasil pemeriksaan bersifat pendamping; laporan tetap dapat disimpan setelah Anda memeriksanya.</li>
             </ul>
           )}
           {aiDetailCheck.status === 'unreadable' && (
             <ul className="bbm-ai-dialog-guide">
               <li>Pastikan seluruh angka odometer terlihat dan tidak terpotong.</li>
               <li>Hindari foto buram, gelap, atau terhalang benda lain.</li>
-              <li>Unggah ulang foto yang lebih jelas; AI akan memeriksa otomatis.</li>
+              <li>Unggah ulang foto yang lebih jelas; pemeriksaan akan dijalankan otomatis.</li>
             </ul>
           )}
           {aiDetailCheck.status === 'error' && (
             <ul className="bbm-ai-dialog-guide">
               <li>Foto sudah tersimpan dan laporan tetap dapat dilanjutkan.</li>
               <li>Coba periksa lagi beberapa saat lagi.</li>
-              <li>Jika masalah berulang, hubungi Super Admin untuk memeriksa Pengaturan AI.</li>
+              <li>Jika masalah berulang, hubungi Super Admin untuk memeriksa pengaturan layanan.</li>
             </ul>
           )}
           <p className="bbm-ai-dialog-footnote">
-            <Icon name="shield" size={13} /> AI dapat salah membaca foto buram atau terhalang. Hasil ini tidak mengubah angka laporan dan bukan bukti keaslian foto.
+            <Icon name="shield" size={13} /> Pemeriksaan otomatis dapat salah membaca foto buram atau terhalang. Hasil ini tidak mengubah angka laporan dan bukan bukti keaslian foto.
           </p>
         </>
       )}
