@@ -378,7 +378,7 @@ export default function AIPengaturanPage({ onBack }) {
 
           <section className="ai-settings-card ai-side-card">
             <h3>Dipakai untuk</h3>
-            <p className="ai-side-copy">Validasi foto odometer BBM: AI membaca angka pada foto, lalu membandingkannya dengan stand akhir yang diisi pengguna.</p>
+            <p className="ai-side-copy">Validasi foto odometer BBM: setelah foto diunggah, AI membaca angka pada foto lalu membandingkannya dengan Stand Akhir yang diisi pengguna.</p>
             <p className="ai-side-copy">Fitur AI lain dapat ditambahkan nanti tanpa membuat pengaturan baru.</p>
           </section>
 
