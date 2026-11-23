@@ -15,6 +15,8 @@ export default function BbmSelect({
   searchable = false,
   searchLabel = 'Cari pilihan',
   compact = false,
+  className = '',
+  popupClassName = '',
   id,
 }) {
   const [open, setOpen] = useState(false)
@@ -136,7 +138,7 @@ export default function BbmSelect({
   const popup = open && typeof document !== 'undefined' ? createPortal(
     <div
       ref={popupRef}
-      className="bbm-cs-popup"
+      className={`bbm-cs-popup${popupClassName ? ` ${popupClassName}` : ''}`}
       role="dialog"
       aria-label={ariaLabel}
       style={{ top: position.top, left: position.left, width: position.width }}
@@ -186,7 +188,7 @@ export default function BbmSelect({
         ref={triggerRef}
         id={id}
         type="button"
-        className={`bbm-cs-trigger${selected ? ' has-value' : ''}${compact ? ' is-compact' : ''}`}
+        className={`bbm-cs-trigger${selected ? ' has-value' : ''}${compact ? ' is-compact' : ''}${className ? ` ${className}` : ''}`}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open ? 'true' : 'false'}
@@ -201,7 +203,7 @@ export default function BbmSelect({
         }}
       >
         <span className="bbm-cs-value">{selected ? selected.label : placeholder}</span>
-        {!(compact && disabled) && <Icon name="chevron-down" size={compact ? 11 : 14} />}
+        {!(compact && disabled) && <span className="bbm-cs-caret" aria-hidden="true"><Icon name="chevron-down" size={compact ? 11 : 14} /></span>}
       </button>
       {popup}
     </>

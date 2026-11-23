@@ -13,7 +13,29 @@
 .ai-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
 .ai-field{display:flex;flex-direction:column;gap:6px;min-width:0;color:var(--color-text-muted);font-size:11.5px;font-weight:700}
 .ai-field-wide{grid-column:1/-1}
-.ai-field .bbm-cs-trigger{box-sizing:border-box;width:100%;min-width:0;max-width:none}
+.ai-field .ai-select{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer;box-sizing:border-box;width:100%;min-width:0;max-width:none;min-height:44px;padding:7px 8px 7px 12px;border:1px solid var(--border-strong,#c8d3db);border-radius:10px;background:var(--color-surface);color:var(--color-text);font-size:13px;font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.04);transition:border-color .15s,background .15s,box-shadow .15s}
+.ai-field .ai-select:hover:not(:disabled){border-color:var(--tone-success-border);background:var(--surface-hover)}
+.ai-field .ai-select:focus-visible,.ai-field .ai-select[aria-expanded='true']{outline:none;border-color:var(--tone-success-text);box-shadow:0 0 0 3px var(--tone-success-bg)}
+.ai-field .ai-select:disabled{background:var(--color-bg);color:var(--color-text-muted);box-shadow:none;cursor:not-allowed}
+.ai-field .ai-select .bbm-cs-value{padding:1px 0}
+.ai-field .ai-select .bbm-cs-caret{display:grid;place-items:center;width:26px;height:26px;flex:0 0 26px;border-radius:7px;background:var(--tone-neutral-bg,#f1f4f7);color:var(--color-text-muted);transition:transform .18s ease,background .15s,color .15s}
+.ai-field .ai-select:hover:not(:disabled) .bbm-cs-caret{background:var(--tone-success-bg);color:var(--tone-success-text)}
+.ai-field .ai-select[aria-expanded='true'] .bbm-cs-caret{background:var(--tone-success-bg);color:var(--tone-success-text);transform:rotate(180deg)}
+.ai-select-popup{position:fixed;z-index:2200;box-sizing:border-box;background:var(--color-surface);color:var(--color-text);font-size:13px;border:1px solid var(--color-border);border-radius:12px;padding:8px;box-shadow:0 18px 44px rgba(7,26,51,.2)}
+.ai-select-popup .bbm-cs-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
+.ai-select-popup .bbm-cs-option{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:38px;border:0;border-radius:8px;background:transparent;padding:9px 10px;text-align:left;cursor:pointer;font:inherit;font-size:13px;font-weight:500;line-height:1.35;color:var(--color-text)}
+.ai-select-popup .bbm-cs-option:hover,.ai-select-popup .bbm-cs-option.is-active{background:var(--surface-hover)}
+.ai-select-popup .bbm-cs-option[aria-selected='true'],.ai-select-popup .bbm-cs-option[aria-selected='true']:hover{background:var(--tone-success-bg);color:var(--tone-success-text);font-weight:700}
+.ai-select-popup .bbm-cs-option[aria-selected='true'] svg{color:var(--tone-success-text)}
+:root[data-theme='dark'] .ai-field .ai-select{background:var(--surface-subtle);border-color:var(--border-strong);color:var(--text-primary)}
+:root[data-theme='dark'] .ai-field .ai-select:hover:not(:disabled){background:var(--surface-hover)}
+:root[data-theme='dark'] .ai-field .ai-select:disabled{background:var(--surface-disabled)}
+:root[data-theme='dark'] .ai-field .ai-select .bbm-cs-caret{background:var(--surface-elevated);color:var(--text-muted)}
+:root[data-theme='dark'] .ai-field .ai-select:hover:not(:disabled) .bbm-cs-caret,:root[data-theme='dark'] .ai-field .ai-select[aria-expanded='true'] .bbm-cs-caret{background:var(--tone-success-bg);color:var(--tone-success-text)}
+:root[data-theme='dark'] .ai-select-popup{background:var(--surface-elevated);border-color:var(--border-strong)}
+:root[data-theme='dark'] .ai-select-popup .bbm-cs-option{color:var(--text-primary)}
+:root[data-theme='dark'] .ai-select-popup .bbm-cs-option:hover,:root[data-theme='dark'] .ai-select-popup .bbm-cs-option.is-active{background:var(--surface-hover)}
+:root[data-theme='dark'] .ai-select-popup .bbm-cs-option[aria-selected='true'],:root[data-theme='dark'] .ai-select-popup .bbm-cs-option[aria-selected='true']:hover{background:var(--tone-success-bg);color:var(--tone-success-text)}
 .ai-input{box-sizing:border-box;width:100%;min-height:38px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-surface);color:var(--color-text);padding:8px 10px;font:inherit;font-size:13px;font-weight:400}
 .ai-input:focus{outline:2px solid var(--tone-success-border);outline-offset:0;border-color:var(--tone-success-text)}
 .ai-input:disabled{background:var(--color-bg);color:var(--color-text-muted);cursor:not-allowed}

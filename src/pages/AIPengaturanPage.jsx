@@ -249,6 +249,8 @@ export default function AIPengaturanPage({ onBack }) {
               <span>Penyedia</span>
               <BbmSelect
                 ariaLabel="Penyedia AI"
+                className="ai-select"
+                popupClassName="ai-select-popup"
                 value={form.provider}
                 disabled={saving || testing}
                 options={AI_PROVIDERS.map((item) => ({ value: item.value, label: item.label }))}
@@ -260,6 +262,8 @@ export default function AIPengaturanPage({ onBack }) {
               <span>Model</span>
               <BbmSelect
                 ariaLabel="Model AI"
+                className="ai-select"
+                popupClassName="ai-select-popup"
                 value={modelValue}
                 disabled={saving || testing}
                 options={[

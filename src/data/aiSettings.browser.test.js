@@ -50,6 +50,45 @@ try {
   assert.match(await page.getByText('Belum ada API key').innerText(), /Belum ada API key/)
   assert.equal(await page.getByRole('button', { name: 'Uji koneksi' }).isDisabled(), true)
 
+  const providerBox = await page.getByLabel('Penyedia AI').evaluate((el) => {
+    const style = getComputedStyle(el)
+    return { height: el.getBoundingClientRect().height, radius: style.borderRadius, border: style.borderTopWidth, carets: el.querySelectorAll('.bbm-cs-caret svg').length }
+  })
+  assert(providerBox.height >= 42, `Pemilih penyedia harus cukup tinggi: ${providerBox.height}`)
+  assert.equal(providerBox.radius, '10px', 'Pemilih penyedia harus bersudut membulat')
+  assert.equal(providerBox.border, '1px')
+  assert.equal(providerBox.carets, 1, 'Pemilih penyedia harus memakai ikon panah khusus')
+  assert.equal(await page.locator('.ai-select .bbm-cs-caret').count(), 2, 'Penyedia dan model harus memakai panah khusus')
+  await page.getByLabel('Penyedia AI').click()
+  const providerPopup = page.locator('.ai-select-popup')
+  await providerPopup.waitFor()
+  const selectLayout = await page.evaluate(() => {
+    const trigger = document.querySelector('.ai-select')
+    const popup = document.querySelector('.ai-select-popup')
+    const list = popup.querySelector('.bbm-cs-list')
+    const triggerRect = trigger.getBoundingClientRect()
+    const popupRect = popup.getBoundingClientRect()
+    return {
+      popupTop: popupRect.top,
+      triggerBottom: triggerRect.bottom,
+      popupWidth: popupRect.width,
+      triggerWidth: triggerRect.width,
+      listDisplay: getComputedStyle(list).display,
+      listDirection: getComputedStyle(list).flexDirection,
+      justify: getComputedStyle(trigger).justifyContent,
+    }
+  })
+  assert.equal(selectLayout.justify, 'space-between', 'Isi pemilih harus rata kiri dengan panah di kanan')
+  assert(selectLayout.popupTop > selectLayout.triggerBottom, 'Daftar pilihan harus muncul di bawah pemilih')
+  assert(Math.abs(selectLayout.popupWidth - selectLayout.triggerWidth) < 2, 'Lebar daftar pilihan harus mengikuti pemilih')
+  assert.equal(selectLayout.listDisplay, 'flex')
+  assert.equal(selectLayout.listDirection, 'column')
+  assert.equal(await providerPopup.locator('.bbm-cs-option[aria-selected="true"]').innerText(), 'Google Gemini')
+  assert.equal(await providerPopup.locator('.bbm-cs-option[aria-selected="true"]').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(237, 247, 241)')
+  await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\ai-settings-provider.png' })
+  await page.keyboard.press('Escape')
+  assert.equal(await page.locator('.ai-select-popup').count(), 0)
+
   await page.getByLabel('API key AI').fill('AIza-test-key-1234')
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: 'Simpan pengaturan' }).click()
@@ -98,6 +137,24 @@ try {
 
   await page.setViewportSize({ width: 390, height: 900 })
   assert.equal(await page.locator('.ai-settings-layout').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1)
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  await page.waitForTimeout(250)
+  const luminance = (color) => {
+    const [r, g, b] = String(color).match(/\d+/g).map(Number)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const darkSelect = await page.getByLabel('Penyedia AI').evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }))
+  assert(luminance(darkSelect.background) < 70, `Latar pemilih mode gelap harus gelap: ${darkSelect.background}`)
+  assert(luminance(darkSelect.color) > 150, `Teks pemilih mode gelap harus terang: ${darkSelect.color}`)
+  await page.getByLabel('Model AI').click()
+  const darkPopup = page.locator('.ai-select-popup')
+  await darkPopup.waitFor()
+  const darkSelected = await darkPopup.locator('.bbm-cs-option[aria-selected="true"]').evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }))
+  assert(luminance(darkSelected.background) < 90, 'Pilihan aktif mode gelap harus memakai latar gelap')
+  assert(luminance(darkSelected.color) > 150, 'Teks pilihan aktif mode gelap harus terang')
+  await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\ai-settings-dark.png' })
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
   assert.deepEqual(errors, [])
   console.log('AI settings browser: provider, model, secure key form, test connection, key removal, validation and mobile passed.')
 } finally {
