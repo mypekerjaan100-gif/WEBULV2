@@ -21,7 +21,7 @@ try {
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.route('**/src/data/bbmRepository.js*', (route) => route.fulfill({ contentType: 'application/javascript', body: `
-    export const listBbmVehicles=async({month})=>{if(!/^\\d{4}-\\d{2}$/.test(month??''))throw Error('invalid input syntax for type date: \"'+month+'-01\"');return [{id:'vehicle',ulp_id:'ulp',label:'RODA 4',plate_display:'KB 1382 AX',can_write:true},{id:'vehicle2',ulp_id:'ulp',label:'RODA 2 - Inspeksi TM/TR',plate_display:'KB 2644XT',can_write:true}]};
+    export const listBbmVehicles=async({month})=>{if(!/^\\d{4}-\\d{2}$/.test(month??''))throw Error('invalid input syntax for type date: \"'+month+'-01\"');return [{id:'vehicle',ulp_id:'ulp',label:'RODA 4',plate_display:'KB 1382 AX',location_id:'loc-1',location_name:'Kantor ULP Pemangkat',location_type:'UNIT_OFFICE',can_write:true},{id:'vehicle2',ulp_id:'ulp',label:'RODA 2 - Inspeksi TM/TR',plate_display:'KB 2644XT',location_id:'loc-2',location_name:'Sempalit',location_type:'KANTOR_JAGA',can_write:true}]};
     export const getBbmSheet=async(v,month)=>{if(!/^\\d{4}-\\d{2}$/.test(month??''))throw Error('invalid input syntax for type date: \"'+month+'-01\"');return window.bbmSaved??{rows:[],details:{},revision:0,initial_odometer:null,previous:null,can_write:true}};
     export const saveBbmSheet=async(v,m,rev,initial,rows,details)=>{
       if(window.failSave)throw Error('Laporan berubah. Muat ulang');
@@ -43,6 +43,7 @@ try {
     window.renderBbm(true, false, '2026-11')
   })
   await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
+  assert.match(await page.getByLabel('Kendaraan BBM').innerText(), /Kantor ULP Pemangkat/)
   assert.equal(await page.getByLabel('Periode BBM').evaluate((el) => el.tagName), 'BUTTON')
   await page.getByLabel('Periode BBM').click()
   await page.locator('.bbm-mp-popup').waitFor()
@@ -60,12 +61,16 @@ try {
   assert.equal(searchOutline, 'none')
   const searchFrame = await page.locator('.bbm-cs-search').evaluate((el) => getComputedStyle(el).boxShadow)
   assert.match(searchFrame, /rgba\(24, 136, 108/)
+  await page.getByLabel('Cari kendaraan').fill('Sempalit')
+  assert.equal(await page.getByRole('option').count(), 1)
   await page.getByLabel('Cari kendaraan').fill('2644')
   assert.equal(await page.getByRole('option').count(), 1)
+  assert.match(await page.getByRole('option').innerText(), /KJ Sempalit/)
   await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\bbm-vehicle-dropdown.png' })
   await page.getByRole('option', { name: /KB 2644XT/ }).click()
   await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
   assert.match(await page.getByLabel('Kendaraan BBM').innerText(), /KB 2644XT/)
+  assert.match(await page.getByLabel('Kendaraan BBM').innerText(), /KJ Sempalit/)
   assert.equal(await page.locator('.bbm-grid').first().locator('tbody tr').count(), 31)
   assert.notEqual(await page.locator('.bbm-toolbar').evaluate((el) => getComputedStyle(el).position), 'sticky')
   await page.evaluate(() => {

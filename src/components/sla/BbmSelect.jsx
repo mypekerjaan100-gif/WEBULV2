@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import Icon from '../Icon.jsx'
 
 const MIN_WIDTH = 240
-const MAX_WIDTH = 460
+const MAX_WIDTH = 520
 
 export default function BbmSelect({
   value = '',
@@ -189,6 +189,7 @@ export default function BbmSelect({
         aria-haspopup="listbox"
         aria-expanded={open ? 'true' : 'false'}
         disabled={disabled}
+        title={selected ? selected.label : placeholder}
         onClick={() => (open ? closeSelect() : openSelect())}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

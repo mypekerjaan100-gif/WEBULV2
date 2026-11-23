@@ -2,6 +2,15 @@ export const BBM_TYPES = ['Pertalite', 'Pertamax', 'Pertamax Turbo', 'Solar', 'D
 export const bbmToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Pontianak', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 export const bbmNumber = (value, digits = 2) => value == null || value === '' ? '—' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: digits })
 export const purchaseTotal = (p) => Math.round(Number(p.liters || 0) * Number(p.price || 0) * 100) / 100
+export const bbmLocationLabel = (vehicle) => {
+  if (!vehicle?.location_name) return ''
+  return vehicle.location_type === 'KANTOR_JAGA' ? `KJ ${vehicle.location_name}` : vehicle.location_name
+}
+export const bbmVehicleLabel = (vehicle) => [
+  vehicle?.plate_display || 'Nopol belum diisi',
+  vehicle?.label,
+  bbmLocationLabel(vehicle),
+].filter(Boolean).join(' · ')
 export function monthDays(month) {
   const [year, m] = month.split('-').map(Number)
   return Array.from({ length: new Date(year, m, 0).getDate() }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)

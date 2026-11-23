@@ -28,6 +28,10 @@ begin
  p:=date_trunc('month',current_date)::date;
  perform set_config('request.jwt.claim.sub',actor::text,true);
  if not bbm_private.can_access(v.id,true) then raise exception 'Own ULP denied'; end if;
+  if v.location_id is not null and not exists (
+    select 1 from jsonb_array_elements(public.ops_list_bbm_vehicles(v.contract_id,v.up3_id,p)) e
+    where (e->>'id')::uuid=v.id and e->>'location_id'=v.location_id::text and nullif(e->>'location_name','') is not null
+  ) then raise exception 'Vehicle placement location missing from BBM list'; end if;
  if bbm_private.photo_access(gen_random_uuid()||'/2026-11-01/odometer/'||gen_random_uuid()||'.jpg',true) then raise exception 'Foreign storage allowed'; end if;
  perform pg_temp.bbm_expect_failure(format('select public.ops_save_bbm_sheet(%L,%L,0,100,%L::jsonb,''{}'')',v.id,p,
   jsonb_build_array(jsonb_build_object('date',p,'end',120,'photo','missing','purchases','[]'::jsonb))), 'Foto');

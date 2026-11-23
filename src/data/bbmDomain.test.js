@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
-import { bbmReportDate, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+import { bbmLocationLabel, bbmReportDate, bbmVehicleLabel, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+assert.equal(bbmLocationLabel({ location_name: 'Sempalit', location_type: 'KANTOR_JAGA' }), 'KJ Sempalit')
+assert.equal(bbmLocationLabel({ location_name: 'ULP Pemangkat', location_type: 'UNIT_OFFICE' }), 'ULP Pemangkat')
+assert.equal(bbmLocationLabel({}), '')
+assert.equal(bbmVehicleLabel({ plate_display: 'KB 1382 AX', label: 'Roda 4', location_name: 'Sempalit', location_type: 'KANTOR_JAGA' }), 'KB 1382 AX · Roda 4 · KJ Sempalit')
+assert.equal(bbmVehicleLabel({ plate_display: '', label: 'Roda 2' }), 'Nopol belum diisi · Roda 2')
 assert.equal(monthDays('2024-02').length, 29)
 assert.equal(monthDays('2026-02').length, 28)
 const fullMonth = (month) => monthDays(month).map((date, index) => ({ date, end: 100 + index, photo: `odo-${index}`, purchases: [] }))

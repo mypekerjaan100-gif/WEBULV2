@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../Icon.jsx'
-import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
+import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
 import { listBbmVehicles, getBbmSheet, saveBbmSheet, uploadBbmPhoto, getBbmPhoto } from '../../data/bbmRepository.js'
 import BbmMonthPicker from './BbmMonthPicker.jsx'
 import BbmSelect from './BbmSelect.jsx'
@@ -138,7 +138,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
           searchable
           searchLabel="Cari kendaraan"
           placeholder="Pilih kendaraan"
-          options={[{ value: '', label: 'Pilih kendaraan' }, ...selectedVehicles.map((v) => ({ value: v.id, label: `${v.plate_display || 'Nopol belum diisi'} · ${v.label}` }))]}
+          options={[{ value: '', label: 'Pilih kendaraan' }, ...selectedVehicles.map((v) => ({ value: v.id, label: bbmVehicleLabel(v) }))]}
           onChange={(next) => { if (mayLeave()) setVehicleId(next) }}
         /></label>
         <button type="button" disabled={busy || loading} onClick={() => { if (mayLeave()) setReload((n) => n + 1) }}><Icon name="refresh-cw" size={16} /> Muat ulang</button>
