@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import Icon from '../Icon.jsx'
 import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
 import { listBbmVehicles, getBbmSheet, saveBbmSheet, uploadBbmPhoto, getBbmPhoto } from '../../data/bbmRepository.js'
+import BbmMonthPicker from './BbmMonthPicker.jsx'
+import BbmSelect from './BbmSelect.jsx'
 import './BbmReport.css'
 
 const labelDate = (date, options) => {
@@ -119,9 +121,26 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     <div className="bbm-toolbar">
       <div><Icon name="fuel" /><strong>Laporan BBM</strong><span className="bbm-mode">{canWrite && !previewActive ? 'Lembar kerja harian' : 'Hanya lihat'}</span></div>
       <div>
-        <label>Periode <input aria-label="Periode BBM" type="month" value={month} max={today.slice(0, 7)} disabled={busy} onChange={(e) => { if (/^\d{4}-\d{2}$/.test(e.target.value) && e.target.value <= today.slice(0, 7) && mayLeave()) { setVehicleId(''); setMonth(e.target.value); onMonthChange?.(e.target.value) } }} /></label>
-        {!ownUlpId && <label>ULP <select aria-label="ULP laporan BBM" value={ulp} disabled={busy} onChange={(e) => { if (mayLeave()) { setVehicleId(''); setUlp(e.target.value) } }}><option value="">Semua ULP</option>{units.filter((u) => u.type === 'ULP').map((u) => <option key={u.uuid} value={u.uuid}>{u.displayName}</option>)}</select></label>}
-        <label>Nopol <select aria-label="Kendaraan BBM" value={vehicleId} disabled={busy || loading} onChange={(e) => { if (mayLeave()) setVehicleId(e.target.value) }}><option value="">Pilih kendaraan</option>{selectedVehicles.map((v) => <option key={v.id} value={v.id}>{v.plate_display || 'Nopol belum diisi'} · {v.label}</option>)}</select></label>
+        <label>Periode <BbmMonthPicker ariaLabel="Periode BBM" value={month} max={today.slice(0, 7)} disabled={busy} onChange={(next) => { if (mayLeave()) { setVehicleId(''); setMonth(next); onMonthChange?.(next) } }} /></label>
+        {!ownUlpId && <label>ULP <BbmSelect
+          ariaLabel="ULP laporan BBM"
+          value={ulp}
+          disabled={busy}
+          searchable
+          searchLabel="Cari ULP"
+          options={[{ value: '', label: 'Semua ULP' }, ...units.filter((u) => u.type === 'ULP').map((u) => ({ value: u.uuid, label: u.displayName }))]}
+          onChange={(next) => { if (mayLeave()) { setVehicleId(''); setUlp(next) } }}
+        /></label>}
+        <label>Nopol <BbmSelect
+          ariaLabel="Kendaraan BBM"
+          value={vehicleId}
+          disabled={busy || loading}
+          searchable
+          searchLabel="Cari kendaraan"
+          placeholder="Pilih kendaraan"
+          options={[{ value: '', label: 'Pilih kendaraan' }, ...selectedVehicles.map((v) => ({ value: v.id, label: `${v.plate_display || 'Nopol belum diisi'} · ${v.label}` }))]}
+          onChange={(next) => { if (mayLeave()) setVehicleId(next) }}
+        /></label>
         <button type="button" disabled={busy || loading} onClick={() => { if (mayLeave()) setReload((n) => n + 1) }}><Icon name="refresh-cw" size={16} /> Muat ulang</button>
         {canWrite && !previewActive && <button className="bbm-save" type="button" disabled={!editable || !dirty || !vehicle?.plate_display} onClick={save}><Icon name="save" size={16} />{busy ? 'Memproses…' : 'Simpan laporan'}</button>}
       </div>
