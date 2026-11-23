@@ -25,6 +25,18 @@ async function invokeAi(body) {
 export const getAiSettings = () => rpc('ai_get_settings')
 export const getAiPublicStatus = () => rpc('ai_public_status')
 export const clearAiApiKey = () => rpc('ai_clear_api_key')
+export const addAiApiKey = ({ provider, apiKey, label = '' }) => rpc('ai_add_api_key', {
+  p_provider: provider,
+  p_api_key: apiKey,
+  p_label: label,
+})
+export const updateAiApiKey = ({ keyId, enabled = null, label = null }) => rpc('ai_update_api_key', {
+  p_key_id: keyId,
+  p_enabled: enabled,
+  p_label: label,
+})
+export const promoteAiApiKey = (keyId) => rpc('ai_promote_api_key', { p_key_id: keyId })
+export const deleteAiApiKey = (keyId) => rpc('ai_delete_api_key', { p_key_id: keyId })
 export const saveAiSettings = ({ provider, model, baseUrl, apiKey = '', enabled = true }) => rpc('ai_save_settings', {
   p_provider: provider,
   p_model: model,

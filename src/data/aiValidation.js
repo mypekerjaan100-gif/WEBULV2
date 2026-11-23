@@ -27,6 +27,12 @@ export function describeAiFailure(rawMessage) {
       message: 'Pengaturan layanan pemeriksaan tidak dapat dibaca oleh server. Foto tetap tersimpan; hubungi Super Admin untuk memeriksa pengaturan.',
     }
   }
+  if (/semua api key/i.test(message)) {
+    return {
+      title: 'Semua API key perlu diperbarui',
+      message: 'Tidak ada API key pemeriksaan yang dapat dipakai. Foto tetap tersimpan; minta Super Admin memperbarui API key di Pengaturan AI.',
+    }
+  }
   if (/401|unauthor|invalid.*(api key|key)|api key.*(salah|invalid|tidak valid)|kredensial/i.test(message)) {
     return {
       title: 'Pemeriksaan belum dapat dijalankan',

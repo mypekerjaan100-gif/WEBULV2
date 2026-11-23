@@ -11,10 +11,13 @@ import {
   validateAiSettings,
 } from '../data/aiSettings.js'
 import {
-  clearAiApiKey,
+  addAiApiKey,
+  deleteAiApiKey,
   getAiSettings,
+  promoteAiApiKey,
   saveAiSettings,
   testAiConnection,
+  updateAiApiKey,
 } from '../data/aiRepository.js'
 import './AIPengaturanPage.css'
 
@@ -38,7 +41,6 @@ function formFromSettings(settings) {
     provider: settings?.provider ?? 'gemini',
     model: settings?.model ?? aiProvider('gemini').defaultModel,
     baseUrl: settings?.base_url ?? aiProvider('gemini').baseUrl,
-    apiKey: '',
     enabled: Boolean(settings?.enabled),
   }
 }
@@ -52,8 +54,11 @@ export default function AIPengaturanPage({ onBack }) {
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [confirmClear, setConfirmClear] = useState(false)
-  const [clearing, setClearing] = useState(false)
+  const [keyForm, setKeyForm] = useState({ label: '', apiKey: '' })
+  const [addingKey, setAddingKey] = useState(false)
+  const [keyBusy, setKeyBusy] = useState('')
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState(null)
+  const [deletingKey, setDeletingKey] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -71,14 +76,17 @@ export default function AIPengaturanPage({ onBack }) {
   }, [])
 
   const sameProvider = settings?.provider === form.provider
-  const hasSavedKey = Boolean(settings?.has_key && sameProvider)
+  const savedKeys = settings?.keys ?? []
+  const enabledKeys = savedKeys.filter((key) => key.enabled)
+  const enabledKeyCount = enabledKeys.length
+  const primaryKeyId = enabledKeys[0]?.id ?? null
+  const hasSavedKey = sameProvider && enabledKeyCount > 0
   const provider = aiProvider(form.provider)
   const dirty = Boolean(settings) && (
     form.provider !== settings.provider
     || form.model !== settings.model
     || form.baseUrl !== settings.base_url
     || form.enabled !== settings.enabled
-    || form.apiKey.trim() !== ''
   )
 
   const update = (key, value) => {
@@ -97,7 +105,6 @@ export default function AIPengaturanPage({ onBack }) {
       provider: nextProvider,
       baseUrl: next.baseUrl,
       model: next.defaultModel,
-      apiKey: '',
       enabled: false,
     }))
   }
@@ -117,16 +124,10 @@ export default function AIPengaturanPage({ onBack }) {
     if (saving || testing) return
     setError('')
     setNotice('')
-    const providerChanged = settings && settings.provider !== form.provider
-    if (providerChanged && !form.apiKey.trim()) {
-      setError('Masukkan API key untuk penyedia AI yang baru.')
-      return
-    }
     const validation = validateAiSettings({
       provider: form.provider,
       model: form.model,
       baseUrl: form.baseUrl,
-      apiKey: form.apiKey,
       hasKey: hasSavedKey,
       enabled: form.enabled,
     })
@@ -140,7 +141,6 @@ export default function AIPengaturanPage({ onBack }) {
         provider: form.provider,
         model: form.model.trim(),
         baseUrl: form.baseUrl,
-        apiKey: form.apiKey.trim(),
         enabled: form.enabled,
       })
       setSettings(next)
@@ -155,13 +155,16 @@ export default function AIPengaturanPage({ onBack }) {
   }
 
   const test = async () => {
-    if (testing || saving || !settings?.has_key || dirty) return
+    if (testing || saving || !enabledKeyCount || dirty) return
     setTesting(true)
     setError('')
     setNotice('')
     try {
       const result = await testAiConnection()
-      setNotice(result?.message || 'Koneksi AI berhasil.')
+      const summary = result?.tested
+        ? ` ${result.ok_count} dari ${result.tested} API key siap.`
+        : ''
+      setNotice(`${result?.message || 'Koneksi AI berhasil.'}${summary}`)
       const next = await getAiSettings()
       setSettings(next)
       setForm(formFromSettings(next))
@@ -178,22 +181,92 @@ export default function AIPengaturanPage({ onBack }) {
     }
   }
 
-  const removeKey = async () => {
-    if (clearing) return
-    setClearing(true)
+  const addKey = async (event) => {
+    event?.preventDefault?.()
+    if (addingKey || keyBusy) return
+    const apiKey = keyForm.apiKey.trim()
+    if (apiKey.length < 8 || apiKey.length > 500) {
+      setError('API key harus terdiri dari 8 sampai 500 karakter.')
+      return
+    }
+    setAddingKey(true)
     setError('')
     setNotice('')
     try {
-      const next = await clearAiApiKey()
+      const next = await addAiApiKey({
+        provider: settings.provider,
+        apiKey,
+        label: keyForm.label.trim(),
+      })
       setSettings(next)
-      setForm(formFromSettings(next))
-      setConfirmClear(false)
-      setNotice('API key AI telah dihapus. AI dinonaktifkan.')
+      setKeyForm({ label: '', apiKey: '' })
+      setNotice('API key berhasil ditambahkan.')
     } catch (err) {
       setError(err.message)
     } finally {
-      setClearing(false)
+      setAddingKey(false)
     }
+  }
+
+  const toggleKey = async (key) => {
+    if (keyBusy || addingKey) return
+    setKeyBusy(key.id)
+    setError('')
+    setNotice('')
+    try {
+      const next = await updateAiApiKey({ keyId: key.id, enabled: !key.enabled })
+      setSettings(next)
+      setNotice(key.enabled ? 'API key dinonaktifkan.' : 'API key diaktifkan.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setKeyBusy('')
+    }
+  }
+
+  const promoteKey = async (key) => {
+    if (keyBusy || addingKey) return
+    setKeyBusy(key.id)
+    setError('')
+    setNotice('')
+    try {
+      const next = await promoteAiApiKey(key.id)
+      setSettings(next)
+      setNotice('API key dijadikan utama.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setKeyBusy('')
+    }
+  }
+
+  const removeKey = async () => {
+    if (!confirmDeleteKey || deletingKey) return
+    setDeletingKey(true)
+    setError('')
+    setNotice('')
+    try {
+      const next = await deleteAiApiKey(confirmDeleteKey.id)
+      setSettings(next)
+      setConfirmDeleteKey(null)
+      setNotice('API key telah dihapus.')
+    } catch (err) {
+      setError(err.message)
+      setConfirmDeleteKey(null)
+    } finally {
+      setDeletingKey(false)
+    }
+  }
+
+  const keyStatus = (key) => {
+    if (!key.enabled) return { label: 'Nonaktif', tone: 'off' }
+    if (key.status === 'invalid') return { label: 'Perlu diganti', tone: 'danger' }
+    if (key.status === 'cooldown' && key.cooldown_until
+      && new Date(key.cooldown_until).getTime() > Date.now()) {
+      const until = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' }).format(new Date(key.cooldown_until))
+      return { label: `Dibatasi s.d. ${until}`, tone: 'warning' }
+    }
+    return { label: 'Siap', tone: 'ok' }
   }
 
   if (loading) {
@@ -225,8 +298,8 @@ export default function AIPengaturanPage({ onBack }) {
       <section className="page-hero">
         <h1 className="page-title">Pengaturan AI</h1>
         <p className="page-subtitle">
-          Penyedia, model, dan API key untuk fitur AI di aplikasi. Pengaturan ini bersifat umum,
-          termasuk untuk validasi foto odometer BBM.
+          Penyedia, model, dan beberapa API key untuk fitur AI di aplikasi, termasuk pemeriksaan
+          odometer BBM. Key utama dan cadangan membantu pemeriksaan tetap berjalan saat satu key dibatasi.
         </p>
       </section>
 
@@ -234,133 +307,215 @@ export default function AIPengaturanPage({ onBack }) {
       {notice && <Alert tone="success">{notice}</Alert>}
 
       <div className="ai-settings-layout">
-        <form className="ai-settings-card" onSubmit={save}>
-          <header className="ai-card-header">
-            <span className="ai-card-icon" aria-hidden="true"><Icon name="sparkles" size={22} /></span>
-            <div>
-              <h2>Koneksi penyedia AI</h2>
-              <p>API key hanya disimpan di server dan tidak ditampilkan kembali di browser.</p>
-            </div>
-            <span className={`ai-connection-pill is-${statusTone}`}>{connection}</span>
-          </header>
+        <div className="ai-settings-main">
+          <form className="ai-settings-card" onSubmit={save}>
+            <header className="ai-card-header">
+              <span className="ai-card-icon" aria-hidden="true"><Icon name="sparkles" size={22} /></span>
+              <div>
+                <h2>Koneksi penyedia AI</h2>
+                <p>API key hanya disimpan di server dan tidak ditampilkan kembali di browser.</p>
+              </div>
+              <span className={`ai-connection-pill is-${statusTone}`}>{connection}</span>
+            </header>
 
-          <div className="ai-form-grid">
-            <label className="ai-field">
-              <span>Penyedia</span>
-              <BbmSelect
-                ariaLabel="Penyedia AI"
-                className="ai-select"
-                popupClassName="ai-select-popup"
-                value={form.provider}
-                disabled={saving || testing}
-                options={AI_PROVIDERS.map((item) => ({ value: item.value, label: item.label }))}
-                onChange={changeProvider}
-              />
-            </label>
+            <div className="ai-form-grid">
+              <label className="ai-field">
+                <span>Penyedia</span>
+                <BbmSelect
+                  ariaLabel="Penyedia AI"
+                  className="ai-select"
+                  popupClassName="ai-select-popup"
+                  value={form.provider}
+                  disabled={saving || testing}
+                  options={AI_PROVIDERS.map((item) => ({ value: item.value, label: item.label }))}
+                  onChange={changeProvider}
+                />
+              </label>
 
-            <label className="ai-field">
-              <span>Model</span>
-              <BbmSelect
-                ariaLabel="Model AI"
-                className="ai-select"
-                popupClassName="ai-select-popup"
-                value={modelValue}
-                disabled={saving || testing}
-                options={[
-                  ...aiModelOptions(form.provider, form.model).filter((option) => option.value !== OTHER_MODEL),
-                  { value: OTHER_MODEL, label: 'Model lain…' },
-                ]}
-                onChange={changeModel}
-              />
-              {customModel && (
+              <label className="ai-field">
+                <span>Model</span>
+                <BbmSelect
+                  ariaLabel="Model AI"
+                  className="ai-select"
+                  popupClassName="ai-select-popup"
+                  value={modelValue}
+                  disabled={saving || testing}
+                  options={[
+                    ...aiModelOptions(form.provider, form.model).filter((option) => option.value !== OTHER_MODEL),
+                    { value: OTHER_MODEL, label: 'Model lain…' },
+                  ]}
+                  onChange={changeModel}
+                />
+                {customModel && (
+                  <input
+                    className="ai-input"
+                    type="text"
+                    aria-label="Nama model AI lain"
+                    placeholder="Nama model dari penyedia"
+                    value={form.model}
+                    disabled={saving || testing}
+                    onChange={(event) => update('model', event.target.value)}
+                    maxLength={120}
+                    autoComplete="off"
+                  />
+                )}
+              </label>
+
+              <label className="ai-field ai-field-wide">
+                <span>Endpoint dasar</span>
                 <input
                   className="ai-input"
-                  type="text"
-                  aria-label="Nama model AI lain"
-                  placeholder="Nama model dari penyedia"
-                  value={form.model}
+                  type="url"
+                  aria-label="Endpoint dasar AI"
+                  value={form.baseUrl}
                   disabled={saving || testing}
-                  onChange={(event) => update('model', event.target.value)}
-                  maxLength={120}
+                  onChange={(event) => update('baseUrl', event.target.value)}
+                  spellCheck={false}
                   autoComplete="off"
                 />
-              )}
-            </label>
+                <small>Endpoint dibatasi ke alamat resmi penyedia yang dipilih.</small>
+              </label>
+            </div>
 
-            <label className="ai-field ai-field-wide">
-              <span>Endpoint dasar</span>
+            <p className="ai-vision-note"><Icon name="info" size={15} /> {provider.visionNote}</p>
+
+            <label className="ai-switch">
               <input
-                className="ai-input"
-                type="url"
-                aria-label="Endpoint dasar AI"
-                value={form.baseUrl}
-                disabled={saving || testing}
-                onChange={(event) => update('baseUrl', event.target.value)}
-                spellCheck={false}
-                autoComplete="off"
+                type="checkbox"
+                checked={form.enabled}
+                disabled={saving || testing || !sameProvider || enabledKeyCount === 0}
+                onChange={(event) => update('enabled', event.target.checked)}
               />
-              <small>Endpoint dibatasi ke alamat resmi penyedia yang dipilih.</small>
+              <span>
+                <strong>Aktifkan AI</strong>
+                <small>Izinkan fitur yang mendukung memakai koneksi AI ini.</small>
+              </span>
             </label>
+            {!sameProvider ? (
+              <p className="ai-key-hint"><Icon name="info" size={14} /> Simpan perubahan penyedia terlebih dahulu sebelum mengaktifkan AI.</p>
+            ) : enabledKeyCount === 0 ? (
+              <p className="ai-key-hint"><Icon name="key" size={14} /> Tambahkan API key di bawah sebelum mengaktifkan AI.</p>
+            ) : null}
 
-            <label className="ai-field ai-field-wide">
-              <span>API key</span>
-              <input
-                className="ai-input"
-                type="password"
-                aria-label="API key AI"
-                placeholder={hasSavedKey ? `Kosongkan untuk mempertahankan key ${settings.key_hint || 'tersimpan'}` : 'Masukkan API key dari penyedia'}
-                value={form.apiKey}
-                disabled={saving || testing}
-                onChange={(event) => update('apiKey', event.target.value)}
-                maxLength={500}
-                autoComplete="new-password"
-                spellCheck={false}
-              />
-              <small>
-                {hasSavedKey
-                  ? `API key tersimpan: ${settings.key_hint || '••••'}. Isi kolom hanya bila ingin menggantinya.`
-                  : 'Key dikirim melalui koneksi aman lalu disimpan terenkripsi di server.'}
-              </small>
-            </label>
-          </div>
-
-          <p className="ai-vision-note"><Icon name="info" size={15} /> {provider.visionNote}</p>
-
-          <label className="ai-switch">
-            <input
-              type="checkbox"
-              checked={form.enabled}
-              disabled={saving || testing}
-              onChange={(event) => update('enabled', event.target.checked)}
-            />
-            <span>
-              <strong>Aktifkan AI</strong>
-              <small>Izinkan fitur yang mendukung memakai koneksi AI ini.</small>
-            </span>
-          </label>
-
-          <div className="ai-actions">
-            <Button variant="primary" type="submit" disabled={saving || testing} icon={<Icon name="save" size={16} />}>
-              {saving ? 'Menyimpan…' : 'Simpan pengaturan'}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={saving || testing || !settings.has_key || dirty}
-              onClick={test}
-              title={dirty ? 'Simpan perubahan terlebih dahulu' : undefined}
-              icon={<Icon name="refresh-cw" size={16} />}
-            >
-              {testing ? 'Menguji…' : 'Uji koneksi'}
-            </Button>
-            {settings.has_key && (
-              <Button type="button" variant="danger" disabled={saving || testing || clearing} onClick={() => setConfirmClear(true)}>
-                Hapus API key
+            <div className="ai-actions">
+              <Button variant="primary" type="submit" disabled={saving || testing} icon={<Icon name="save" size={16} />}>
+                {saving ? 'Menyimpan…' : 'Simpan pengaturan'}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={saving || testing || enabledKeyCount === 0 || dirty}
+                onClick={test}
+                title={dirty ? 'Simpan perubahan terlebih dahulu' : undefined}
+                icon={<Icon name="refresh-cw" size={16} />}
+              >
+                {testing ? 'Menguji…' : 'Uji koneksi'}
+              </Button>
+            </div>
+            {dirty && <p className="ai-dirty-note">Ada perubahan yang belum disimpan. Uji koneksi memakai pengaturan yang sudah tersimpan.</p>}
+          </form>
+
+          <section className="ai-settings-card ai-keys-card">
+            <header className="ai-card-header">
+              <span className="ai-card-icon" aria-hidden="true"><Icon name="key" size={22} /></span>
+              <div>
+                <h2>API key &amp; rotasi</h2>
+                <p>Simpan beberapa key untuk penyedia ini. Key utama dipakai lebih dulu; key cadangan dicoba otomatis saat key utama dibatasi.</p>
+              </div>
+              {sameProvider && <span className="ai-key-count">{savedKeys.length} key</span>}
+            </header>
+
+            {!sameProvider ? (
+              <p className="ai-key-switch-note"><Icon name="info" size={15} /> Simpan perubahan penyedia terlebih dahulu untuk mengelola API key penyedia ini.</p>
+            ) : (
+              <>
+                <form className="ai-key-add" onSubmit={addKey}>
+                  <label className="ai-field">
+                    <span>Nama key (opsional)</span>
+                    <input
+                      className="ai-input"
+                      type="text"
+                      aria-label="Nama API key"
+                      placeholder="Contoh: Utama atau Cadangan 1"
+                      value={keyForm.label}
+                      disabled={addingKey || saving || testing}
+                      onChange={(event) => setKeyForm((current) => ({ ...current, label: event.target.value }))}
+                      maxLength={80}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="ai-field">
+                    <span>API key baru</span>
+                    <input
+                      className="ai-input"
+                      type="password"
+                      aria-label="API key baru"
+                      placeholder="Masukkan API key dari penyedia"
+                      value={keyForm.apiKey}
+                      disabled={addingKey || saving || testing}
+                      onChange={(event) => setKeyForm((current) => ({ ...current, apiKey: event.target.value }))}
+                      maxLength={500}
+                      autoComplete="new-password"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    disabled={addingKey || saving || testing || keyForm.apiKey.trim().length < 8}
+                    icon={<Icon name="plus" size={16} />}
+                  >
+                    {addingKey ? 'Menambahkan…' : 'Tambah key'}
+                  </Button>
+                </form>
+
+                {savedKeys.length === 0 ? (
+                  <p className="ai-key-empty">Belum ada API key untuk {aiProvider(settings.provider).label}. Tambahkan minimal satu key agar AI dapat diaktifkan.</p>
+                ) : (
+                  <ul className="ai-key-list">
+                    {savedKeys.map((key, index) => {
+                      const primary = key.id === primaryKeyId
+                      const status = keyStatus(key)
+                      const disabled = keyBusy === key.id || addingKey || saving || testing
+                      const lastActiveLocked = settings.enabled && key.enabled && enabledKeyCount === 1
+                      const lockTitle = lastActiveLocked ? 'Nonaktifkan AI terlebih dahulu' : undefined
+                      return (
+                        <li key={key.id} className={`ai-key-row${primary ? ' is-primary' : ''}`}>
+                          <span className="ai-key-mark" aria-hidden="true"><Icon name={primary ? 'star' : 'key'} size={16} /></span>
+                          <div className="ai-key-copy">
+                            <strong>
+                              {key.label || `Key ${index + 1}`}
+                              {primary && !/utama/i.test(key.label || '') && <span className="ai-key-badge">Utama</span>}
+                            </strong>
+                            <small>
+                              {key.hint || '••••'}
+                              <span className={`ai-key-status is-${status.tone}`}>{status.label}</span>
+                            </small>
+                            {key.last_error && key.status !== 'active' && (
+                              <small className="ai-key-error" title={key.last_error}>{key.last_error}</small>
+                            )}
+                          </div>
+                          <div className="ai-key-actions">
+                            {!primary && key.enabled && (
+                              <button type="button" disabled={disabled} onClick={() => promoteKey(key)} aria-label={`Jadikan ${key.label || key.hint} utama`}>Jadikan utama</button>
+                            )}
+                            <button type="button" disabled={disabled || lastActiveLocked} title={lockTitle} onClick={() => toggleKey(key)} aria-label={`${key.enabled ? 'Nonaktifkan' : 'Aktifkan'} ${key.label || key.hint}`}>
+                              {key.enabled ? 'Nonaktifkan' : 'Aktifkan'}
+                            </button>
+                            <button type="button" className="is-danger" disabled={disabled || lastActiveLocked} title={lockTitle} onClick={() => setConfirmDeleteKey(key)} aria-label={`Hapus ${key.label || key.hint}`}>Hapus</button>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+                <p className="ai-key-footnote">
+                  <Icon name="shield" size={14} /> Nilai key tidak ditampilkan kembali. Jika key kena batas, sistem mencoba key cadangan pada penyedia yang sama. Failover tidak menambah kuota penyedia.
+                </p>
+              </>
             )}
-          </div>
-          {dirty && <p className="ai-dirty-note">Ada perubahan yang belum disimpan. Uji koneksi memakai pengaturan yang sudah tersimpan.</p>}
-        </form>
+          </section>
+        </div>
 
         <aside className="ai-settings-side">
           <section className="ai-settings-card ai-side-card">
@@ -368,7 +523,8 @@ export default function AIPengaturanPage({ onBack }) {
             <dl className="ai-status-list">
               <div><dt>Penyedia</dt><dd>{aiProvider(settings.provider).label}</dd></div>
               <div><dt>Model</dt><dd>{settings.model}</dd></div>
-              <div><dt>API key</dt><dd>{settings.has_key ? settings.key_hint || 'Tersimpan' : 'Belum ada'}</dd></div>
+              <div><dt>API key</dt><dd>{settings.has_key ? `${settings.active_key_count ?? 0}/${settings.key_count ?? 0} aktif` : 'Belum ada'}</dd></div>
+              <div><dt>Key utama</dt><dd>{settings.key_hint || '—'}</dd></div>
               <div><dt>Kondisi</dt><dd>{settings.enabled ? 'Aktif' : 'Nonaktif'}</dd></div>
               <div><dt>Terakhir diuji</dt><dd>{formatDateTime(settings.last_test_at)}</dd></div>
             </dl>
@@ -398,16 +554,16 @@ export default function AIPengaturanPage({ onBack }) {
       </div>
 
       <ConfirmationDialog
-        open={confirmClear}
-        title="Hapus API key AI?"
-        description="API key akan dihapus dari server dan AI langsung dinonaktifkan. Semua fitur AI yang bergantung pada koneksi ini tidak dapat digunakan sampai key baru disimpan."
-        confirmLabel="Hapus API key"
+        open={Boolean(confirmDeleteKey)}
+        title="Hapus API key?"
+        description={`API key ${confirmDeleteKey?.hint || ''}${confirmDeleteKey?.label ? ` (${confirmDeleteKey.label})` : ''} akan dihapus dari server. Key cadangan lain tetap tersedia.`}
+        confirmLabel="Hapus key"
         cancelLabel="Batal"
         confirmTone="danger"
         icon="alert-triangle"
-        loading={clearing}
+        loading={deletingKey}
         onConfirm={removeKey}
-        onCancel={() => { if (!clearing) setConfirmClear(false) }}
+        onCancel={() => { if (!deletingKey) setConfirmDeleteKey(null) }}
       />
     </div>
   )

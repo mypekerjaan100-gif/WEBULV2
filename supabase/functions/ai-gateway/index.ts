@@ -27,13 +27,47 @@ const PROVIDERS = {
 } as const;
 
 type Provider = keyof typeof PROVIDERS;
+type AiKeyConfig = {
+  id: string | null;
+  api_key: string;
+  hint?: string;
+  status?: string;
+  cooldown_until?: string | null;
+  position?: number;
+};
 type AiConfig = {
   provider: Provider;
   model: string;
   base_url: string;
   api_key: string | null;
   enabled: boolean;
+  keys?: AiKeyConfig[];
 };
+type ServiceClient = ReturnType<typeof createClient>;
+
+class ProviderRequestError extends Error {
+  status: number;
+  retryable: boolean;
+  invalidKey: boolean;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ProviderRequestError";
+    this.status = status;
+    const lower = message.toLowerCase();
+    this.invalidKey =
+      status === 401 ||
+      status === 403 ||
+      /api[_ -]?key[^.]{0,40}(invalid|not valid|salah|tidak valid|expired|disabled)|invalid[^.]{0,20}api[_ -]?key|unauthorized|unauthenticated|api_key_invalid/.test(lower);
+    this.retryable =
+      this.invalidKey ||
+      status === 408 ||
+      status === 409 ||
+      status === 429 ||
+      status >= 500 ||
+      /quota|rate.?limit|resource.?exhausted|too many requests|overloaded/.test(lower);
+  }
+}
 
 function jsonResponse(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -109,7 +143,106 @@ async function providerError(response: Response) {
   } catch {
     // Gunakan teks mentah.
   }
-  return `Penyedia AI menolak permintaan (HTTP ${response.status}): ${String(detail).slice(0, 500)}`;
+  return new ProviderRequestError(
+    response.status,
+    `Penyedia AI menolak permintaan (HTTP ${response.status}): ${String(detail).slice(0, 500)}`,
+  );
+}
+
+function allKeys(config: AiConfig) {
+  const keys = (config.keys ?? [])
+    .filter((key) => key.api_key)
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  if (keys.length) return keys;
+  return config.api_key
+    ? [{ id: null, api_key: config.api_key, status: "active", position: 0 }]
+    : [];
+}
+
+function usableKeys(config: AiConfig) {
+  const now = Date.now();
+  const ready = allKeys(config).filter((key) => {
+    if (key.status === "invalid") return false;
+    if (key.status === "cooldown" && key.cooldown_until && new Date(key.cooldown_until).getTime() > now) return false;
+    return true;
+  });
+  return ready;
+}
+
+function noUsableKeyError(config: AiConfig) {
+  const keys = config.keys ?? [];
+  if (!keys.length) return new Error("API key AI belum disimpan.");
+  if (keys.every((key) => key.status === "invalid")) {
+    return new Error("Semua API key AI tidak valid. Perbarui API key di Pengaturan AI.");
+  }
+  if (keys.some((key) => key.status === "cooldown" && key.cooldown_until && new Date(key.cooldown_until).getTime() > Date.now())) {
+    return new Error("Layanan pemeriksaan sedang sibuk (HTTP 429): semua API key mencapai batas. Coba lagi beberapa saat lagi.");
+  }
+  return new Error("Tidak ada API key AI yang aktif. Periksa Pengaturan AI.");
+}
+
+async function recordKeyResult(
+  service: ServiceClient,
+  key: AiKeyConfig,
+  result: "ok" | "invalid" | "cooldown" | "error",
+  message: string,
+  cooldownSeconds = 60,
+) {
+  if (!key.id) return;
+  try {
+    await service.rpc("ai_service_key_result", {
+      p_key_id: key.id,
+      p_result: result,
+      p_message: String(message ?? "").slice(0, 500),
+      p_cooldown_seconds: cooldownSeconds,
+    });
+  } catch {
+    // Pencatatan status key tidak boleh menggagalkan pemeriksaan.
+  }
+}
+
+function classifyFailure(error: unknown) {
+  if (error instanceof ProviderRequestError) {
+    return {
+      retryable: error.retryable,
+      result: error.invalidKey ? "invalid" as const : error.retryable ? "cooldown" as const : "error" as const,
+      cooldown: error.status === 429 ? 120 : 60,
+      message: error.message,
+    };
+  }
+  const name = (error as { name?: string })?.name ?? "";
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    retryable: true,
+    result: "cooldown" as const,
+    cooldown: /abort|timeout|network|fetch/i.test(`${name} ${message}`) ? 60 : 30,
+    message,
+  };
+}
+
+async function withKeyFailover<T>(
+  service: ServiceClient,
+  config: AiConfig,
+  run: (attempt: AiConfig) => Promise<T>,
+) {
+  const keys = usableKeys(config);
+  if (!keys.length) throw noUsableKeyError(config);
+  let lastError: unknown = null;
+  const secrets = keys.map((key) => key.api_key);
+  for (const key of keys.slice(0, 6)) {
+    try {
+      const result = await run({ ...config, api_key: key.api_key });
+      await recordKeyResult(service, key, "ok", "");
+      return result;
+    } catch (error) {
+      lastError = error;
+      const failure = classifyFailure(error);
+      await recordKeyResult(service, key, failure.result, redact(failure.message, secrets), failure.cooldown);
+      if (!failure.retryable) break;
+    }
+  }
+  const message = lastError instanceof Error ? lastError.message : String(lastError ?? "Permintaan AI gagal.");
+  throw new Error(redact(message, secrets));
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 45000) {
@@ -137,7 +270,7 @@ async function geminiRequest(config: AiConfig, parts: Array<Record<string, unkno
       }),
     },
   );
-  if (!response.ok) throw new Error(redact(await providerError(response), [config.api_key]));
+  if (!response.ok) throw await providerError(response);
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts
     ?.map((part: { text?: string }) => part?.text ?? "")
@@ -163,7 +296,7 @@ async function openAiRequest(config: AiConfig, content: unknown, maxTokens: numb
       }),
     },
   );
-  if (!response.ok) throw new Error(redact(await providerError(response), [config.api_key]));
+  if (!response.ok) throw await providerError(response);
   const data = await response.json();
   return { text: String(data?.choices?.[0]?.message?.content ?? ""), raw: data };
 }
@@ -189,7 +322,7 @@ async function grokRequest(config: AiConfig, text: string, imageDataUrl?: string
       }),
     },
   );
-  if (!response.ok) throw new Error(redact(await providerError(response), [config.api_key]));
+  if (!response.ok) throw await providerError(response);
   const data = await response.json();
   let output = String(data?.output_text ?? "");
   if (!output && Array.isArray(data?.output)) {
@@ -259,46 +392,71 @@ function toBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-async function handleTest(body: Record<string, unknown>) {
+async function handleTest(_body: Record<string, unknown>) {
   const service = createClient(requiredEnv("SUPABASE_URL"), serviceRoleKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data, error } = await service.rpc("ai_service_runtime_config");
   if (error) throw new Error("Pengaturan AI belum dapat dibaca.");
   const config = data as AiConfig | null;
-  if (!config?.api_key) throw new Error("API key AI belum disimpan.");
+  if (!config) throw new Error("API key AI belum disimpan.");
+  const keys = allKeys(config);
+  if (!keys.length) throw new Error("API key AI belum disimpan.");
 
   const provider = config.provider;
   if (!PROVIDERS[provider]) throw new Error("Penyedia AI tidak valid.");
   const baseUrl = normalizeBaseUrl(provider, config.base_url);
   const model = normalizeModel(config.model);
   const started = Date.now();
-  const safe = { ...config, base_url: baseUrl, model, api_key: config.api_key };
+  const results: Array<{ hint: string; ok: boolean }> = [];
+  let firstSuccess: AiKeyConfig | null = null;
+  let lastError: unknown = null;
+  const secrets = keys.map((key) => key.api_key);
 
-  try {
-    if (provider === "gemini") {
-      await geminiRequest(safe, [{ text: "Balas hanya dengan kata OK." }], 8);
-    } else if (provider === "deepseek") {
-      await openAiRequest(safe, "Balas hanya dengan kata OK.", 8);
-    } else {
-      await grokRequest(safe, "Balas hanya dengan kata OK.", undefined, 8);
+  // Uji setiap key yang tersimpan agar status utama dan cadangan terlihat.
+  for (const key of keys.slice(0, 6)) {
+    const attempt = { ...config, base_url: baseUrl, model, api_key: key.api_key };
+    try {
+      if (provider === "gemini") {
+        await geminiRequest(attempt, [{ text: "Balas hanya dengan kata OK." }], 8);
+      } else if (provider === "deepseek") {
+        await openAiRequest(attempt, "Balas hanya dengan kata OK.", 8);
+      } else {
+        await grokRequest(attempt, "Balas hanya dengan kata OK.", undefined, 8);
+      }
+      await recordKeyResult(service, key, "ok", "");
+      results.push({ hint: key.hint || "Key", ok: true });
+      if (!firstSuccess) firstSuccess = key;
+    } catch (error) {
+      lastError = error;
+      const failure = classifyFailure(error);
+      await recordKeyResult(service, key, failure.result, redact(failure.message, secrets), failure.cooldown);
+      results.push({ hint: key.hint || "Key", ok: false });
+      if (!failure.retryable) break;
     }
-  } catch (error) {
-    const message = redact(error instanceof Error ? error.message : String(error), [config.api_key]);
+  }
+
+  if (!firstSuccess) {
+    const message = redact(
+      lastError instanceof Error ? lastError.message : String(lastError ?? "Koneksi AI gagal."),
+      secrets,
+    );
     await service.rpc("ai_service_record_test", { p_ok: false, p_message: message });
     throw new Error(message);
   }
 
-  await service.rpc("ai_service_record_test", {
-    p_ok: true,
-    p_message: `Koneksi berhasil melalui ${PROVIDERS[provider].label} (${model}).`,
-  });
+  const okCount = results.filter((result) => result.ok).length;
+  const summary = `Koneksi berhasil melalui ${PROVIDERS[provider].label} (${model}) — ${okCount} dari ${results.length} key siap.`;
+  await service.rpc("ai_service_record_test", { p_ok: true, p_message: summary });
   return {
     ok: true,
     provider,
     provider_label: PROVIDERS[provider].label,
     model,
     message: `Koneksi ke ${PROVIDERS[provider].label} berhasil.`,
+    tested: results.length,
+    ok_count: okCount,
+    keys: results,
     latency_ms: Date.now() - started,
   };
 }
@@ -324,13 +482,14 @@ async function handleOdometer(body: Record<string, unknown>) {
   const { data, error } = await service.rpc("ai_service_runtime_config");
   if (error) throw new Error("Pengaturan AI belum dapat dibaca.");
   const config = data as AiConfig | null;
-  if (!config?.enabled || !config.api_key) throw new Error("Validasi AI belum diaktifkan oleh Super Admin.");
+  if (!config?.enabled) throw new Error("Validasi AI belum diaktifkan oleh Super Admin.");
+  if (!allKeys(config).length) throw new Error("API key AI belum disimpan.");
 
   const provider = config.provider;
   if (!PROVIDERS[provider]) throw new Error("Penyedia AI tidak valid.");
   const baseUrl = normalizeBaseUrl(provider, config.base_url);
   const model = normalizeModel(config.model);
-  const safe = { ...config, base_url: baseUrl, model, api_key: config.api_key };
+  const safe = { ...config, base_url: baseUrl, model };
 
   const { data: file, error: downloadError } = await service.storage
     .from("bbm-evidence")
@@ -347,25 +506,26 @@ async function handleOdometer(body: Record<string, unknown>) {
   const dataUrl = `data:${mime};base64,${base64}`;
   const prompt = odometerPrompt();
 
-  let result;
-  if (provider === "gemini") {
-    result = await geminiRequest(
-      safe,
-      [{ text: prompt }, { inline_data: { mime_type: mime, data: base64 } }],
-      600,
-    );
-  } else if (provider === "deepseek") {
-    result = await openAiRequest(
-      safe,
-      [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: dataUrl } },
-      ],
-      220,
-    );
-  } else {
-    result = await grokRequest(safe, prompt, dataUrl);
-  }
+  const result = await withKeyFailover(service, safe, (attempt) => {
+    if (provider === "gemini") {
+      return geminiRequest(
+        attempt,
+        [{ text: prompt }, { inline_data: { mime_type: mime, data: base64 } }],
+        600,
+      );
+    }
+    if (provider === "deepseek") {
+      return openAiRequest(
+        attempt,
+        [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+        220,
+      );
+    }
+    return grokRequest(attempt, prompt, dataUrl);
+  });
 
   const parsed = parseJsonText(result.text);
   const reading = parseReading(parsed?.reading);

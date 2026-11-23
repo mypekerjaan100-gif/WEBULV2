@@ -2,6 +2,8 @@ const ICONS = {
   fuel: <><path d="M3 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17M2 21h12M5 6h6v5H5zM13 12h2a2 2 0 0 1 2 2v3a2 2 0 0 0 4 0V8l-4-4M18 5v4h3" /></>,
   gauge: <><path d="M4 19a10 10 0 1 1 16 0Z" /><path d="m12 13 5-6M6 12H4M12 5V3M20 12h-2" /><circle cx="12" cy="13" r="1" /></>,
   lock: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3" /></>,
+  key: <><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 8.3-8.3M16 6l3 3M13 9l3 3" /></>,
+  star: <><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
   briefcase: <><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18" /></>,
   'id-card': <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="11" r="2" /><path d="M6 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M15 10h4M15 14h4" /></>,
