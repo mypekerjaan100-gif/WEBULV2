@@ -32,8 +32,10 @@ try {
   ` }))
   await page.route('**/src/data/aiRepository.js*', (route) => route.fulfill({ contentType: 'application/javascript', body: `
     export const getAiPublicStatus=async()=>window.aiPublicStatus??{enabled:true,provider:'gemini',model:'gemini-3.6-flash'};
-    export const validateBbmOdometer=async({expected})=>{
-      if(window.aiFail)throw Error('Penyedia AI menolak permintaan');
+    export const validateBbmOdometer=async({expected,date})=>{
+      window.aiCalls=(window.aiCalls??0)+1;
+      window.aiLastCall={date,expected:Number(expected)};
+      if(window.aiFail)throw Error(window.aiFailMessage??'Penyedia AI menolak permintaan');
       return window.aiCheckResult??{status:'match',reading:Number(expected),expected:Number(expected),message:'AI membaca '+Number(expected).toLocaleString('id-ID')+' dan cocok dengan stand akhir.'};
     };
   ` }))
@@ -121,28 +123,85 @@ try {
   const photo = { name: 'proof.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('test') }
   await page.getByLabel('Foto odometer 2026-10-01', { exact: true }).setInputFiles(photo)
   await page.getByRole('button', { name: 'Lihat foto odometer 2026-10-01' }).waitFor()
-  const aiButton = page.getByRole('button', { name: 'Validasi AI', exact: true })
-  await aiButton.waitFor()
-  await aiButton.click()
-  const aiDialog = page.getByRole('dialog', { name: 'Validasi foto odometer dengan AI' })
+  const aiMatchToast = page.locator('.bbm-toast-success').filter({ hasText: 'Validasi AI: Cocok' })
+  await aiMatchToast.waitFor()
+  assert.match(await aiMatchToast.innerText(), /AI membaca 41\.186/)
+  assert.match(await aiMatchToast.innerText(), /Stand Akhir 41\.186/)
+  assert.deepEqual(await page.evaluate(() => window.aiLastCall), { date: '2026-10-01', expected: 41186 })
+  assert.equal(await page.getByRole('button', { name: 'Validasi AI', exact: true }).count(), 0, 'Validasi manual lama harus diganti validasi otomatis')
+  const aiChip = page.getByRole('button', { name: 'Buka hasil validasi AI 2026-10-01: Cocok' })
+  await aiChip.waitFor()
+  await aiChip.click()
+  const aiDialog = page.getByRole('dialog', { name: 'Validasi AI' })
   await aiDialog.waitFor()
-  await aiDialog.getByRole('button', { name: 'Periksa', exact: true }).click()
-  await aiDialog.locator('.bbm-ai-result.is-match').waitFor()
-  assert.match(await aiDialog.innerText(), /Cocok/)
-  assert.match(await aiDialog.innerText(), /AI membaca 41\.186/)
+  assert.match(await aiDialog.innerText(), /Stand akhir cocok/)
+  assert.match(await aiDialog.innerText(), /Angka pada foto/)
+  assert.match(await aiDialog.innerText(), /41\.186/)
   await page.evaluate(() => {
     window.aiCheckResult = { status: 'mismatch', reading: 41180, expected: 41186, message: 'AI membaca 41.180, berbeda 6 dari stand akhir 41.186.' }
   })
   await aiDialog.getByRole('button', { name: 'Periksa lagi', exact: true }).click()
-  await aiDialog.locator('.bbm-ai-result.is-mismatch').waitFor()
-  assert.match(await aiDialog.innerText(), /Berbeda/)
-  assert.match(await aiDialog.innerText(), /41\.180/)
+  await page.getByRole('dialog', { name: 'Validasi AI' }).getByText('Stand akhir tidak cocok', { exact: true }).waitFor()
+  const mismatchDialog = page.getByRole('dialog', { name: 'Validasi AI' })
+  assert.match(await mismatchDialog.innerText(), /41\.180/)
+  assert.match(await mismatchDialog.innerText(), /Selisih/)
+  assert.match(await mismatchDialog.innerText(), /periksa kembali foto/i)
   await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\bbm-ai-odometer.png' })
-  await aiDialog.getByRole('button', { name: 'Tutup', exact: true }).click()
-  assert.equal(await aiDialog.count(), 0)
+  await mismatchDialog.getByRole('button', { name: 'Tutup', exact: true }).click()
+  await page.evaluate(() => {
+    window.aiCheckResult = { status: 'unreadable', reading: null, expected: 41186, message: 'Angka odometer tidak terbaca jelas pada foto.' }
+  })
+  await page.getByRole('button', { name: 'Buka hasil validasi AI 2026-10-01: Berbeda' }).click()
+  await page.getByRole('button', { name: 'Periksa lagi', exact: true }).click()
+  const unreadableDialog = page.getByRole('dialog', { name: 'Validasi AI' })
+  await unreadableDialog.getByText('Angka odometer tidak terbaca', { exact: true }).waitFor()
+  assert.match(await unreadableDialog.innerText(), /Unggah ulang foto/)
+  await unreadableDialog.getByRole('button', { name: 'Tutup', exact: true }).click()
+  await page.evaluate(() => {
+    delete window.aiCheckResult
+    window.aiFail = true
+    window.aiFailMessage = 'Penyedia AI menolak permintaan (HTTP 429): quota exceeded'
+  })
+  await page.getByRole('button', { name: 'Buka hasil validasi AI 2026-10-01: Tidak terbaca' }).click()
+  await page.getByRole('button', { name: 'Periksa lagi', exact: true }).click()
+  const aiErrorToast = page.locator('.bbm-toast-warning').filter({ hasText: 'Kuota AI sedang tercapai' })
+  await aiErrorToast.waitFor()
+  const aiErrorChip = page.getByRole('button', { name: 'Buka hasil validasi AI 2026-10-01: Gagal diperiksa' })
+  await aiErrorChip.waitFor()
+  await aiErrorChip.click()
+  const errorDialog = page.getByRole('dialog', { name: 'Validasi AI' })
+  await errorDialog.getByText('Kuota AI sedang tercapai', { exact: true }).waitFor()
+  assert.match(await errorDialog.innerText(), /Foto tetap tersimpan/)
+  await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\bbm-ai-error.png' })
+  await errorDialog.getByRole('button', { name: 'Tutup', exact: true }).click()
+  await page.evaluate(() => {
+    window.aiFail = false
+    delete window.aiFailMessage
+  })
+  await aiErrorChip.click()
+  await page.getByRole('button', { name: 'Coba lagi', exact: true }).click()
+  await page.getByRole('button', { name: 'Buka hasil validasi AI 2026-10-01: Cocok' }).waitFor()
+  const endInput = page.getByLabel('Stand akhir 2026-10-01', { exact: true })
+  await endInput.fill('41187')
+  await page.getByRole('button', { name: /Buka hasil validasi AI 2026-10-01/ }).waitFor({ state: 'detached' })
+  assert.equal(await page.getByRole('button', { name: /Buka hasil validasi AI 2026-10-01/ }).count(), 0, 'Mengubah Stand Akhir harus membatalkan hasil AI lama')
+  await endInput.fill('41186')
+  await endInput.press('Tab')
+  await page.getByRole('button', { name: 'Buka hasil validasi AI 2026-10-01: Cocok' }).waitFor()
+  const toastClose = page.getByRole('button', { name: 'Tutup notifikasi' })
+  if (await toastClose.count()) await toastClose.first().click()
   await page.evaluate(() => { delete window.aiCheckResult })
+  await page.getByLabel('Foto odometer 2026-10-02', { exact: true }).setInputFiles(photo)
+  const photoFirstToast = page.locator('.bbm-toast-info').filter({ hasText: 'Isi Stand Akhir' })
+  await photoFirstToast.waitFor()
+  assert.equal(await page.getByRole('button', { name: /Buka hasil validasi AI 2026-10-02/ }).count(), 0, 'Foto tanpa Stand Akhir belum boleh divalidasi')
+  const endSecond = page.getByLabel('Stand akhir 2026-10-02', { exact: true })
+  await endSecond.fill('41200')
+  await endSecond.press('Tab')
+  await page.getByRole('button', { name: 'Buka hasil validasi AI 2026-10-02: Cocok' }).waitFor()
   const secondRow = page.locator('.bbm-grid').first().locator('tbody tr').nth(1)
   const secondActions = secondRow.locator('.bbm-row-actions')
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
   await page.mouse.move(0, 0)
   await page.waitForTimeout(250)
   assert.equal(await secondActions.evaluate((el) => getComputedStyle(el).opacity), '0')
