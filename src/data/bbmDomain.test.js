@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
-import { calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+import { bbmReportDate, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
 assert.equal(monthDays('2024-02').length, 29)
 assert.equal(monthDays('2026-02').length, 28)
+const fullMonth = (month) => monthDays(month).map((date, index) => ({ date, end: 100 + index, photo: `odo-${index}`, purchases: [] }))
+assert.equal(bbmReportDate('2026-11', fullMonth('2026-11'), '2026-11-30'), '2026-11-30')
+assert.equal(bbmReportDate('2026-11', fullMonth('2026-11'), '2026-11-29'), null)
+assert.equal(bbmReportDate('2026-11', fullMonth('2026-11').slice(0, -1), '2026-12-01'), null)
+assert.equal(bbmReportDate('2026-11', fullMonth('2026-11').map((row, index) => index === 10 ? { ...row, photo: '' } : row), '2026-12-01'), null)
+assert.equal(bbmReportDate('2026-11', fullMonth('2026-11').map((row, index) => index === 10 ? { ...row, end: '' } : row), '2026-12-01'), null)
+assert.equal(bbmReportDate('2028-02', fullMonth('2028-02'), '2028-02-29'), '2028-02-29')
+assert.equal(bbmReportDate('2026-12', fullMonth('2026-12'), '2027-01-31'), '2026-12-31')
+assert.equal(bbmReportDate('2026-10', [], '2026-12-01'), null)
 const rows = [
   { date: '2026-10-01', end: 120, photo: 'odo', purchases: [] },
   { date: '2026-10-02', end: 150, photo: 'odo2', purchases: [{ fuel: 'Pertalite', liters: 2.5, price: 10000, photo: 'receipt' }, { fuel: 'Pertamax', liters: 1, price: 12000, photo: 'receipt2' }] },

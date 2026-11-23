@@ -33,6 +33,17 @@ export function calculateBbm(month, rows, initial, previous) {
   for (const day of days) day.showStart = day.end != null || day.date === nextBlank
   return { days, km, liters, total, recorded, gaps, ratio: liters > 0 ? km / liters : null }
 }
+export function bbmReportDate(month, rows, today = bbmToday()) {
+  const days = monthDays(month)
+  const last = days.at(-1)
+  if (!last || last > today) return null
+  const byDate = new Map((rows ?? []).map((row) => [row.date, row]))
+  const complete = days.every((date) => {
+    const row = byDate.get(date)
+    return row && row.end !== '' && row.end != null && Number.isFinite(Number(row.end)) && Boolean(row.photo)
+  })
+  return complete ? last : null
+}
 export function validateBbm(rows, initial, previous, today = bbmToday()) {
   let prior = previous?.end ?? (initial === '' || initial == null ? null : Number(initial))
   if (rows.length && (prior == null || !Number.isFinite(prior) || prior < 0)) throw new Error('Isi stand awal pertama.')

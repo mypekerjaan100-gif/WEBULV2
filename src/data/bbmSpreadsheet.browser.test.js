@@ -90,6 +90,30 @@ try {
   await page.evaluate(() => window.renderBbm(true, true))
   await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Simpan laporan' }).count(), 0)
+  await page.evaluate(() => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({ date: `2026-09-${String(index + 1).padStart(2, '0')}`, end: 1000 + index, photo: `odo-${index}`, purchases: [] }))
+    window.bbmSaved = { revision: 5, details: {}, rows, initial_odometer: 999, previous: null, can_write: true }
+    window.renderBbm(false, false, '2026-09')
+  })
+  await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
+  assert.equal(await page.getByLabel('Tanggal berita acara').inputValue(), '2026-09-30')
+  assert.equal(await page.getByLabel('Tanggal berita acara').getAttribute('title'), 'Otomatis: seluruh odometer dan foto bulan ini sudah lengkap')
+  assert.match(await page.locator('.bbm-sign-date').innerText(), /30 September 2026/)
+  await page.evaluate(() => {
+    const rows = Array.from({ length: 31 }, (_, index) => ({ date: `2026-07-${String(index + 1).padStart(2, '0')}`, end: 2000 + index, photo: `odo-${index}`, purchases: [] }))
+    window.bbmSaved = { revision: 6, details: { report_date: '2026-07-20' }, rows, initial_odometer: 1999, previous: null, can_write: true }
+    window.renderBbm(false, false, '2026-07')
+  })
+  await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
+  assert.equal(await page.getByLabel('Tanggal berita acara').inputValue(), '2026-07-20')
+  await page.evaluate(() => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({ date: `2026-08-${String(index + 1).padStart(2, '0')}`, end: 2000 + index, photo: `odo-${index}`, purchases: [] }))
+    window.bbmSaved = { revision: 7, details: {}, rows, initial_odometer: 1999, previous: null, can_write: true }
+    window.renderBbm(false, false, '2026-08')
+  })
+  await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
+  assert.equal(await page.getByLabel('Tanggal berita acara').inputValue(), '')
+  assert.match(await page.locator('.bbm-sign-date').innerText(), /____/)
   assert.deepEqual(errors, [])
   console.log('BBM browser: spreadsheet, keyboard, photos, save, stale-save preservation, navigation guard, reader, preview and mobile passed.')
 } finally { await browser?.close(); await server.close() }
