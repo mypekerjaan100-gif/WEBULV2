@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from '../../lib/AppAuth.jsx'
 import Icon from '../../components/Icon.jsx'
 import BbmReport from '../../components/sla/BbmReport.jsx'
-import { Alert, Button, StatePanel } from '../../components/ui/Primitives.jsx'
+import { Alert, Button, ConfirmationDialog, StatePanel } from '../../components/ui/Primitives.jsx'
 import {
   fetchEmployeesFromSupabase,
   fetchPositionsFromSupabase,
@@ -259,29 +259,38 @@ export default function SLAPelayananTeknikPage({
   const canMutateMasterLocations = isSuperAdmin
   const canReorderMasterLocations = isSuperAdmin || canManageUp3Operations
   const moduleEditorState = useRef({ dirty: false, busy: false })
+  const [leavePrompt, setLeavePrompt] = useState(null)
   const handleEditorStateChange = useCallback((state) => { moduleEditorState.current = state }, [])
-  const canLeaveEditor = () => {
+  const requestLeaveEditor = (action, options = {}) => {
     const { dirty, busy } = moduleEditorState.current
     if (busy) return false
-    return !dirty || window.confirm('Perubahan belum disimpan. Tinggalkan form?')
+    if (!dirty) { action(); return true }
+    setLeavePrompt({
+      description: options.description || 'Perubahan belum disimpan. Tinggalkan halaman ini?',
+      onConfirm: () => {
+        moduleEditorState.current = { dirty: false, busy: false }
+        action()
+      },
+      onCancel: options.onCancel,
+    })
+    return false
   }
   const selectModule = (nextModule) => {
     if (nextModule === moduleId) return true
-    if (!canLeaveEditor()) {
-      onRouteChange?.({ module: moduleId, periode: period })
-      return false
-    }
-    moduleEditorState.current = { dirty: false, busy: false }
-    setModuleId(nextModule)
-    return true
+    return requestLeaveEditor(() => setModuleId(nextModule), {
+      description: 'Perubahan belum disimpan. Tinggalkan halaman ini?',
+      onCancel: () => onRouteChange?.({ module: moduleId, periode: period }),
+    })
   }
 
   useEffect(() => {
     if (!canManageUp3Operations || !approvalTarget) return
     if (approvalTarget.source === 'lembur') {
-      if (!selectModule('lembur')) return
       const targetPeriod = slaPeriods.find((label) => periodKeyFromLabel(label) === approvalTarget.periodMonth) ?? periodLabelFromMonth(approvalTarget.periodMonth)
-      if (targetPeriod) setPeriod(targetPeriod)
+      requestLeaveEditor(() => {
+        setModuleId('lembur')
+        if (targetPeriod) setPeriod(targetPeriod)
+      }, { description: 'Perubahan belum disimpan. Buka target persetujuan lembur?' })
     }
   }, [canManageUp3Operations, approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -735,11 +744,10 @@ export default function SLAPelayananTeknikPage({
       if (!selectModule(defaultVisibleModule)) return
     }
     if (routeRequest.periode && slaPeriods.includes(routeRequest.periode) && routeRequest.periode !== period) {
-      if (!canLeaveEditor()) {
-        onRouteChange?.({ module: moduleId, periode: period })
-        return
-      }
-      setPeriod(routeRequest.periode)
+      requestLeaveEditor(() => setPeriod(routeRequest.periode), {
+        description: 'Perubahan belum disimpan. Ganti periode aktif?',
+        onCancel: () => onRouteChange?.({ module: moduleId, periode: period }),
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeRequest?.token, orgMapStatus])
@@ -1050,7 +1058,7 @@ export default function SLAPelayananTeknikPage({
         <div>
           <h1 className="page-title">Pelayanan Teknik</h1>
         </div>
-        <button type="button" className="back-button pt-back-button" onClick={() => { if (canLeaveEditor()) onBack?.() }}>
+        <button type="button" className="back-button pt-back-button" onClick={() => requestLeaveEditor(() => onBack?.(), { description: 'Perubahan belum disimpan. Kembali ke dashboard?' })}>
           <Icon name="arrow-left" size={16} /> Dashboard
         </button>
       </header>
@@ -1071,7 +1079,7 @@ export default function SLAPelayananTeknikPage({
           <select
             className="sla-context-select"
             value={selectedManagementScope?.key ?? ''}
-            onChange={(event) => { if (canLeaveEditor()) onManagementScopeChange?.(event.target.value) }}
+            onChange={(event) => { const value = event.target.value; requestLeaveEditor(() => onManagementScopeChange?.(value), { description: 'Perubahan belum disimpan. Ganti scope unit layanan?' }) }}
           >
             {managementScopes.map((scope) => (
               <option key={scope.key} value={scope.key}>{scope.internalUlName}</option>
@@ -1523,6 +1531,19 @@ export default function SLAPelayananTeknikPage({
           onClose={() => setExportOpen(false)}
         />
       )}
+      <ConfirmationDialog
+        open={Boolean(leavePrompt)}
+        title="Perubahan belum disimpan"
+        description={leavePrompt?.description || ''}
+        confirmLabel="Tinggalkan"
+        cancelLabel="Tetap di halaman"
+        confirmTone="danger"
+        icon="alert-triangle"
+        className="bbm-confirm"
+        backdropClassName="bbm-confirm-backdrop"
+        onConfirm={() => { const action = leavePrompt?.onConfirm; setLeavePrompt(null); action?.() }}
+        onCancel={() => { const action = leavePrompt?.onCancel; setLeavePrompt(null); action?.() }}
+      />
     </div>
   )
 }

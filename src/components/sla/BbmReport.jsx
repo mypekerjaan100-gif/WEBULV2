@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from '../Icon.jsx'
+import { ConfirmationDialog } from '../ui/Primitives.jsx'
 import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
 import { listBbmVehicles, getBbmSheet, saveBbmSheet, uploadBbmPhoto, getBbmPhoto } from '../../data/bbmRepository.js'
 import BbmMonthPicker from './BbmMonthPicker.jsx'
@@ -25,10 +27,12 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const [notice, setNotice] = useState(null)
+  const [confirm, setConfirm] = useState(null)
   const [reload, setReload] = useState(0)
   const [photo, setPhoto] = useState(null)
   const lock = useRef(false)
+  const noticeTimer = useRef(null)
   const vehicle = vehicles.find((v) => v.id === vehicleId)
   const ulpName = units.find((u) => u.uuid === (vehicle?.ulp_id || ulp))?.displayName || 'ULP'
   const selectedVehicles = vehicles.filter((v) => !ulp || v.ulp_id === ulp)
@@ -40,7 +44,41 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const reportDate = details.report_date || autoReportDate || ''
   const lastDay = calculated.days.at(-1)?.date
   const apply = (data) => { setSheet(data); setRows(data.rows || []); setDetails(data.details || {}); setInitial(data.initial_odometer ?? ''); setDirty(false) }
-  const mayLeave = () => !lock.current && (!dirty || window.confirm('Perubahan laporan BBM belum disimpan. Tinggalkan perubahan?'))
+  const dismissNotice = useCallback(() => {
+    window.clearTimeout(noticeTimer.current)
+    setNotice(null)
+  }, [])
+  const showNotice = useCallback((tone, message, title) => {
+    window.clearTimeout(noticeTimer.current)
+    setNotice({ tone, message, title: title || (tone === 'success' ? 'Tersimpan' : 'Laporan BBM') })
+    if (tone === 'success') noticeTimer.current = window.setTimeout(() => setNotice(null), 4200)
+  }, [])
+  const showError = useCallback((message) => {
+    setError(message)
+    showNotice('danger', message)
+  }, [showNotice])
+  const askConfirm = (options) => setConfirm(options)
+  const resolveConfirm = (accepted) => {
+    const current = confirm
+    setConfirm(null)
+    if (accepted) current?.onConfirm?.()
+    else current?.onCancel?.()
+  }
+  const guardUnsaved = (action) => {
+    if (lock.current) return false
+    if (!dirty) { action(); return true }
+    askConfirm({
+      title: 'Perubahan belum disimpan',
+      description: 'Perubahan laporan BBM belum disimpan. Tinggalkan perubahan?',
+      confirmLabel: 'Tinggalkan',
+      cancelLabel: 'Tetap di laporan',
+      tone: 'danger',
+      icon: 'alert-triangle',
+      onConfirm: action,
+    })
+    return false
+  }
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), [])
   useEffect(() => {
     onEditorStateChange?.({ dirty, busy })
     const prevent = (e) => { if (dirty || busy) { e.preventDefault(); e.returnValue = '' } }
@@ -49,59 +87,59 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   }, [dirty, busy, onEditorStateChange])
   useEffect(() => {
     let active = true
-    setLoading(true); setError(''); setVehicles([]); setSheet(null)
+    setLoading(true); setError(''); setVehicles([]); setSheet(null); dismissNotice()
     listBbmVehicles({ contractId, up3Id, month }).then((data) => {
       if (!active) return
       const allowed = ownUlpId ? data.filter((v) => v.ulp_id === ownUlpId) : data
       setVehicles(allowed)
       setVehicleId((id) => allowed.some((v) => v.id === id && (!ulp || v.ulp_id === ulp)) ? id : (allowed.find((v) => !ulp || v.ulp_id === ulp)?.id || ''))
-    }).catch((e) => { if (active) setError(e.message) }).finally(() => { if (active) setLoading(false) })
+    }).catch((e) => { if (active) showError(e.message) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [contractId, up3Id, month, ownUlpId, ulp, reload])
+  }, [contractId, up3Id, month, ownUlpId, ulp, reload, dismissNotice, showError])
   useEffect(() => {
     let active = true
-    setSheet(null); setRows([]); setDetails({}); setInitial(''); setDirty(false); setMessage('')
+    setSheet(null); setRows([]); setDetails({}); setInitial(''); setDirty(false); dismissNotice()
     if (!vehicleId || !vehicles.some((v) => v.id === vehicleId)) return
     setLoading(true); setError('')
     getBbmSheet(vehicleId, month).then((data) => { if (active) apply(data) })
-      .catch((e) => { if (active) setError(e.message) }).finally(() => { if (active) setLoading(false) })
+      .catch((e) => { if (active) showError(e.message) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [vehicleId, vehicles, month])
+  }, [vehicleId, vehicles, month, dismissNotice, showError])
   const updateRow = (date, changes) => {
     setRows((old) => {
       const existing = old.find((r) => r.date === date) || { date, end: '', photo: '', purchases: [] }
       return [...old.filter((r) => r.date !== date), { ...existing, ...changes }].sort((a, b) => a.date.localeCompare(b.date))
-    }); setDirty(true); setMessage('')
+    }); setDirty(true); dismissNotice()
   }
   const updatePurchase = (date, index, changes) => {
     const purchases = [...(rows.find((r) => r.date === date)?.purchases || [])]
     purchases[index] = { ...purchases[index], ...changes }
     updateRow(date, { purchases })
   }
-  const updateDetails = (key, value) => { setDetails((old) => ({ ...old, [key]: value })); setDirty(true); setMessage('') }
+  const updateDetails = (key, value) => { setDetails((old) => ({ ...old, [key]: value })); setDirty(true); dismissNotice() }
   const upload = async (date, index, file) => {
     if (!file || lock.current || !editable) return
     lock.current = true; setBusy(true); setError('')
     try {
       const path = await uploadBbmPhoto(vehicleId, date, index == null ? 'odometer' : 'receipt', file)
       if (index == null) updateRow(date, { photo: path }); else updatePurchase(date, index, { photo: path })
-    } catch (e) { setError(e.message) } finally { lock.current = false; setBusy(false) }
+    } catch (e) { showError(e.message) } finally { lock.current = false; setBusy(false) }
   }
   const showPhoto = async (path) => {
     if (lock.current) return
     lock.current = true; setBusy(true)
-    try { setPhoto(await getBbmPhoto(path)) } catch (e) { setError(e.message) }
+    try { setPhoto(await getBbmPhoto(path)) } catch (e) { showError(e.message) }
     finally { lock.current = false; setBusy(false) }
   }
   const save = async () => {
     if (!editable || lock.current) return
-    setError(''); setMessage('')
-    try { validateBbm(rows, initial, sheet.previous) } catch (e) { setError(e.message); return }
+    setError(''); dismissNotice()
+    try { validateBbm(rows, initial, sheet.previous) } catch (e) { showError(e.message); return }
     lock.current = true; setBusy(true)
     try {
       apply(await saveBbmSheet(vehicleId, month, sheet.revision, initial, rows, details))
-      setMessage('Laporan BBM tersimpan.')
-    } catch (e) { setError(e.message) }
+      showNotice('success', 'Laporan BBM tersimpan.')
+    } catch (e) { showError(e.message) }
     finally { lock.current = false; setBusy(false) }
   }
   const photoCell = (date, path, index = null) => <span className="bbm-photo">
@@ -121,7 +159,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     <div className="bbm-toolbar">
       <div><Icon name="fuel" /><strong>Laporan BBM</strong><span className="bbm-mode">{canWrite && !previewActive ? 'Lembar kerja harian' : 'Hanya lihat'}</span></div>
       <div>
-        <label>Periode <BbmMonthPicker ariaLabel="Periode BBM" value={month} max={today.slice(0, 7)} disabled={busy} onChange={(next) => { if (mayLeave()) { setVehicleId(''); setMonth(next); onMonthChange?.(next) } }} /></label>
+        <label>Periode <BbmMonthPicker ariaLabel="Periode BBM" value={month} max={today.slice(0, 7)} disabled={busy} onChange={(next) => guardUnsaved(() => { setVehicleId(''); setMonth(next); onMonthChange?.(next) })} /></label>
         {!ownUlpId && <label>ULP <BbmSelect
           ariaLabel="ULP laporan BBM"
           value={ulp}
@@ -129,7 +167,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
           searchable
           searchLabel="Cari ULP"
           options={[{ value: '', label: 'Semua ULP' }, ...units.filter((u) => u.type === 'ULP').map((u) => ({ value: u.uuid, label: u.displayName }))]}
-          onChange={(next) => { if (mayLeave()) { setVehicleId(''); setUlp(next) } }}
+          onChange={(next) => guardUnsaved(() => { setVehicleId(''); setUlp(next) })}
         /></label>}
         <label>Nopol <BbmSelect
           ariaLabel="Kendaraan BBM"
@@ -139,14 +177,12 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
           searchLabel="Cari kendaraan"
           placeholder="Pilih kendaraan"
           options={[{ value: '', label: 'Pilih kendaraan' }, ...selectedVehicles.map((v) => ({ value: v.id, label: bbmVehicleLabel(v) }))]}
-          onChange={(next) => { if (mayLeave()) setVehicleId(next) }}
+          onChange={(next) => guardUnsaved(() => setVehicleId(next))}
         /></label>
-        <button type="button" disabled={busy || loading} onClick={() => { if (mayLeave()) setReload((n) => n + 1) }}><Icon name="refresh-cw" size={16} /> Muat ulang</button>
+        <button type="button" disabled={busy || loading} onClick={() => guardUnsaved(() => setReload((n) => n + 1))}><Icon name="refresh-cw" size={16} /> Muat ulang</button>
         {canWrite && !previewActive && <button className="bbm-save" type="button" disabled={!editable || !dirty || !vehicle?.plate_display} onClick={save}><Icon name="save" size={16} />{busy ? 'Memproses…' : 'Simpan laporan'}</button>}
       </div>
     </div>
-    {error && <p role="alert" className="bbm-error">{error}</p>}
-    {message && <p role="status" className="bbm-success">{message}</p>}
     {loading ? <p role="status">Memuat lembar kerja BBM…</p> : !sheet ? <p>{error ? 'Laporan belum dapat dimuat. Gunakan Muat ulang.' : 'Belum ada kendaraan pada ULP/periode ini.'}</p> : <>
       <div className="bbm-help"><span><Icon name="pencil" size={14} /> Sel putih: isian</span><span><Icon name="lock" size={14} /> Sel abu-abu: otomatis</span><span><Icon name="camera" size={14} /> Foto wajib setiap hari</span><span>{calculated.recorded}/{calculated.days.length} hari tercatat{dirty ? ' · Belum disimpan' : ''}</span></div>
       {!vehicle?.plate_display && <p className="bbm-error">Isi nopol kendaraan pada Alat & Kendaraan terlebih dahulu.</p>}
@@ -166,7 +202,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
               const ps = r.purchases.length ? r.purchases : [null]
               const firstRecord = dayIndex === 0
               return ps.map((p, pi) => <tr key={`${day.date}:${pi}`} className={`${day.date > today ? 'bbm-future' : ''} ${day.date === today ? 'bbm-today' : ''}`}>
-                {pi === 0 && <><td rowSpan={ps.length} className="bbm-auto">{dayIndex + 1}{editable && day.row && !sheet.rows.some((saved) => saved.date === day.date) && <button type="button" className="bbm-clear" title="Kosongkan baris baru" aria-label={`Kosongkan baris ${day.date}`} onClick={() => { if (window.confirm('Kosongkan isian baru pada tanggal ini?')) { setRows((old) => old.filter((r) => r.date !== day.date)); setDirty(true) } }}>×</button>}</td><td rowSpan={ps.length} className="bbm-auto">{labelDate(day.date, { weekday: 'long' }).toUpperCase()}</td><td rowSpan={ps.length} className="bbm-auto">{dayIndex + 1}</td>
+                {pi === 0 && <><td rowSpan={ps.length} className="bbm-auto">{dayIndex + 1}{editable && day.row && !sheet.rows.some((saved) => saved.date === day.date) && <button type="button" className="bbm-clear" title="Kosongkan baris baru" aria-label={`Kosongkan baris ${day.date}`} onClick={() => askConfirm({ title: 'Kosongkan baris?', description: `Isian baru pada ${labelDate(day.date, { day: 'numeric', month: 'long', year: 'numeric' })} akan dihapus.`, confirmLabel: 'Kosongkan', cancelLabel: 'Batal', tone: 'danger', icon: 'alert-triangle', onConfirm: () => { setRows((old) => old.filter((r) => r.date !== day.date)); setDirty(true) } })}>×</button>}</td><td rowSpan={ps.length} className="bbm-auto">{labelDate(day.date, { weekday: 'long' }).toUpperCase()}</td><td rowSpan={ps.length} className="bbm-auto">{dayIndex + 1}</td>
                   <td rowSpan={ps.length} className="bbm-auto bbm-num" title={day.gap ? `Catatan terakhir: ${day.priorDate}` : 'Stand akhir catatan sebelumnya'}>
                     {sheet.revision === 0 && firstRecord ? <input aria-label={`Stand awal pertama ${day.date}`} type="number" step="0.1" min="0" value={initial} disabled={!editable || day.date > today} onChange={(e) => { setInitial(e.target.value); setDirty(true) }} /> : <>{day.showStart ? fmt(day.start, 1) : '—'}{day.gap ? ' !' : ''}</>}
                   </td>
@@ -179,7 +215,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
                 <td className="bbm-auto">Ltr</td><td className="bbm-auto bbm-num">{p ? fmt(p.liters, 3) : '—'}</td><td className="bbm-auto bbm-num">{p ? fmt(p.price) : '—'}</td>
                 <td className="bbm-amount"><span>{p ? fmt(purchaseTotal(p)) : '—'}</span>{editable && day.date <= today && <span className="bbm-row-actions">
                   {pi === ps.length - 1 && r.purchases.length < 10 && <button type="button" title="Tambah pembelian" aria-label={`Tambah pembelian ${day.date}`} onClick={() => updateRow(day.date, { purchases: [...r.purchases, emptyPurchase()] })}><Icon name="plus" size={13} /></button>}
-                  {p && <button type="button" title="Hapus pembelian" aria-label={`Hapus pembelian ${day.date} ${pi + 1}`} onClick={() => { if (window.confirm('Hapus transaksi pembelian ini dari laporan?')) updateRow(day.date, { purchases: r.purchases.filter((_, i) => i !== pi) }) }}><Icon name="close" size={13} /></button>}
+                  {p && <button type="button" title="Hapus pembelian" aria-label={`Hapus pembelian ${day.date} ${pi + 1}`} onClick={() => askConfirm({ title: 'Hapus pembelian?', description: `Pembelian ${pi + 1} pada ${labelDate(day.date, { day: 'numeric', month: 'long', year: 'numeric' })} akan dihapus dari laporan.`, confirmLabel: 'Hapus', cancelLabel: 'Batal', tone: 'danger', icon: 'alert-triangle', onConfirm: () => updateRow(day.date, { purchases: r.purchases.filter((_, i) => i !== pi) }) })}><Icon name="close" size={13} /></button>}
                 </span>}</td>
               </tr>)
             })}</tbody>
@@ -194,5 +230,26 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       </div>
     </>}
     {photo && <div className="bbm-lightbox" role="dialog" aria-modal="true" aria-label="Foto bukti BBM" onClick={() => setPhoto(null)}><button autoFocus onClick={() => setPhoto(null)} onKeyDown={(e) => { if (e.key === 'Escape') setPhoto(null) }}>Tutup <Icon name="close" /></button><img src={photo} alt="Foto bukti laporan BBM" onClick={(e) => e.stopPropagation()} /></div>}
+    {notice && typeof document !== 'undefined' && createPortal(
+      <div className={`bbm-toast bbm-toast-${notice.tone}`} role={notice.tone === 'danger' ? 'alert' : 'status'} aria-live={notice.tone === 'danger' ? 'assertive' : 'polite'}>
+        <span className="bbm-toast-icon" aria-hidden="true"><Icon name={notice.tone === 'success' ? 'check-circle' : 'alert-triangle'} size={18} /></span>
+        <div className="bbm-toast-copy"><strong>{notice.title}</strong><span>{notice.message}</span></div>
+        <button type="button" className="bbm-toast-close" aria-label="Tutup notifikasi" onClick={dismissNotice}><Icon name="close" size={14} /></button>
+      </div>,
+      document.body,
+    )}
+    <ConfirmationDialog
+      open={Boolean(confirm)}
+      title={confirm?.title || 'Konfirmasi'}
+      description={confirm?.description || ''}
+      confirmLabel={confirm?.confirmLabel || 'Lanjutkan'}
+      cancelLabel={confirm?.cancelLabel || 'Batal'}
+      confirmTone={confirm?.tone || 'danger'}
+      icon={confirm?.icon || 'alert-triangle'}
+      className="bbm-confirm"
+      backdropClassName="bbm-confirm-backdrop"
+      onConfirm={() => resolveConfirm(true)}
+      onCancel={() => resolveConfirm(false)}
+    />
   </section>
 }
