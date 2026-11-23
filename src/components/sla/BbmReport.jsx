@@ -13,6 +13,18 @@ const labelDate = (date, options) => {
   return Number.isNaN(parsed.getTime()) ? '—' : new Intl.DateTimeFormat('id-ID', options).format(parsed)
 }
 const emptyPurchase = () => ({ fuel: '', liters: '', price: '', place: '', photo: '' })
+const ZOOM_LEVELS = [80, 90, 100, 110]
+const ZOOM_STORAGE_KEY = 'bbm-table-zoom'
+const readStoredZoom = () => {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = Number(window.localStorage.getItem(ZOOM_STORAGE_KEY))
+    return ZOOM_LEVELS.includes(value) ? value : null
+  } catch {
+    return null
+  }
+}
+const initialZoom = () => readStoredZoom() ?? (typeof window !== 'undefined' && window.innerWidth <= 1536 ? 90 : 100)
 
 export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite = false, previewActive = false, initialMonth, onMonthChange, onEditorStateChange }) {
   const [month, setMonth] = useState(initialMonth.slice(0, 7))
@@ -31,6 +43,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const [confirm, setConfirm] = useState(null)
   const [reload, setReload] = useState(0)
   const [photo, setPhoto] = useState(null)
+  const [zoom, setZoom] = useState(initialZoom)
   const lock = useRef(false)
   const noticeTimer = useRef(null)
   const vehicle = vehicles.find((v) => v.id === vehicleId)
@@ -43,6 +56,16 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const autoReportDate = bbmReportDate(month, rows, today)
   const reportDate = details.report_date || autoReportDate || ''
   const lastDay = calculated.days.at(-1)?.date
+  const zoomIndex = ZOOM_LEVELS.indexOf(zoom)
+  const changeZoom = (next) => {
+    if (!ZOOM_LEVELS.includes(next)) return
+    setZoom(next)
+    try { window.localStorage.setItem(ZOOM_STORAGE_KEY, String(next)) } catch { /* penyimpanan lokal tidak tersedia */ }
+  }
+  const stepZoom = (direction) => {
+    const nextIndex = Math.min(Math.max(zoomIndex + direction, 0), ZOOM_LEVELS.length - 1)
+    changeZoom(ZOOM_LEVELS[nextIndex])
+  }
   const apply = (data) => { setSheet(data); setRows(data.rows || []); setDetails(data.details || {}); setInitial(data.initial_odometer ?? ''); setDirty(false) }
   const dismissNotice = useCallback(() => {
     window.clearTimeout(noticeTimer.current)
@@ -184,11 +207,19 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       </div>
     </div>
     {loading ? <p role="status">Memuat lembar kerja BBM…</p> : !sheet ? <p>{error ? 'Laporan belum dapat dimuat. Gunakan Muat ulang.' : 'Belum ada kendaraan pada ULP/periode ini.'}</p> : <>
-      <div className="bbm-help"><span><Icon name="pencil" size={14} /> Sel putih: isian</span><span><Icon name="lock" size={14} /> Sel abu-abu: otomatis</span><span><Icon name="camera" size={14} /> Foto wajib setiap hari</span><span>{calculated.recorded}/{calculated.days.length} hari tercatat{dirty ? ' · Belum disimpan' : ''}</span></div>
+      <div className="bbm-help"><span><Icon name="pencil" size={14} /> Sel putih: isian</span><span><Icon name="lock" size={14} /> Sel abu-abu: otomatis</span><span><Icon name="camera" size={14} /> Foto wajib setiap hari</span><span>{calculated.recorded}/{calculated.days.length} hari tercatat{dirty ? ' · Belum disimpan' : ''}</span>
+        <div className="bbm-zoom" role="group" aria-label="Zoom tabel BBM">
+          <span>Zoom</span>
+          <button type="button" aria-label="Perkecil tabel" title="Perkecil tabel" disabled={zoomIndex <= 0} onClick={() => stepZoom(-1)}>−</button>
+          <output aria-live="polite">{zoom}%</output>
+          <button type="button" aria-label="Perbesar tabel" title="Perbesar tabel" disabled={zoomIndex >= ZOOM_LEVELS.length - 1} onClick={() => stepZoom(1)}>+</button>
+          {zoom !== 100 && <button type="button" className="bbm-zoom-reset" aria-label="Reset zoom tabel" title="Kembali ke ukuran 100%" onClick={() => changeZoom(100)}>Reset</button>}
+        </div>
+      </div>
       {!vehicle?.plate_display && <p className="bbm-error">Isi nopol kendaraan pada Alat & Kendaraan terlebih dahulu.</p>}
       {calculated.gaps > 0 && <p className="bbm-warning">Ada tanggal yang belum dicatat. Stand awal memakai catatan terakhir yang tersedia; sel bertanda ! mencakup jarak beberapa hari. Lengkapi tanggal kosong agar rekap harian akurat.</p>}
       <div className="bbm-scroll" tabIndex={0} aria-label="Lembar kerja BBM, geser horizontal untuk seluruh kolom">
-        <div className="bbm-paper">
+        <div className="bbm-paper" style={{ zoom: `${zoom}%` }} data-zoom={zoom}>
           <header className="bbm-heading"><h2>BERITA ACARA VERIFIKASI PEMAKAIAN BAHAN BAKAR MINYAK (BBM)</h2><h3>KENDARAAN OPERASIONAL PELAYANAN TEKNIK</h3><h3>{ulpName.toUpperCase()}</h3></header>
           <p className="bbm-intro">Pada hari ini, <input className="bbm-inline-date" type="date" aria-label="Tanggal berita acara" title={!details.report_date && autoReportDate ? 'Otomatis: seluruh odometer dan foto bulan ini sudah lengkap' : undefined} value={reportDate} disabled={!editable} onChange={(e) => updateDetails('report_date', e.target.value)} />, dilakukan verifikasi terhadap pemakaian dan biaya bahan bakar minyak (BBM) kendaraan operasional<br />Pelayanan Teknik (Yantek) {ulpName}, selama bulan <strong>{periodLabel.toUpperCase()}</strong>, dengan data sebagai berikut:</p>
           <table className="bbm-grid" onKeyDown={navigateCells}><colgroup>{[34,72,52,90,126,76,96,94,90,100,74,38,80,104,118].map((width, i) => <col key={i} style={{ width }} />)}</colgroup>

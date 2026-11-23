@@ -9,6 +9,19 @@
 .bbm-mode{font-size:11px;background:#e6f3ef;color:#126652;border-radius:4px;padding:4px 7px}
 .bbm-help{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0;color:#536775;font-size:12px}
 .bbm-help span{display:flex;align-items:center;gap:5px}
+.bbm-zoom{margin-left:auto;display:flex;align-items:center;gap:3px;padding:2px;border:1px solid #d3e0e5;border-radius:8px;background:#fff;color:#284b56}
+.bbm-zoom>span{padding:0 6px;font-size:11px;color:#536775}
+.bbm-zoom button{display:grid;place-items:center;width:27px;height:27px;border:0;border-radius:5px;background:transparent;color:#116452;font-size:16px;font-weight:700;line-height:1;cursor:pointer}
+.bbm-zoom button:hover:not(:disabled){background:#e8f5ef}
+.bbm-zoom button:disabled{opacity:.3;cursor:default}
+.bbm-zoom output{min-width:38px;text-align:center;font-size:11px;font-weight:700;color:#24444f;font-variant-numeric:tabular-nums}
+.bbm-zoom .bbm-zoom-reset{width:auto;padding:0 7px;font-size:10.5px;font-weight:700}
+:root[data-theme='dark'] .bbm-zoom{border-color:#34565f;background:#11252b;color:#cfe8e1}
+:root[data-theme='dark'] .bbm-zoom>span{color:#9fc0b8}
+:root[data-theme='dark'] .bbm-zoom output{color:#d9f1e8}
+:root[data-theme='dark'] .bbm-zoom button{color:#8bd8c0}
+:root[data-theme='dark'] .bbm-zoom button:hover:not(:disabled){background:#173b33}
+@media print{.bbm-paper{zoom:1 !important}.bbm-zoom{display:none !important}}
 .bbm-scroll{overflow-x:auto;border:1px solid #bdc9d1;background:#e8edf0;padding:18px;max-width:100%}
 .bbm-paper{width:1370px;min-width:1370px;box-sizing:border-box;margin:0 auto;padding:28px 24px;background:white;color:#16242b;box-shadow:0 2px 7px #0001;font-family:Arial,sans-serif;font-size:12px}
 .bbm-heading{text-align:center;margin-bottom:24px}
@@ -133,5 +146,6 @@
 @media (max-width:640px){
   .bbm-toolbar label{flex:1 1 100%}
   .bbm-mp-trigger,.bbm-cs-trigger{width:100%;max-width:none;min-width:0}
+  .bbm-zoom{margin-left:0;width:100%;justify-content:flex-end}
   .bbm-toast{bottom:12px;left:12px;right:12px;width:auto}
 }
