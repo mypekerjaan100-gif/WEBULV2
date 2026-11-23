@@ -54,6 +54,8 @@ try {
   assert.equal(await page.getByRole('alert').count(), 0)
   await page.getByLabel('Kendaraan BBM').click()
   await page.locator('.bbm-cs-popup').waitFor()
+  await page.getByLabel('Cari kendaraan').focus()
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.bbm-cs-search')).boxShadow.includes('24, 136, 108'))
   const searchOutline = await page.getByLabel('Cari kendaraan').evaluate((el) => getComputedStyle(el).outlineStyle)
   assert.equal(searchOutline, 'none')
   const searchFrame = await page.locator('.bbm-cs-search').evaluate((el) => getComputedStyle(el).boxShadow)
@@ -65,6 +67,18 @@ try {
   await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
   assert.match(await page.getByLabel('Kendaraan BBM').innerText(), /KB 2644XT/)
   assert.equal(await page.locator('.bbm-grid').first().locator('tbody tr').count(), 31)
+  assert.notEqual(await page.locator('.bbm-toolbar').evaluate((el) => getComputedStyle(el).position), 'sticky')
+  await page.evaluate(() => {
+    const head = document.querySelector('.bbm-grid:not(.bbm-sampling) thead')
+    window.scrollTo(0, head.getBoundingClientRect().top + window.scrollY - 8)
+  })
+  assert(await page.locator('.bbm-toolbar').evaluate((el) => el.getBoundingClientRect().bottom < 0))
+  assert(await page.locator('.bbm-grid:not(.bbm-sampling) thead').evaluate((el) => {
+    const rect = el.getBoundingClientRect()
+    return rect.top >= 0 && rect.top < 40
+  }))
+  await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\bbm-toolbar-scroll.png' })
+  await page.evaluate(() => window.scrollTo(0, 0))
   await page.getByLabel('Stand awal pertama 2026-10-01').fill('40951')
   await page.getByLabel('Stand akhir 2026-10-01', { exact: true }).fill('41186')
   await page.getByLabel('Stand akhir 2026-10-01', { exact: true }).press('Enter')

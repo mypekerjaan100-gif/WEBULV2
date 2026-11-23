@@ -1,5 +1,5 @@
 .bbm-report{color:var(--text-primary,#172b36);font-size:13px;min-width:0}
-.bbm-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0;position:sticky;top:0;z-index:5;background:var(--bg-primary,#fff)}
+.bbm-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0;background:var(--bg-primary,#fff)}
 .bbm-toolbar>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .bbm-toolbar label{display:flex;align-items:center;gap:6px;font-size:12px}
 .bbm-toolbar input,.bbm-toolbar select,.bbm-toolbar button{min-height:34px;border:1px solid #c8d3db;border-radius:5px;padding:5px 8px;background:#fff;color:#183c48}
