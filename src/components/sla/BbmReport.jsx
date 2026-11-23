@@ -13,7 +13,7 @@ const labelDate = (date, options) => {
   return Number.isNaN(parsed.getTime()) ? '—' : new Intl.DateTimeFormat('id-ID', options).format(parsed)
 }
 const emptyPurchase = () => ({ fuel: '', liters: '', price: '', place: '', photo: '' })
-const ZOOM_LEVELS = [80, 90, 100, 110]
+const ZOOM_LEVELS = [70, 80, 90, 100, 110]
 const ZOOM_STORAGE_KEY = 'bbm-table-zoom'
 const readStoredZoom = () => {
   if (typeof window === 'undefined') return null
@@ -24,7 +24,14 @@ const readStoredZoom = () => {
     return null
   }
 }
-const initialZoom = () => readStoredZoom() ?? (typeof window !== 'undefined' && window.innerWidth <= 1536 ? 90 : 100)
+const initialZoom = () => {
+  const stored = readStoredZoom()
+  if (stored != null) return stored
+  const width = typeof window !== 'undefined' ? window.innerWidth : 1600
+  if (width <= 1366) return 70
+  if (width <= 1536) return 80
+  return 100
+}
 
 export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite = false, previewActive = false, initialMonth, onMonthChange, onEditorStateChange }) {
   const [month, setMonth] = useState(initialMonth.slice(0, 7))
