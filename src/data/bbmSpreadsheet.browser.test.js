@@ -30,6 +30,13 @@ try {
     export const uploadBbmPhoto=async(v,date,kind,file)=>date+'/'+kind+'/'+file.name;
     export const getBbmPhoto=async()=> 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=';
   ` }))
+  await page.route('**/src/data/aiRepository.js*', (route) => route.fulfill({ contentType: 'application/javascript', body: `
+    export const getAiPublicStatus=async()=>window.aiPublicStatus??{enabled:true,provider:'gemini',model:'gemini-3.6-flash'};
+    export const validateBbmOdometer=async({expected})=>{
+      if(window.aiFail)throw Error('Penyedia AI menolak permintaan');
+      return window.aiCheckResult??{status:'match',reading:Number(expected),expected:Number(expected),message:'AI membaca '+Number(expected).toLocaleString('id-ID')+' dan cocok dengan stand akhir.'};
+    };
+  ` }))
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/bbm-test`)
   await page.evaluate(async () => {
     localStorage.setItem('bbm-table-zoom', '100')
@@ -114,6 +121,26 @@ try {
   const photo = { name: 'proof.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('test') }
   await page.getByLabel('Foto odometer 2026-10-01', { exact: true }).setInputFiles(photo)
   await page.getByRole('button', { name: 'Lihat foto odometer 2026-10-01' }).waitFor()
+  const aiButton = page.getByRole('button', { name: 'Validasi AI', exact: true })
+  await aiButton.waitFor()
+  await aiButton.click()
+  const aiDialog = page.getByRole('dialog', { name: 'Validasi foto odometer dengan AI' })
+  await aiDialog.waitFor()
+  await aiDialog.getByRole('button', { name: 'Periksa', exact: true }).click()
+  await aiDialog.locator('.bbm-ai-result.is-match').waitFor()
+  assert.match(await aiDialog.innerText(), /Cocok/)
+  assert.match(await aiDialog.innerText(), /AI membaca 41\.186/)
+  await page.evaluate(() => {
+    window.aiCheckResult = { status: 'mismatch', reading: 41180, expected: 41186, message: 'AI membaca 41.180, berbeda 6 dari stand akhir 41.186.' }
+  })
+  await aiDialog.getByRole('button', { name: 'Periksa lagi', exact: true }).click()
+  await aiDialog.locator('.bbm-ai-result.is-mismatch').waitFor()
+  assert.match(await aiDialog.innerText(), /Berbeda/)
+  assert.match(await aiDialog.innerText(), /41\.180/)
+  await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\bbm-ai-odometer.png' })
+  await aiDialog.getByRole('button', { name: 'Tutup', exact: true }).click()
+  assert.equal(await aiDialog.count(), 0)
+  await page.evaluate(() => { delete window.aiCheckResult })
   const secondRow = page.locator('.bbm-grid').first().locator('tbody tr').nth(1)
   const secondActions = secondRow.locator('.bbm-row-actions')
   await page.mouse.move(0, 0)

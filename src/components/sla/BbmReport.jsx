@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../Icon.jsx'
-import { ConfirmationDialog } from '../ui/Primitives.jsx'
+import { Button, ConfirmationDialog, Modal } from '../ui/Primitives.jsx'
 import { BBM_SAMPLING_CHECKS, BBM_SAMPLING_NOTES, BBM_SAMPLING_RESULTS, BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmPlaceOptions, bbmRupiah, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
 import { listBbmVehicles, getBbmSheet, saveBbmSheet, uploadBbmPhoto, getBbmPhoto } from '../../data/bbmRepository.js'
+import { getAiPublicStatus, validateBbmOdometer } from '../../data/aiRepository.js'
 import BbmMonthPicker from './BbmMonthPicker.jsx'
 import BbmSelect from './BbmSelect.jsx'
 import ModernDatePicker from './ModernDatePicker.jsx'
@@ -58,6 +59,9 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const [reload, setReload] = useState(0)
   const [photo, setPhoto] = useState(null)
   const [zoom, setZoom] = useState(initialZoom)
+  const [aiReady, setAiReady] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiChecks, setAiChecks] = useState({})
   const lock = useRef(false)
   const noticeTimer = useRef(null)
   const vehicle = vehicles.find((v) => v.id === vehicleId)
@@ -136,18 +140,34 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   }, [contractId, up3Id, month, ownUlpId, ulp, reload, dismissNotice, showError])
   useEffect(() => {
     let active = true
-    setSheet(null); setRows([]); setDetails({}); setInitial(''); setDirty(false); dismissNotice()
+    setSheet(null); setRows([]); setDetails({}); setInitial(''); setDirty(false); dismissNotice(); setAiChecks({})
     if (!vehicleId || !vehicles.some((v) => v.id === vehicleId)) return
     setLoading(true); setError('')
     getBbmSheet(vehicleId, month).then((data) => { if (active) apply(data) })
       .catch((e) => { if (active) showError(e.message) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [vehicleId, vehicles, month, dismissNotice, showError])
+  useEffect(() => {
+    let active = true
+    getAiPublicStatus()
+      .then((status) => { if (active) setAiReady(Boolean(status?.enabled)) })
+      .catch(() => { if (active) setAiReady(false) })
+    return () => { active = false }
+  }, [reload])
   const updateRow = (date, changes) => {
     setRows((old) => {
       const existing = old.find((r) => r.date === date) || { date, end: '', photo: '', purchases: [] }
       return [...old.filter((r) => r.date !== date), { ...existing, ...changes }].sort((a, b) => a.date.localeCompare(b.date))
-    }); setDirty(true); dismissNotice()
+    })
+    if ('end' in changes || 'photo' in changes) {
+      setAiChecks((old) => {
+        if (!(date in old)) return old
+        const next = { ...old }
+        delete next[date]
+        return next
+      })
+    }
+    setDirty(true); dismissNotice()
   }
   const updatePurchase = (date, index, changes) => {
     const purchases = [...(rows.find((r) => r.date === date)?.purchases || [])]
@@ -179,6 +199,30 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       showNotice('success', 'Laporan BBM tersimpan.')
     } catch (e) { showError(e.message) }
     finally { lock.current = false; setBusy(false) }
+  }
+  const aiCandidates = calculated.days.filter((day) => (
+    day.row?.photo && day.row?.end !== '' && day.row?.end != null
+  ))
+  const runAiCheck = async (day) => {
+    if (!day?.row?.photo || day.row.end === '' || day.row.end == null) return
+    if (aiChecks[day.date]?.status === 'checking') return
+    const expected = Number(day.row.end)
+    if (!Number.isFinite(expected)) {
+      showError('Stand akhir belum valid untuk diperiksa AI.')
+      return
+    }
+    setAiChecks((old) => ({ ...old, [day.date]: { status: 'checking' } }))
+    try {
+      const result = await validateBbmOdometer({
+        vehicleId,
+        date: day.date,
+        path: day.row.photo,
+        expected,
+      })
+      setAiChecks((old) => ({ ...old, [day.date]: result }))
+    } catch (e) {
+      setAiChecks((old) => ({ ...old, [day.date]: { status: 'error', message: e.message } }))
+    }
   }
   const photoCell = (date, path, index = null) => <span className="bbm-photo">
     {path && <button type="button" disabled={busy} title="Lihat foto" aria-label={`Lihat foto ${index == null ? 'odometer' : 'struk'} ${date}`} onClick={() => showPhoto(path)}><Icon name="check-circle" size={14} /></button>}
@@ -243,6 +287,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
           options={[{ value: '', label: 'Pilih kendaraan' }, ...selectedVehicles.map((v) => ({ value: v.id, label: bbmVehicleLabel(v) }))]}
           onChange={(next) => guardUnsaved(() => setVehicleId(next))}
         /></label>
+        {aiReady && !previewActive && sheet && <button type="button" className="bbm-ai-open" disabled={busy || loading} onClick={() => setAiOpen(true)} title="Bandingkan foto odometer dengan stand akhir memakai AI"><Icon name="sparkles" size={16} /> Validasi AI</button>}
         <button type="button" disabled={busy || loading} onClick={() => guardUnsaved(() => setReload((n) => n + 1))}><Icon name="refresh-cw" size={16} /> Muat ulang</button>
         {canWrite && !previewActive && <button className="bbm-save" type="button" disabled={!editable || !dirty || !vehicle?.plate_display} onClick={save}><Icon name="save" size={16} />{busy ? 'Memproses…' : 'Simpan laporan'}</button>}
       </div>
@@ -310,6 +355,58 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       </div>,
       document.body,
     )}
+    <Modal
+      open={aiOpen}
+      onClose={() => setAiOpen(false)}
+      title="Validasi foto odometer dengan AI"
+      size="medium"
+      footer={<Button variant="secondary" onClick={() => setAiOpen(false)}>Tutup</Button>}
+    >
+      <p className="bbm-ai-intro">
+        AI membaca angka pada foto odometer, lalu membandingkannya dengan stand akhir yang Anda isi.
+        Hasil ini adalah pemeriksaan pendamping dan tidak mengubah angka laporan.
+      </p>
+      {aiCandidates.length === 0 ? (
+        <p className="bbm-ai-empty">Belum ada hari yang memiliki foto odometer dan stand akhir. Lengkapi keduanya terlebih dahulu.</p>
+      ) : (
+        <div className="bbm-ai-list">
+          {aiCandidates.map((day) => {
+            const result = aiChecks[day.date]
+            const status = result?.status || 'idle'
+            return (
+              <div className="bbm-ai-row" key={day.date}>
+                <div className="bbm-ai-day">
+                  <strong>{labelDate(day.date, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
+                  <span>Stand akhir <b>{fmt(day.end, 1)}</b></span>
+                </div>
+                <div className={`bbm-ai-result is-${status}`} aria-live="polite">
+                  <span className="bbm-ai-result-head">
+                    {status === 'checking' && <><Icon name="loader" size={14} className="bbm-ai-spin" /> Membaca foto…</>}
+                    {status === 'match' && <><Icon name="check-circle" size={14} /> Cocok</>}
+                    {status === 'mismatch' && <><Icon name="alert-triangle" size={14} /> Berbeda</>}
+                    {status === 'unreadable' && <><Icon name="info" size={14} /> Tidak terbaca</>}
+                    {status === 'error' && <><Icon name="x-circle" size={14} /> Gagal</>}
+                    {status === 'idle' && <>Belum diperiksa</>}
+                  </span>
+                  {result?.message && <small>{result.message}</small>}
+                </div>
+                <button
+                  type="button"
+                  className="bbm-ai-check"
+                  disabled={status === 'checking'}
+                  onClick={() => runAiCheck(day)}
+                >
+                  {status === 'checking' ? 'Memeriksa…' : result ? 'Periksa lagi' : 'Periksa'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <p className="bbm-ai-disclaimer">
+        <Icon name="shield" size={14} /> AI dapat salah membaca foto buram atau terhalang. Tetap periksa foto secara manual sebelum menyimpan laporan.
+      </p>
+    </Modal>
     <ConfirmationDialog
       open={Boolean(confirm)}
       title={confirm?.title || 'Konfirmasi'}

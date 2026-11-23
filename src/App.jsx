@@ -4,6 +4,7 @@ import DashboardPage from './pages/DashboardPage.jsx'
 import ContractPage from './pages/ContractPage.jsx'
 import SLAPelayananTeknikPage from './pages/sla/SLAPelayananTeknikPage.jsx'
 import UserListPage from './pages/user-management/UserListPage.jsx'
+import AIPengaturanPage from './pages/AIPengaturanPage.jsx'
 import FinancialAnalysisPage from './pages/FinancialAnalysisPage.jsx'
 import { SlaPreviewContext } from './context/SlaPreviewContext.js'
 import {
@@ -393,6 +394,7 @@ export default function App() {
 
   useEffect(() => {
     if (currentPage === 'pengguna-akses' && !effectiveIsSuperAdmin) setCurrentPage(null)
+    else if (currentPage === 'ai-pengaturan' && !effectiveIsSuperAdmin) setCurrentPage(null)
     else if (currentPage === 'analisis-finansial' && !canAccessFinancial) setCurrentPage(null)
     if (!isActiveContractAuthorized) setActiveContractId(null)
   }, [canAccessFinancial, currentPage, effectiveIsSuperAdmin, isActiveContractAuthorized])
@@ -408,6 +410,8 @@ export default function App() {
     let nextPeriode = null
     if (first === 'pengguna-akses' && effectiveIsSuperAdmin) {
       nextPage = 'pengguna-akses'
+    } else if (first === 'ai-pengaturan' && effectiveIsSuperAdmin) {
+      nextPage = 'ai-pengaturan'
     } else if (first === 'analisis-finansial' && canAccessFinancial) {
       nextPage = 'analisis-finansial'
       if (periode && slaPeriods.includes(periode)) nextPeriode = periode
@@ -478,8 +482,9 @@ export default function App() {
       return
     }
     if (pageId === 'pengguna-akses' && !effectiveIsSuperAdmin) return
+    if (pageId === 'ai-pengaturan' && !effectiveIsSuperAdmin) return
     if (pageId === 'analisis-finansial' && !canAccessFinancial) return
-    if (pageId !== 'pengguna-akses' && pageId !== 'analisis-finansial' && !effectiveIsSuperAdmin) return
+    if (pageId !== 'pengguna-akses' && pageId !== 'ai-pengaturan' && pageId !== 'analisis-finansial' && !effectiveIsSuperAdmin) return
     setCurrentPage(pageId)
     setActiveContractId(null)
     setSlaActiveModule('sla')
@@ -655,6 +660,8 @@ export default function App() {
       >
         {currentPage === 'pengguna-akses' ? (
           <UserListPage onBack={() => navigatePage(null)} />
+        ) : currentPage === 'ai-pengaturan' ? (
+          <AIPengaturanPage onBack={() => navigatePage(null)} />
         ) : currentPage === 'analisis-finansial' ? (
           <FinancialAnalysisPage
             initialPeriode={finRouteRequest?.periode ?? null}

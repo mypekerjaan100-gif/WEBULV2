@@ -189,7 +189,7 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
 
         {isSuperAdmin && !previewActive && (
           <>
-            <div className="nav-section-title">Pengguna &amp; Akses</div>
+            <div className="nav-section-title">Administrasi Sistem</div>
             <button
               type="button"
               className={`nav-item ${currentPage === 'pengguna-akses' ? 'nav-item-active' : ''}`}
@@ -197,6 +197,14 @@ export default function Sidebar({ open, collapsed, onToggleCollapse, activeContr
             >
               <span className="nav-icon"><Icon name="users" /></span>
               <span className="nav-item-label">Pengguna &amp; Akses</span>
+            </button>
+            <button
+              type="button"
+              className={`nav-item ${currentPage === 'ai-pengaturan' ? 'nav-item-active' : ''}`}
+              onClick={() => onNavigatePage('ai-pengaturan')}
+            >
+              <span className="nav-icon"><Icon name="sparkles" /></span>
+              <span className="nav-item-label">Pengaturan AI</span>
             </button>
           </>
         )}

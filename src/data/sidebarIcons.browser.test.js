@@ -57,6 +57,7 @@ try {
   assert.equal(await page.locator('#nav-submenu-master-pengaturan .nav-submenu-item').count(), 8)
   assert.equal(await page.locator('.nav-submenu-marker svg.ui-icon').count(), 13)
   assert.equal(await page.locator('.nav-submenu-dot').count(), 0)
+  assert.equal(await page.locator('.nav-item', { hasText: 'Pengaturan AI' }).first().locator('svg.ui-icon').count(), 1, 'Ikon menu Pengaturan AI tidak tampil')
   for (const label of ['SLA', 'Variable Cost', 'Lembur', 'Alat & Kendaraan', 'Laporan BBM', 'Master Organisasi', 'Master Lokasi', 'Master Jabatan', 'Master Alat & Kendaraan', 'Master Pegawai', 'Pengaturan SLA', 'Pengaturan Lembur', 'Master Penandatangan']) {
     assert.equal(await page.locator('.nav-submenu-item', { hasText: label }).first().locator('svg.ui-icon').count(), 1, `Ikon submenu ${label} tidak tampil`)
   }
