@@ -14,6 +14,7 @@ export default function BbmSelect({
   ariaLabel = 'Pilih',
   searchable = false,
   searchLabel = 'Cari pilihan',
+  compact = false,
   id,
 }) {
   const [open, setOpen] = useState(false)
@@ -24,6 +25,7 @@ export default function BbmSelect({
   const popupRef = useRef(null)
   const searchRef = useRef(null)
   const selected = options.find((option) => option.value === value)
+    ?? options.find((option) => String(option.value).toLowerCase() === String(value).toLowerCase())
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
     return term ? options.filter((option) => String(option.label).toLowerCase().includes(term)) : options
@@ -184,7 +186,7 @@ export default function BbmSelect({
         ref={triggerRef}
         id={id}
         type="button"
-        className={`bbm-cs-trigger${selected ? ' has-value' : ''}`}
+        className={`bbm-cs-trigger${selected ? ' has-value' : ''}${compact ? ' is-compact' : ''}`}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open ? 'true' : 'false'}
@@ -199,7 +201,7 @@ export default function BbmSelect({
         }}
       >
         <span className="bbm-cs-value">{selected ? selected.label : placeholder}</span>
-        <Icon name="chevron-down" size={14} />
+        {!(compact && disabled) && <Icon name="chevron-down" size={compact ? 11 : 14} />}
       </button>
       {popup}
     </>

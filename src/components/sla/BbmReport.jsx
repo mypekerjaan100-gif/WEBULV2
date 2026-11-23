@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../Icon.jsx'
 import { ConfirmationDialog } from '../ui/Primitives.jsx'
-import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
+import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmPlaceOptions, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
 import { listBbmVehicles, getBbmSheet, saveBbmSheet, uploadBbmPhoto, getBbmPhoto } from '../../data/bbmRepository.js'
 import BbmMonthPicker from './BbmMonthPicker.jsx'
 import BbmSelect from './BbmSelect.jsx'
@@ -209,8 +209,8 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
                   <td rowSpan={ps.length} className="bbm-num"><div className="bbm-odo"><input aria-label={`Stand akhir ${day.date}`} type="number" step="0.1" min="0" value={r.end ?? ''} disabled={!editable || day.date > today} onChange={(e) => updateRow(day.date, { end: e.target.value })} />{photoCell(day.date, r.photo)}</div></td></>}
                 <td>{p ? <input aria-label={`Liter ${day.date} ${pi + 1}`} type="number" min="0" step="0.001" value={p.liters} disabled={!editable} onChange={(e) => updatePurchase(day.date, pi, { liters: e.target.value })} /> : '—'}</td>
                 <td>{p ? <input aria-label={`Harga per liter ${day.date} ${pi + 1}`} type="number" min="0" step="0.01" value={p.price} disabled={!editable} onChange={(e) => updatePurchase(day.date, pi, { price: e.target.value })} /> : '—'}</td>
-                <td colSpan={2}>{p ? <select aria-label={`Jenis BBM ${day.date} ${pi + 1}`} value={p.fuel} disabled={!editable} onChange={(e) => updatePurchase(day.date, pi, { fuel: e.target.value })}><option value="">Pilih BBM</option>{BBM_TYPES.map((f) => <option key={f}>{f}</option>)}</select> : '—'}</td>
-                <td>{p ? <input aria-label={`Tempat pembelian ${day.date} ${pi + 1}`} maxLength={200} placeholder="SPBU / eceran" value={p.place || ''} disabled={!editable} onChange={(e) => updatePurchase(day.date, pi, { place: e.target.value })} /> : '—'}</td>
+                <td colSpan={2}>{p ? <BbmSelect compact ariaLabel={`Jenis BBM ${day.date} ${pi + 1}`} value={p.fuel} disabled={!editable} placeholder="Pilih BBM" options={BBM_TYPES.map((fuel) => ({ value: fuel, label: fuel }))} onChange={(fuel) => updatePurchase(day.date, pi, { fuel })} /> : '—'}</td>
+                <td>{p ? <BbmSelect compact ariaLabel={`Tempat pembelian ${day.date} ${pi + 1}`} value={p.place || ''} disabled={!editable} placeholder="Pilih" options={bbmPlaceOptions(p.place)} onChange={(place) => updatePurchase(day.date, pi, { place })} /> : '—'}</td>
                 <td>{p ? photoCell(day.date, p.photo, pi) : '—'}</td>
                 <td className="bbm-auto">Ltr</td><td className="bbm-auto bbm-num">{p ? fmt(p.liters, 3) : '—'}</td><td className="bbm-auto bbm-num">{p ? fmt(p.price) : '—'}</td>
                 <td className="bbm-amount"><span>{p ? fmt(purchaseTotal(p)) : '—'}</span>{editable && day.date <= today && <span className="bbm-row-actions">

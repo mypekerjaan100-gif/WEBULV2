@@ -1,4 +1,12 @@
 export const BBM_TYPES = ['Pertalite', 'Pertamax', 'Pertamax Turbo', 'Solar', 'Dexlite', 'Pertamina Dex', 'Premium']
+export const BBM_PLACES = ['SPBU', 'Eceran']
+export function bbmPlaceOptions(current) {
+  const value = String(current || '').trim()
+  const known = BBM_PLACES.some((place) => place.toLowerCase() === value.toLowerCase())
+  const options = BBM_PLACES.map((place) => ({ value: place, label: place }))
+  if (value && !known) options.push({ value, label: value })
+  return options
+}
 export const bbmToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Pontianak', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 export const bbmNumber = (value, digits = 2) => value == null || value === '' ? '—' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: digits })
 export const purchaseTotal = (p) => Math.round(Number(p.liters || 0) * Number(p.price || 0) * 100) / 100

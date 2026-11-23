@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { bbmLocationLabel, bbmReportDate, bbmVehicleLabel, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+import { bbmLocationLabel, bbmPlaceOptions, bbmReportDate, bbmVehicleLabel, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+assert.deepEqual(bbmPlaceOptions('').map((option) => option.value), ['SPBU', 'Eceran'])
+assert.deepEqual(bbmPlaceOptions('spbu').map((option) => option.value), ['SPBU', 'Eceran'])
+assert.deepEqual(bbmPlaceOptions('Pertashop').map((option) => option.value), ['SPBU', 'Eceran', 'Pertashop'])
 assert.equal(bbmLocationLabel({ location_name: 'Sempalit', location_type: 'KANTOR_JAGA' }), 'KJ Sempalit')
 assert.equal(bbmLocationLabel({ location_name: 'ULP Pemangkat', location_type: 'UNIT_OFFICE' }), 'ULP Pemangkat')
 assert.equal(bbmLocationLabel({}), '')

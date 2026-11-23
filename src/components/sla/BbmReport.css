@@ -98,6 +98,13 @@
 .bbm-cs-trigger{min-width:230px;max-width:420px}
 .bbm-mp-trigger svg,.bbm-cs-trigger svg{flex:0 0 auto;color:#4e6b76}
 .bbm-cs-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bbm-grid .bbm-cs-trigger.is-compact{box-sizing:border-box;width:100%;min-width:0;max-width:none;min-height:30px;border:0;border-radius:0;background:transparent;padding:4px 4px;color:inherit;font:inherit;gap:2px}
+.bbm-grid .bbm-cs-trigger.is-compact:hover:not(:disabled){background:#eef8f5}
+.bbm-grid .bbm-cs-trigger.is-compact:focus-visible{outline:2px solid #18886c;outline-offset:-2px;background:#f0fcf7}
+.bbm-grid .bbm-cs-trigger.is-compact svg{color:#3f7f72}
+.bbm-grid .bbm-cs-trigger.is-compact:disabled{opacity:1;color:#263944;cursor:default}
+:root[data-theme='dark'] .bbm-grid .bbm-cs-trigger.is-compact:hover:not(:disabled){background:#173b33}
+:root[data-theme='dark'] .bbm-grid .bbm-cs-trigger.is-compact:focus-visible{background:#173b33}
 .bbm-mp-popup,.bbm-cs-popup{position:fixed;z-index:2200;box-sizing:border-box;background:#fff;border:1px solid #b9c8cf;border-radius:8px;box-shadow:0 14px 34px #0b253024;padding:10px;color:#16242b;font-size:13px}
 .bbm-mp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 0 9px}
 .bbm-mp-head strong{font-size:14px}
