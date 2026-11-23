@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../Icon.jsx'
 import { ConfirmationDialog } from '../ui/Primitives.jsx'
-import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmPlaceOptions, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
+import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmPlaceOptions, bbmRupiah, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
 import { listBbmVehicles, getBbmSheet, saveBbmSheet, uploadBbmPhoto, getBbmPhoto } from '../../data/bbmRepository.js'
 import BbmMonthPicker from './BbmMonthPicker.jsx'
 import BbmSelect from './BbmSelect.jsx'
@@ -246,18 +246,18 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
                   </td>
                   <td rowSpan={ps.length} className="bbm-num"><div className="bbm-odo"><input aria-label={`Stand akhir ${day.date}`} type="number" step="0.1" min="0" value={r.end ?? ''} disabled={!editable || day.date > today} onChange={(e) => updateRow(day.date, { end: e.target.value })} />{photoCell(day.date, r.photo)}</div></td></>}
                 <td>{p ? <input aria-label={`Liter ${day.date} ${pi + 1}`} type="number" min="0" step="0.001" value={p.liters} disabled={!editable} onChange={(e) => updatePurchase(day.date, pi, { liters: e.target.value })} /> : '—'}</td>
-                <td>{p ? <input aria-label={`Harga per liter ${day.date} ${pi + 1}`} type="number" min="0" step="0.01" value={p.price} disabled={!editable} onChange={(e) => updatePurchase(day.date, pi, { price: e.target.value })} /> : '—'}</td>
+                <td>{p ? <div className="bbm-money"><span aria-hidden="true">Rp</span><input aria-label={`Harga per liter ${day.date} ${pi + 1}`} type="number" min="0" step="0.01" value={p.price} disabled={!editable} onChange={(e) => updatePurchase(day.date, pi, { price: e.target.value })} /></div> : '—'}</td>
                 <td colSpan={2}>{p ? <BbmSelect compact ariaLabel={`Jenis BBM ${day.date} ${pi + 1}`} value={p.fuel} disabled={!editable} placeholder="Pilih BBM" options={BBM_TYPES.map((fuel) => ({ value: fuel, label: fuel }))} onChange={(fuel) => updatePurchase(day.date, pi, { fuel })} /> : '—'}</td>
                 <td>{p ? <BbmSelect compact ariaLabel={`Tempat pembelian ${day.date} ${pi + 1}`} value={p.place || ''} disabled={!editable} placeholder="Pilih" options={bbmPlaceOptions(p.place)} onChange={(place) => updatePurchase(day.date, pi, { place })} /> : '—'}</td>
                 <td>{p ? photoCell(day.date, p.photo, pi) : '—'}</td>
-                <td className="bbm-auto">Ltr</td><td className="bbm-auto bbm-num">{p ? fmt(p.liters, 3) : '—'}</td><td className="bbm-auto bbm-num">{p ? fmt(p.price) : '—'}</td>
-                <td className="bbm-amount"><span>{p ? fmt(purchaseTotal(p)) : '—'}</span>{editable && day.date <= today && <span className="bbm-row-actions">
+                <td className="bbm-auto">Ltr</td><td className="bbm-auto bbm-num">{p ? fmt(p.liters, 3) : '—'}</td><td className="bbm-auto bbm-num">{p ? bbmRupiah(p.price) : '—'}</td>
+                <td className="bbm-amount"><span>{p ? bbmRupiah(purchaseTotal(p)) : '—'}</span>{editable && day.date <= today && <span className="bbm-row-actions">
                   {pi === ps.length - 1 && r.purchases.length < 10 && <button type="button" className="bbm-add" title="Tambah pembelian" aria-label={`Tambah pembelian ${day.date}`} onClick={() => updateRow(day.date, { purchases: [...r.purchases, emptyPurchase()] })}><Icon name="plus" size={13} /></button>}
                   {p && <button type="button" className="bbm-remove" title="Hapus pembelian" aria-label={`Hapus pembelian ${day.date} ${pi + 1}`} onClick={() => askConfirm({ title: 'Hapus pembelian?', description: `Pembelian ${pi + 1} pada ${labelDate(day.date, { day: 'numeric', month: 'long', year: 'numeric' })} akan dihapus dari laporan.`, confirmLabel: 'Hapus', cancelLabel: 'Batal', tone: 'danger', icon: 'alert-triangle', onConfirm: () => updateRow(day.date, { purchases: r.purchases.filter((_, i) => i !== pi) }) })}><Icon name="close" size={13} /></button>}
                 </span>}</td>
               </tr>)
             })}</tbody>
-            <tfoot><tr><th rowSpan={3} colSpan={2}>TOTAL</th><th colSpan={2}>KILOMETER</th><td colSpan={3} className="bbm-num">{fmt(calculated.km, 1)} km</td><td colSpan={7}></td><td className="bbm-num">{fmt(calculated.total)}</td></tr><tr><th colSpan={2}>LITER</th><td colSpan={3} className="bbm-num">{fmt(calculated.liters, 3)}</td><td colSpan={5}></td><td className="bbm-num">{fmt(calculated.liters, 3)}</td><td colSpan={2}></td></tr><tr><th colSpan={2}>RASIO</th><td colSpan={3} className="bbm-num">{fmt(calculated.ratio, 3)} km/liter</td><td colSpan={8}>Rasio periode = kilometer tercatat ÷ liter dibeli</td></tr></tfoot>
+            <tfoot><tr><th rowSpan={3} colSpan={2}>TOTAL</th><th colSpan={2}>KILOMETER</th><td colSpan={3} className="bbm-num">{fmt(calculated.km, 1)} km</td><td colSpan={7}></td><td className="bbm-num">{bbmRupiah(calculated.total)}</td></tr><tr><th colSpan={2}>LITER</th><td colSpan={3} className="bbm-num">{fmt(calculated.liters, 3)}</td><td colSpan={5}></td><td className="bbm-num">{fmt(calculated.liters, 3)}</td><td colSpan={2}></td></tr><tr><th colSpan={2}>RASIO</th><td colSpan={3} className="bbm-num">{fmt(calculated.ratio, 3)} km/liter</td><td colSpan={8}>Rasio periode = kilometer tercatat ÷ liter dibeli</td></tr></tfoot>
           </table>
           <h4>SAMPLING **)</h4>
           <table className="bbm-grid bbm-sampling"><thead><tr><th>No</th><th>Hari</th><th>Tanggal</th><th>{vehicle?.label}<br />{vehicle?.plate_display}</th><th>Keterangan</th><th>Kesimpulan</th></tr></thead><tbody>{[0, 1, 2].map((i) => <tr key={i}><td>{i + 1}</td><td>{details[`sample_date_${i}`] ? labelDate(details[`sample_date_${i}`], { weekday: 'long' }) : '—'}</td><td>{meta(`sample_date_${i}`, `Tanggal sampling ${i + 1}`, 'date')}</td><td>{meta(`sample_check_${i}`, `Hasil pemeriksaan ${i + 1}`)}</td><td>{meta(`sample_note_${i}`, `Keterangan sampling ${i + 1}`)}</td><td>{meta(`sample_result_${i}`, `Kesimpulan sampling ${i + 1}`)}</td></tr>)}</tbody></table>

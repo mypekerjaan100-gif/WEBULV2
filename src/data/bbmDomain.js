@@ -9,6 +9,7 @@ export function bbmPlaceOptions(current) {
 }
 export const bbmToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Pontianak', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 export const bbmNumber = (value, digits = 2) => value == null || value === '' ? '—' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: digits })
+export const bbmRupiah = (value, digits = 2) => value == null || value === '' ? '—' : `Rp ${bbmNumber(value, digits)}`
 export const purchaseTotal = (p) => Math.round(Number(p.liters || 0) * Number(p.price || 0) * 100) / 100
 export const bbmLocationLabel = (vehicle) => {
   if (!vehicle?.location_name) return ''

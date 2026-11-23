@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
-import { bbmLocationLabel, bbmPlaceOptions, bbmReportDate, bbmVehicleLabel, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+import { bbmLocationLabel, bbmPlaceOptions, bbmReportDate, bbmRupiah, bbmVehicleLabel, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+assert.equal(bbmRupiah(10000), 'Rp 10.000')
+assert.equal(bbmRupiah('500000'), 'Rp 500.000')
+assert.equal(bbmRupiah(0), 'Rp 0')
+assert.equal(bbmRupiah(1234.5), 'Rp 1.234,5')
+assert.equal(bbmRupiah(''), '—')
+assert.equal(bbmRupiah(null), '—')
 assert.deepEqual(bbmPlaceOptions('').map((option) => option.value), ['SPBU', 'Eceran'])
 assert.deepEqual(bbmPlaceOptions('spbu').map((option) => option.value), ['SPBU', 'Eceran'])
 assert.deepEqual(bbmPlaceOptions('Pertashop').map((option) => option.value), ['SPBU', 'Eceran', 'Pertashop'])
