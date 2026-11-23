@@ -21,7 +21,7 @@
 :root[data-theme='dark'] .bbm-zoom output{color:#d9f1e8}
 :root[data-theme='dark'] .bbm-zoom button{color:#8bd8c0}
 :root[data-theme='dark'] .bbm-zoom button:hover:not(:disabled){background:#173b33}
-@media print{.bbm-paper{zoom:1 !important}.bbm-zoom{display:none !important}}
+@media print{.bbm-paper{zoom:1 !important}.bbm-zoom{display:none !important}.bbm-row-actions,.bbm-clear{display:none !important}}
 .bbm-scroll{overflow-x:auto;border:1px solid #bdc9d1;background:#e8edf0;padding:18px;max-width:100%}
 .bbm-paper{width:1370px;min-width:1370px;box-sizing:border-box;margin:0 auto;padding:28px 24px;background:white;color:#16242b;box-shadow:0 2px 7px #0001;font-family:Arial,sans-serif;font-size:12px}
 .bbm-heading{text-align:center;margin-bottom:24px}
@@ -46,18 +46,27 @@
 .bbm-odo{display:flex;align-items:center}
 .bbm-odo>input{width:calc(100% - 40px)}
 .bbm-photo{display:inline-flex;align-items:center;justify-content:center;gap:2px}
-.bbm-photo button,.bbm-photo label,.bbm-row-actions button{display:inline-flex;align-items:center;justify-content:center;background:#f4faf8;color:#19725e;border:1px solid #d2e1dc;padding:2px;cursor:pointer;border-radius:3px}
+.bbm-photo button,.bbm-photo label{display:inline-flex;align-items:center;justify-content:center;background:#f4faf8;color:#19725e;border:1px solid #d2e1dc;padding:2px;cursor:pointer;border-radius:3px}
 .bbm-photo label{position:relative;overflow:hidden}
 .bbm-photo input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0;width:100%}
 .bbm-photo label:focus-within{outline:2px solid #18886c}
 .bbm-amount{background:#f1f5f6;font-variant-numeric:tabular-nums;text-align:right;padding-right:6px}
-.bbm-row-actions{display:inline-flex;gap:2px;margin-left:4px;opacity:0;transition:opacity .15s}
-.bbm-grid tbody tr:hover .bbm-row-actions,.bbm-grid tbody tr:focus-within .bbm-row-actions{opacity:1}
-.bbm-clear{border:0;background:transparent;color:#a34235;cursor:pointer;padding:2px;opacity:0;transition:opacity .15s}
-.bbm-grid tbody tr:hover .bbm-clear,.bbm-grid tbody tr:focus-within .bbm-clear{opacity:1}
-@media (hover: none) {
-  .bbm-row-actions, .bbm-clear { opacity: 1; }
-}
+.bbm-row-actions{display:inline-flex;align-items:center;gap:3px;margin-left:5px;vertical-align:middle}
+.bbm-row-actions button{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border-radius:50%;line-height:1;cursor:pointer;transition:transform .12s ease,background .12s ease,box-shadow .12s ease}
+.bbm-add{background:#0b8a70;border:1px solid #086b57;color:#fff;box-shadow:0 1px 2px rgba(8,76,63,.35)}
+.bbm-add:hover:not(:disabled){background:#076e59;transform:translateY(-1px);box-shadow:0 3px 7px rgba(8,76,63,.32)}
+.bbm-remove{background:#c0392f;border:1px solid #a32b22;color:#fff;box-shadow:0 1px 2px rgba(120,40,33,.3)}
+.bbm-remove:hover:not(:disabled){background:#a32b22;border-color:#8c221b;transform:translateY(-1px);box-shadow:0 3px 7px rgba(120,40,33,.32)}
+.bbm-add:focus-visible,.bbm-remove:focus-visible{outline:2px solid #123f38;outline-offset:1px}
+.bbm-clear{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:5px;padding:0;border:1px solid #d98f88;border-radius:50%;background:#fff3f1;color:#b3362c;font-size:13px;font-weight:700;line-height:1;vertical-align:middle;cursor:pointer;box-shadow:0 1px 2px rgba(120,40,33,.15)}
+.bbm-clear:hover{background:#b3362c;border-color:#9a2a22;color:#fff}
+.bbm-clear:focus-visible{outline:2px solid #123f38;outline-offset:1px}
+:root[data-theme='dark'] .bbm-add{background:#1a9a7c;border-color:#2bb495;color:#04241c}
+:root[data-theme='dark'] .bbm-add:hover:not(:disabled){background:#22b091}
+:root[data-theme='dark'] .bbm-remove{background:#c0453a;border-color:#d66055;color:#fff}
+:root[data-theme='dark'] .bbm-remove:hover:not(:disabled){background:#d9584d;border-color:#e56f64}
+:root[data-theme='dark'] .bbm-clear{background:#3a1c19;border-color:#8a4a44;color:#ffb3ab}
+:root[data-theme='dark'] .bbm-clear:hover{background:#c44a3f;border-color:#d66055;color:#fff}
 .bbm-grid tfoot td,.bbm-grid tfoot th{font-weight:bold;background:#edf4f2;height:30px}
 .bbm-grid tfoot tr:last-child td:last-child{font-weight:normal;font-size:10px;color:#536775}
 .bbm-paper h4{margin:16px 0 5px}
