@@ -144,8 +144,15 @@ for (const className of ['ops-vehicle-form-section', 'ops-vehicle-preview', 'ops
 }
 
 // Integrasi tab utama & halaman
-assert(modules.includes("{ id: 'kendaraan-ulp', name: 'Alat & Kendaraan' }"), 'Tab utama Alat & Kendaraan hilang')
-assert(modules.includes("{ id: 'alat-kendaraan', name: 'Master Alat & Kendaraan', adminOnly: true }"), 'Master Alat & Kendaraan harus terpisah dan hanya untuk admin')
+assert(modules.includes("{ id: 'kendaraan-ulp', name: 'Alat & Kendaraan', icon: 'vehicle' }"), 'Tab utama Alat & Kendaraan hilang')
+assert(modules.includes("{ id: 'alat-kendaraan', name: 'Master Alat & Kendaraan', adminOnly: true, icon: 'wrench' }"), 'Master Alat & Kendaraan harus terpisah dan hanya untuk admin')
+for (const expected of [
+  "{ id: 'sla', name: 'SLA', icon: 'file-text' }",
+  "{ id: 'variable-cost', name: 'Variable Cost', icon: 'wallet' }",
+  "{ id: 'lembur', name: 'Lembur', icon: 'clock' }",
+  "{ id: 'kendaraan-ulp', name: 'Alat & Kendaraan', icon: 'vehicle' }",
+  "{ id: 'laporan-bbm', name: 'Laporan BBM', icon: 'fuel' }",
+]) assert(modules.includes(expected), `Ikon submenu hilang: ${expected}`)
 assert(
   modules.indexOf("id: 'lembur'") < modules.indexOf("id: 'kendaraan-ulp'"),
   'Tab Alat & Kendaraan harus tepat setelah Lembur',

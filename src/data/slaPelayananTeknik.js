@@ -803,19 +803,19 @@ export const slaRoles = [
 ]
 
 export const pelayananTeknikModules = [
-  { id: 'sla', name: 'SLA' },
-  { id: 'variable-cost', name: 'Variable Cost' },
-  { id: 'lembur', name: 'Lembur' },
-  { id: 'kendaraan-ulp', name: 'Alat & Kendaraan' },
+  { id: 'sla', name: 'SLA', icon: 'file-text' },
+  { id: 'variable-cost', name: 'Variable Cost', icon: 'wallet' },
+  { id: 'lembur', name: 'Lembur', icon: 'clock' },
+  { id: 'kendaraan-ulp', name: 'Alat & Kendaraan', icon: 'vehicle' },
   { id: 'laporan-bbm', name: 'Laporan BBM', icon: 'fuel' },
-  { id: 'master-organisasi', name: 'Master Organisasi', adminOnly: true },
-  { id: 'master-lokasi', name: 'Master Lokasi', adminOnly: true },
-  { id: 'master-jabatan', name: 'Master Jabatan', adminOnly: true },
-  { id: 'alat-kendaraan', name: 'Master Alat & Kendaraan', adminOnly: true },
-  { id: 'database-pegawai', name: 'Master Pegawai' },
-  { id: 'pengaturan-sla', name: 'Pengaturan SLA', adminOnly: true },
-  { id: 'pengaturan-lembur', name: 'Pengaturan Lembur', adminOnly: true },
-  { id: 'master-penandatangan', name: 'Master Penandatangan', adminOnly: true },
+  { id: 'master-organisasi', name: 'Master Organisasi', adminOnly: true, icon: 'users' },
+  { id: 'master-lokasi', name: 'Master Lokasi', adminOnly: true, icon: 'map-pin' },
+  { id: 'master-jabatan', name: 'Master Jabatan', adminOnly: true, icon: 'briefcase' },
+  { id: 'alat-kendaraan', name: 'Master Alat & Kendaraan', adminOnly: true, icon: 'wrench' },
+  { id: 'database-pegawai', name: 'Master Pegawai', icon: 'id-card' },
+  { id: 'pengaturan-sla', name: 'Pengaturan SLA', adminOnly: true, icon: 'settings' },
+  { id: 'pengaturan-lembur', name: 'Pengaturan Lembur', adminOnly: true, icon: 'clock' },
+  { id: 'master-penandatangan', name: 'Master Penandatangan', adminOnly: true, icon: 'pencil' },
 ]
 
 const FIRST_PARTY_MEMBERS = [
