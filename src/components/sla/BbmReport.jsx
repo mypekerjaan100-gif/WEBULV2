@@ -2,11 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../Icon.jsx'
 import { ConfirmationDialog } from '../ui/Primitives.jsx'
-import { BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmPlaceOptions, bbmRupiah, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
+import { BBM_SAMPLING_CHECKS, BBM_SAMPLING_NOTES, BBM_SAMPLING_RESULTS, BBM_TYPES, bbmToday, bbmReportDate, bbmNumber as fmt, bbmPlaceOptions, bbmRupiah, bbmVehicleLabel, calculateBbm, validateBbm, purchaseTotal } from '../../data/bbmDomain.js'
 import { listBbmVehicles, getBbmSheet, saveBbmSheet, uploadBbmPhoto, getBbmPhoto } from '../../data/bbmRepository.js'
 import BbmMonthPicker from './BbmMonthPicker.jsx'
 import BbmSelect from './BbmSelect.jsx'
+import ModernDatePicker from './ModernDatePicker.jsx'
 import './BbmReport.css'
+
+const SAMPLING_OTHER = '__other__'
+const samplingOptions = (choices) => [
+  ...choices.map((choice) => ({ value: choice, label: choice })),
+  { value: SAMPLING_OTHER, label: 'Lainnya' },
+]
 
 const labelDate = (date, options) => {
   const parsed = new Date(`${date}T12:00:00`)
@@ -63,6 +70,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const autoReportDate = bbmReportDate(month, rows, today)
   const reportDate = details.report_date || autoReportDate || ''
   const lastDay = calculated.days.at(-1)?.date
+  const sampleDateMax = month === today.slice(0, 7) ? today : lastDay
   const zoomIndex = ZOOM_LEVELS.indexOf(zoom)
   const changeZoom = (next) => {
     if (!ZOOM_LEVELS.includes(next)) return
@@ -178,6 +186,32 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     {!path && !editable && <span>—</span>}
   </span>
   const meta = (key, placeholder, type = 'text') => <input type={type} maxLength={160} aria-label={placeholder} placeholder={placeholder} value={details[key] || ''} disabled={!editable} onChange={(e) => updateDetails(key, e.target.value)} />
+  const samplingField = (index, base, label, choices, placeholder) => {
+    const key = `sample_${base}_${index}`
+    const customKey = `${key}__other`
+    const value = details[key] || ''
+    const custom = details[customKey] === '1' || (value !== '' && !choices.includes(value))
+    return <div className="bbm-sampling-field">
+      <BbmSelect
+        compact
+        ariaLabel={`${label} sampling ${index + 1}`}
+        value={custom ? SAMPLING_OTHER : value}
+        disabled={!editable}
+        placeholder={placeholder}
+        options={samplingOptions(choices)}
+        onChange={(next) => {
+          if (next === SAMPLING_OTHER) {
+            updateDetails(customKey, '1')
+            if (choices.includes(value)) updateDetails(key, '')
+          } else {
+            updateDetails(customKey, '')
+            updateDetails(key, next)
+          }
+        }}
+      />
+      {custom && <input className="bbm-sampling-custom" maxLength={160} aria-label={`Penjelasan ${label.toLowerCase()} sampling ${index + 1}`} placeholder="Tulis penjelasan" value={value} disabled={!editable} onChange={(e) => updateDetails(key, e.target.value)} />}
+    </div>
+  }
   const navigateCells = (event) => {
     if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(event.key) || event.target.tagName !== 'INPUT' || event.target.type !== 'number') return
     const prefix = event.target.getAttribute('aria-label')?.replace(/\d{4}-\d{2}-\d{2}.*$/, '')
@@ -260,8 +294,8 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
             <tfoot><tr><th rowSpan={3} colSpan={2}>TOTAL</th><th colSpan={2}>KILOMETER</th><td colSpan={3} className="bbm-num">{fmt(calculated.km, 1)} km</td><td colSpan={7}></td><td className="bbm-num">{bbmRupiah(calculated.total)}</td></tr><tr><th colSpan={2}>LITER</th><td colSpan={3} className="bbm-num">{fmt(calculated.liters, 3)}</td><td colSpan={5}></td><td className="bbm-num">{fmt(calculated.liters, 3)}</td><td colSpan={2}></td></tr><tr><th colSpan={2}>RASIO</th><td colSpan={3} className="bbm-num">{fmt(calculated.ratio, 3)} km/liter</td><td colSpan={8}>Rasio periode = kilometer tercatat ÷ liter dibeli</td></tr></tfoot>
           </table>
           <h4>SAMPLING **)</h4>
-          <table className="bbm-grid bbm-sampling"><thead><tr><th>No</th><th>Hari</th><th>Tanggal</th><th>{vehicle?.label}<br />{vehicle?.plate_display}</th><th>Keterangan</th><th>Kesimpulan</th></tr></thead><tbody>{[0, 1, 2].map((i) => <tr key={i}><td>{i + 1}</td><td>{details[`sample_date_${i}`] ? labelDate(details[`sample_date_${i}`], { weekday: 'long' }) : '—'}</td><td>{meta(`sample_date_${i}`, `Tanggal sampling ${i + 1}`, 'date')}</td><td>{meta(`sample_check_${i}`, `Hasil pemeriksaan ${i + 1}`)}</td><td>{meta(`sample_note_${i}`, `Keterangan sampling ${i + 1}`)}</td><td>{meta(`sample_result_${i}`, `Kesimpulan sampling ${i + 1}`)}</td></tr>)}</tbody></table>
-          <div className="bbm-notes"><div><strong>Keterangan:</strong><p>*) Pembelian sesuai transaksi pada struk.</p><p>**) Sampling diisi berdasarkan hasil pemeriksa dari Rayon.</p><p>Stand awal otomatis dari catatan terakhir. Hari tanpa pembelian tetap wajib diisi odometer dan fotonya.</p><p>Tanggal berita acara otomatis di akhir bulan setelah seluruh odometer dan foto bulan itu lengkap.</p><p><Icon name="plus" size={14} /> Tambah transaksi · <Icon name="camera" size={14} /> Unggah foto · <Icon name="check-circle" size={14} /> Lihat foto</p></div><div><p>PTMX : Pertamax · PTLT : Pertalite · PREM : Premium</p><label>Tempat Pembelian BBM {meta('purchase_note', 'Keterangan tempat pembelian BBM')}</label><label>Nota / Kuitansi Pembelian BBM {meta('receipt_note', 'Keterangan nota / kuitansi')}</label></div></div>
+          <table className="bbm-grid bbm-sampling"><thead><tr><th>No</th><th>Hari</th><th>Tanggal</th><th>{vehicle?.label}<br />{vehicle?.plate_display}</th><th>Keterangan</th><th>Kesimpulan</th></tr></thead><tbody>{[0, 1, 2].map((i) => <tr key={i}><td>{i + 1}</td><td>{details[`sample_date_${i}`] ? labelDate(details[`sample_date_${i}`], { weekday: 'long' }) : '—'}</td><td><ModernDatePicker compact ariaLabel={`Tanggal sampling ${i + 1}`} value={details[`sample_date_${i}`] || ''} min={`${month}-01`} max={sampleDateMax} disabled={!editable} placeholder="Pilih tanggal" onChange={(date) => updateDetails(`sample_date_${i}`, date)} /></td><td>{samplingField(i, 'check', 'Hasil pemeriksaan', BBM_SAMPLING_CHECKS, 'Pilih hasil')}</td><td>{samplingField(i, 'note', 'Keterangan', BBM_SAMPLING_NOTES, 'Pilih keterangan')}</td><td>{samplingField(i, 'result', 'Kesimpulan', BBM_SAMPLING_RESULTS, 'Pilih kesimpulan')}</td></tr>)}</tbody></table>
+          <div className="bbm-notes"><div><strong>Keterangan:</strong><p>*) Pembelian sesuai transaksi pada struk.</p><p>**) Sampling diisi berdasarkan hasil pemeriksa dari Rayon. Pilih template yang sesuai atau Lainnya.</p><p>Stand awal otomatis dari catatan terakhir. Hari tanpa pembelian tetap wajib diisi odometer dan fotonya.</p><p>Tanggal berita acara otomatis di akhir bulan setelah seluruh odometer dan foto bulan itu lengkap.</p><p><Icon name="plus" size={14} /> Tambah transaksi · <Icon name="camera" size={14} /> Unggah foto · <Icon name="check-circle" size={14} /> Lihat foto</p></div><div><p>PTMX : Pertamax · PTLT : Pertalite · PREM : Premium</p><label>Tempat Pembelian BBM {meta('purchase_note', 'Keterangan tempat pembelian BBM')}</label><label>Nota / Kuitansi Pembelian BBM {meta('receipt_note', 'Keterangan nota / kuitansi')}</label></div></div>
           <div className="bbm-signatures"><div><p>Diperiksa,</p>{meta('inspector_title', 'Jabatan pemeriksa (TL Teknik)')}<div className="bbm-sign-space" />{meta('inspector_name', 'Nama pemeriksa')}</div><div><div className="bbm-sign-date">{meta('city', 'Tempat berita acara')}<span>{reportDate ? labelDate(reportDate, { day: 'numeric', month: 'long', year: 'numeric' }) : '____'}</span></div>{meta('coordinator_title', `Jabatan (Koordinator Yantek ${ulpName})`)}<div className="bbm-sign-space" />{meta('coordinator_name', 'Nama koordinator')}</div><div className="bbm-manager"><p>Mengetahui,</p><p>PT. PLN (Persero) {ulpName.toUpperCase()}</p>{meta('manager_title', 'Jabatan (Manager)')}<div className="bbm-sign-space" />{meta('manager_name', 'Nama manager')}</div></div>
           <p className="bbm-footnote">Format berita acara · Nama/jabatan diisi Admin ULP · Bukan persetujuan digital · Periode sampai {labelDate(lastDay, { day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>

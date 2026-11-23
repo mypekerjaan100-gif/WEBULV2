@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { bbmLocationLabel, bbmPlaceOptions, bbmReportDate, bbmRupiah, bbmVehicleLabel, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+import { BBM_SAMPLING_CHECKS, BBM_SAMPLING_NOTES, BBM_SAMPLING_RESULTS, bbmLocationLabel, bbmPlaceOptions, bbmReportDate, bbmRupiah, bbmVehicleLabel, calculateBbm, monthDays, validateBbm, purchaseTotal } from './bbmDomain.js'
+assert.deepEqual(BBM_SAMPLING_CHECKS, ['Odometer dan foto diperiksa', 'Pembelian BBM dan struk diperiksa', 'Odometer, foto, dan struk diperiksa'])
+assert.deepEqual(BBM_SAMPLING_NOTES, ['Data dan bukti cocok', 'Ada perbedaan data', 'Bukti belum lengkap'])
+assert.deepEqual(BBM_SAMPLING_RESULTS, ['Sesuai', 'Perlu klarifikasi', 'Belum dapat disimpulkan'])
 assert.equal(bbmRupiah(10000), 'Rp 10.000')
 assert.equal(bbmRupiah('500000'), 'Rp 500.000')
 assert.equal(bbmRupiah(0), 'Rp 0')

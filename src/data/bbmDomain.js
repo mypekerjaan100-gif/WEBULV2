@@ -1,5 +1,12 @@
 export const BBM_TYPES = ['Pertalite', 'Pertamax', 'Pertamax Turbo', 'Solar', 'Dexlite', 'Pertamina Dex', 'Premium']
 export const BBM_PLACES = ['SPBU', 'Eceran']
+export const BBM_SAMPLING_CHECKS = [
+  'Odometer dan foto diperiksa',
+  'Pembelian BBM dan struk diperiksa',
+  'Odometer, foto, dan struk diperiksa',
+]
+export const BBM_SAMPLING_NOTES = ['Data dan bukti cocok', 'Ada perbedaan data', 'Bukti belum lengkap']
+export const BBM_SAMPLING_RESULTS = ['Sesuai', 'Perlu klarifikasi', 'Belum dapat disimpulkan']
 export function bbmPlaceOptions(current) {
   const value = String(current || '').trim()
   const known = BBM_PLACES.some((place) => place.toLowerCase() === value.toLowerCase())

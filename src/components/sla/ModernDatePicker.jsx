@@ -65,6 +65,7 @@ export default function ModernDatePicker({
   placeholder = 'Pilih tanggal',
   disabled = false,
   ariaLabel = 'Pilih tanggal',
+  compact = false,
   id,
 }) {
   const [open, setOpen] = useState(false)
@@ -301,7 +302,7 @@ export default function ModernDatePicker({
         ref={triggerRef}
         id={id}
         type="button"
-        className={`mdp-trigger${display ? ' has-value' : ''}`}
+        className={`mdp-trigger${display ? ' has-value' : ''}${compact ? ' is-compact' : ''}`}
         aria-label={ariaLabel}
         aria-haspopup="dialog"
         aria-expanded={open ? 'true' : 'false'}

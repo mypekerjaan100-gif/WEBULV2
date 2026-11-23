@@ -21,7 +21,7 @@
 :root[data-theme='dark'] .bbm-zoom output{color:#d9f1e8}
 :root[data-theme='dark'] .bbm-zoom button{color:#8bd8c0}
 :root[data-theme='dark'] .bbm-zoom button:hover:not(:disabled){background:#173b33}
-@media print{.bbm-paper{zoom:1 !important}.bbm-zoom{display:none !important}.bbm-row-actions,.bbm-clear{display:none !important}}
+@media print{.bbm-paper{zoom:1 !important}.bbm-zoom{display:none !important}.bbm-row-actions,.bbm-clear{display:none !important}.bbm-grid .bbm-cs-trigger.is-compact svg,.bbm-grid .mdp-trigger.is-compact .mdp-trigger-icon,.bbm-grid .mdp-trigger.is-compact .mdp-trigger-caret{display:none !important}.bbm-grid .mdp-trigger.is-compact{padding:0}}
 .bbm-scroll{overflow-x:auto;border:1px solid #bdc9d1;background:#e8edf0;padding:18px;max-width:100%}
 .bbm-paper{width:1370px;min-width:1370px;box-sizing:border-box;margin:0 auto;padding:28px 24px;background:white;color:#16242b;box-shadow:0 2px 7px #0001;font-family:Arial,sans-serif;font-size:12px}
 .bbm-heading{text-align:center;margin-bottom:24px}
@@ -69,6 +69,17 @@
 .bbm-sampling th:first-child{width:36px}
 .bbm-sampling th:nth-child(2){width:85px}
 .bbm-sampling th:nth-child(3){width:150px}
+.bbm-sampling-field{display:flex;flex-direction:column;min-width:0}
+.bbm-sampling-field .bbm-cs-trigger.is-compact{min-height:28px}
+.bbm-grid .bbm-sampling-custom{border-top:1px dashed #cdbb83;background:#fffdf3;color:#3c4f58;font-size:10.5px;padding:4px 6px}
+.bbm-grid .bbm-sampling-custom::placeholder{color:#8c9aa2}
+.bbm-grid .bbm-sampling-custom:disabled{background:#f8f5e9;color:#263944}
+.bbm-grid .mdp-trigger.is-compact{display:flex;width:100%;min-height:30px;padding:3px 5px;gap:4px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;font-size:10.5px;text-align:left}
+.bbm-grid .mdp-trigger.is-compact:hover{border-color:transparent;background:#f0fcf7}
+.bbm-grid .mdp-trigger.is-compact:focus-visible{outline:2px solid #18886c;outline-offset:-2px;border-color:transparent;box-shadow:none;background:#f0fcf7}
+.bbm-grid .mdp-trigger.is-compact:disabled{background:transparent;color:#263944;opacity:1}
+.bbm-grid .mdp-trigger.is-compact .mdp-trigger-icon{width:18px;height:18px;border-radius:4px;background:#e8f2ee}
+.bbm-grid .mdp-trigger.is-compact .mdp-trigger-icon svg{width:12px;height:12px}
 .bbm-notes{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin:16px 0}
 .bbm-notes p{margin:5px 0}
 .bbm-notes label{display:block;margin:8px 0}
