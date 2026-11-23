@@ -1,0 +1,20 @@
+.bbm-tabs{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:8px}
+.bbm-tabs button{padding:10px 16px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--text-secondary);cursor:pointer;font:inherit;font-weight:600}
+.bbm-tabs button[aria-selected=true]{border-bottom-color:var(--primary);color:var(--primary);background:var(--surface-selected)}
+.bbm-tabs button:focus-visible,.bbm-summary-grid button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.bbm-summary-note{color:var(--text-secondary);font-size:12px;line-height:1.6}
+.bbm-summary-scroll{overflow:auto;max-height:70vh;border:1px solid var(--border-strong)}
+.bbm-summary-grid{width:100%;min-width:1050px;border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-primary);background:var(--surface)}
+.bbm-summary-grid caption{padding:14px;font-weight:700;background:var(--surface-subtle);color:var(--heading)}
+.bbm-summary-grid th,.bbm-summary-grid td{padding:9px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);vertical-align:middle}
+.bbm-summary-grid thead th{position:sticky;top:0;z-index:1;background:var(--surface-selected);text-align:center}
+.bbm-summary-grid .bbm-summary-num{text-align:right;white-space:nowrap}
+.bbm-summary-grid tbody tr:hover td{background:var(--surface-hover)}
+.bbm-summary-grid small{display:block;color:var(--text-muted);margin-top:3px}
+.bbm-summary-grid button{border:0;padding:0;background:transparent;color:var(--primary);cursor:pointer;font:inherit;font-weight:600;text-decoration:underline}
+.bbm-summary-subtotal,.bbm-summary-grid tfoot{background:var(--surface-selected);font-weight:700}
+.bbm-summary-subtotal th,.bbm-summary-grid tfoot th{text-align:left}
+.bbm-summary-status{display:inline-block;padding:3px 6px;border-radius:4px;background:var(--tone-warning-bg);color:var(--tone-warning-text);font-size:11px}
+.bbm-summary-status.is-complete{background:var(--tone-success-bg);color:var(--tone-success-text)}
+@media(max-width:640px){.bbm-tabs button{flex:1;padding:10px 6px;font-size:12px}.bbm-summary .bbm-toolbar>div{width:100%}.bbm-summary-scroll{max-height:65vh}}
+@media print{.bbm-tabs,.bbm-summary .bbm-toolbar{display:none}.bbm-summary-scroll{max-height:none;overflow:visible}.bbm-summary-grid{min-width:0;font-size:9px}}

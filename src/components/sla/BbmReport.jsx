@@ -8,6 +8,7 @@ import { getAiPublicStatus, validateBbmOdometer } from '../../data/aiRepository.
 import { aiCheckMeta, describeAiFailure } from '../../data/aiValidation.js'
 import BbmMonthPicker from './BbmMonthPicker.jsx'
 import BbmSelect from './BbmSelect.jsx'
+import BbmSummary from './BbmSummary.jsx'
 import ModernDatePicker from './ModernDatePicker.jsx'
 import './BbmReport.css'
 
@@ -44,6 +45,7 @@ const initialZoom = () => {
 
 export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite = false, previewActive = false, initialMonth, onMonthChange, onEditorStateChange }) {
   const [month, setMonth] = useState(initialMonth.slice(0, 7))
+  const [tab, setTab] = useState('daily')
   const [ulp, setUlp] = useState(ownUlpId || '')
   const [vehicles, setVehicles] = useState([])
   const [vehicleId, setVehicleId] = useState('')
@@ -484,6 +486,18 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     event.preventDefault(); next?.focus(); next?.select()
   }
   return <section className="bbm-report">
+    <div className="bbm-tabs" role="tablist" aria-label="Tampilan laporan BBM" onKeyDown={(event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const tabs = [...event.currentTarget.querySelectorAll('[role="tab"]:not(:disabled)')]
+      const target = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1) : tabs[(tabs.indexOf(document.activeElement) + (event.key === 'ArrowLeft' ? tabs.length - 1 : 1)) % tabs.length]
+      target?.focus(); target?.click()
+    }}>
+      <button type="button" role="tab" id="bbm-tab-daily" aria-controls="bbm-panel-daily" aria-selected={tab === 'daily'} onClick={() => setTab('daily')}>Lembar Harian</button>
+      <button type="button" role="tab" id="bbm-tab-summary" aria-controls="bbm-panel-summary" aria-selected={tab === 'summary'} disabled={busy} onClick={() => setTab('summary')}>Ringkasan Semua Unit</button>
+    </div>
+    {tab === 'summary' && <div role="tabpanel" id="bbm-panel-summary" aria-labelledby="bbm-tab-summary"><BbmSummary contractId={contractId} up3Id={up3Id} units={units} ownUlpId={ownUlpId} initialMonth={month} dirty={dirty} onOpen={(id, period) => guardUnsaved(() => { setUlp(ownUlpId || ''); setMonth(period); setVehicleId(id); setTab('daily') })} /></div>}
+    <div role="tabpanel" id="bbm-panel-daily" aria-labelledby="bbm-tab-daily" hidden={tab !== 'daily'}>
     <div className="bbm-toolbar">
       <div><Icon name="fuel" /><strong>Laporan BBM</strong><span className="bbm-mode">{canWrite && !previewActive ? 'Lembar kerja harian' : 'Hanya lihat'}</span></div>
       <div>
@@ -566,6 +580,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       </div>
     </>}
     {photo && <div className="bbm-lightbox" role="dialog" aria-modal="true" aria-label="Foto bukti BBM" onClick={() => setPhoto(null)}><button autoFocus onClick={() => setPhoto(null)} onKeyDown={(e) => { if (e.key === 'Escape') setPhoto(null) }}>Tutup <Icon name="close" /></button><img src={photo} alt="Foto bukti laporan BBM" onClick={(e) => e.stopPropagation()} /></div>}
+    </div>
     {notice && typeof document !== 'undefined' && createPortal(
       <div className={`bbm-toast bbm-toast-${notice.tone}`} role={notice.tone === 'danger' ? 'alert' : 'status'} aria-live={notice.tone === 'danger' ? 'assertive' : 'polite'}>
         <span className="bbm-toast-icon" aria-hidden="true"><Icon name={notice.tone === 'success' ? 'check-circle' : notice.tone === 'info' ? 'info' : 'alert-triangle'} size={18} /></span>

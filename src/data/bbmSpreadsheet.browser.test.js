@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import * as XLSX from 'xlsx'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
 import { periodLabelFromMonth } from './versiSlaPelayananTeknik.js'
@@ -412,6 +414,41 @@ try {
   await page.screenshot({ path: 'C:\\Users\\risky\\AppData\\Local\\Temp\\opencode\\bbm-dark-vehicle-picker.png' })
   await page.keyboard.press('Escape')
   await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+  await page.getByRole('tab', { name: 'Ringkasan Semua Unit' }).click()
+  await page.locator('.bbm-summary-grid').waitFor()
+  assert.equal(await page.locator('.bbm-summary-grid tbody tr').count(), 3)
+  assert.match(await page.locator('.bbm-summary-grid tfoot').innerText(), /2 kendaraan/)
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Unduh Excel' }).click()
+  const download = await downloadPromise
+  assert.match(download.suggestedFilename(), /^Ringkasan-BBM-.*\.xlsx$/)
+  const workbook = XLSX.read(await readFile(await download.path()), { type: 'buffer' })
+  const exported = XLSX.utils.sheet_to_json(workbook.Sheets['Ringkasan BBM'], { header: 1 })
+  assert(exported.some((row) => row[2] === 'KB 1382 AX'))
+  assert(exported.some((row) => row[2] === 'SUBTOTAL'))
+  assert(exported.some((row) => row[2] === 'TOTAL' && typeof row[5] === 'number'))
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  assert(luminance(await page.locator('.bbm-summary-grid').evaluate((el) => getComputedStyle(el).backgroundColor)) < 70)
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert(await page.locator('.bbm-summary-scroll').evaluate((el) => el.scrollWidth > el.clientWidth))
+  await page.getByRole('button', { name: 'KB 1382 AX', exact: true }).click()
+  await page.getByRole('heading', { name: /BERITA ACARA/ }).waitFor()
+  assert.equal(await page.getByRole('tab', { name: 'Lembar Harian' }).getAttribute('aria-selected'), 'true')
+  await page.evaluate(async () => {
+    const { default: Summary } = await import('/src/components/sla/BbmSummary.jsx')
+    const r = await import('/node_modules/.vite/deps/react.js')
+    const React = r.default ?? r
+    const dom = await import('/node_modules/.vite/deps/react-dom_client.js')
+    const host = document.createElement('div')
+    host.id = 'summary-access-test'
+    document.body.append(host)
+    window.summaryAccessRoot = (dom.createRoot ?? dom.default.createRoot)(host)
+    window.summaryAccessRoot.render(React.createElement(Summary, { contractId: 'contract', up3Id: 'up3', ownUlpId: 'other-ulp', initialMonth: '2026-10', units: [] }))
+  })
+  await page.locator('#summary-access-test').getByText('Belum ada data kendaraan untuk cakupan ini.').waitFor()
+  assert.equal(await page.locator('#summary-access-test').getByLabel('ULP ringkasan BBM').count(), 0)
+  assert.equal(await page.locator('#summary-access-test').getByRole('button', { name: 'Unduh Excel' }).isDisabled(), true)
+  await page.evaluate(() => { window.summaryAccessRoot.unmount(); document.getElementById('summary-access-test').remove() })
   assert.deepEqual(errors, [])
   console.log('BBM browser: spreadsheet, keyboard, photos, save, stale-save preservation, navigation guard, reader, preview, dark mode and mobile passed.')
 } finally { await browser?.close(); await server.close() }
