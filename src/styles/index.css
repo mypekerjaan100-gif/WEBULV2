@@ -12879,11 +12879,12 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .uc-vehicle-hero {
   display: grid;
-  gap: 12px;
-  padding: 20px;
+  gap: 20px;
+  padding: 24px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 18px;
   background: var(--color-surface);
+  box-shadow: 0 12px 32px rgb(25 65 110 / 7%);
 }
 
 .uc-vehicle-hero-head {
@@ -12897,14 +12898,14 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .uc-vehicle-hero-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 20px;
   min-width: 0;
 }
 
 .uc-vehicle-hero-title h3 {
   margin: 0;
   color: var(--color-text);
-  font-size: 20px;
+  font-size: 28px;
   line-height: 1.25;
   letter-spacing: -.02em;
   overflow-wrap: anywhere;
@@ -12912,14 +12913,14 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .uc-vehicle-hero-icon {
   display: inline-flex;
-  flex: 0 0 34px;
+  flex: 0 0 64px;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 64px;
+  height: 64px;
   border: 1px solid var(--border-subtle);
-  border-radius: 9px;
-  background: var(--surface-subtle);
+  border-radius: 14px;
+  background: var(--primary-subtle);
   color: var(--color-primary);
 }
 
@@ -12928,18 +12929,18 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
-  margin: -2px 0 0;
+  margin: 8px 0 0;
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
 .uc-vehicle-hero-condition {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) auto;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
   align-items: center;
-  gap: 16px 24px;
-  padding: 16px 0 4px;
+  gap: 16px 20px;
+  padding: 20px 0 0;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -12954,7 +12955,7 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .uc-vehicle-ref {
   border-top: 1px solid var(--border-subtle);
-  padding-top: 8px;
+  padding-top: 18px;
 }
 
 .uc-vehicle-ref > summary {
@@ -12979,56 +12980,58 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .uc-page-back { min-height: 36px; }
 .uc-vehicle-hero .uc-page-back {
-  min-height: 28px;
-  padding: 0;
+  min-height: 34px;
+  padding: 0 12px;
   border: 0;
-  background: transparent;
+  background: var(--primary-subtle);
   box-shadow: none;
-  color: var(--color-text-muted);
-  font-weight: 500;
+  color: var(--color-text);
+  font-weight: 600;
+  border-radius: 12px;
 }
 .uc-vehicle-hero .uc-page-back:hover { color: var(--color-primary); background: transparent; }
 
-.uc-vehicle-condition-group,
-.uc-vehicle-inspection-summary { display: grid; gap: 6px; min-width: 0; }
-.uc-vehicle-inspection-caption { color: var(--color-text-muted); font-size: 11.5px; font-weight: 600; }
-.uc-vehicle-inspection-by { color: var(--color-text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.uc-vehicle-identity { min-width: 0; padding-left: 20px; border-left: 1px solid var(--border-subtle); }
+.uc-vehicle-condition-group { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; min-width: 0; }
+.uc-vehicle-inspection-summary { display: flex; align-items: center; gap: 10px; min-width: 0; padding-left: 20px; border-left: 1px solid var(--border-subtle); }
+.uc-vehicle-inspection-summary > .ui-icon { flex: 0 0 auto; color: var(--color-text-muted); }
+.uc-vehicle-hero-head > .uc-status { padding: 8px 12px; border-radius: 10px; }
 .uc-vehicle-hero .uc-condition-options {
   display: inline-flex;
   width: max-content;
   max-width: 100%;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--surface-subtle);
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 .uc-vehicle-hero .uc-condition-options label {
   position: relative;
-  min-height: 32px;
-  padding: 5px 14px;
-  border: 1px solid transparent;
-  border-radius: 5px;
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
   color: var(--color-text-muted);
 }
 .uc-vehicle-hero .uc-condition-options label:has(input:checked) {
-  background: var(--color-surface);
-  border-color: var(--color-border);
+  background: var(--primary-subtle);
+  border-color: var(--color-primary);
   color: var(--color-primary);
   box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
 }
 .uc-vehicle-hero .uc-condition-options input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
+  position: static;
+  opacity: 1;
+  width: 17px;
+  height: 17px;
+  margin: 0;
 }
 .uc-vehicle-hero .uc-condition-options label:has(input:focus-visible) {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 .uc-vehicle-inspection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.uc-vehicle-hero .uc-vehicle-inspect-btn { min-height: 36px; border-radius: 8px; }
+.uc-vehicle-hero .uc-vehicle-inspect-btn { min-height: 42px; padding: 0 14px; border-radius: 10px; font-weight: 600; }
 .uc-vehicle-hero .uc-vehicle-inspect-btn.is-primary {
   background: var(--color-primary);
   border-color: var(--color-primary);
@@ -13043,6 +13046,9 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   .uc-vehicle-hero-condition { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .uc-vehicle-inspection-actions { grid-column: auto; }
   .uc-vehicle-inspection-actions .uc-vehicle-inspect-btn { flex: 1 1 auto; justify-content: center; }
+  .uc-vehicle-inspection-summary { padding-left: 0; border-left: 0; }
+  .uc-vehicle-identity { padding-left: 12px; }
+  .uc-vehicle-hero-title { gap: 12px; }
 }
 
 .uc-vehicle-inspection-hint {

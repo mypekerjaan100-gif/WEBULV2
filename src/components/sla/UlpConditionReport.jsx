@@ -542,20 +542,23 @@ export default function UlpConditionReport({
             <Status value={selectedSummary.hasAttention ? 'non_compliant' : selectedSummary.isComplete ? 'compliant' : 'draft'} />
           </div>
           <div className="uc-vehicle-hero-title">
-            <span className="uc-vehicle-hero-icon"><Icon name="vehicle" size={18} /></span>
+            <span className="uc-vehicle-hero-icon"><Icon name="vehicle" size={30} /></span>
+            <div className="uc-vehicle-identity">
             <h3>{selectedVehicle.plate_display || selectedVehicle.label}</h3>
-          </div>
           <p className="uc-vehicle-hero-meta">
+            <Icon name="layers" size={16} />
             {[selectedVehicle.vehicle_type_name, selectedVehicle.assignment_name].filter(Boolean).join(' · ') || selectedVehicle.label}
             {vehicleLocationLabel(selectedVehicle) ? <><span aria-hidden="true">·</span><Icon name="map-pin" size={12} />{vehicleLocationLabel(selectedVehicle)}</> : ''}
           </p>
+            </div>
+          </div>
           {selectedCondition ? (
             <div className="uc-vehicle-hero-condition">
               <div className="uc-vehicle-condition-group">
-              <span className="uc-vehicle-hero-condition-label"><Icon name="check-circle" size={14} />Kondisi kendaraan *</span>
+               <span className="uc-vehicle-hero-condition-label"><Icon name="shield" size={20} />Kondisi kendaraan</span>
               {editable ? (
                 <div className="uc-condition-options">
-                  {[['Baik', 1, 0, 'check'], ['Rusak', 0, 1, 'alert-triangle']].map(([label, good, bad, icon], index) => (
+                  {[['Baik', 1, 0], ['Rusak', 0, 1]].map(([label, good, bad], index) => (
                     <label key={label}>
                       <input
                         type="radio"
@@ -564,7 +567,6 @@ export default function UlpConditionReport({
                         checked={Number(selectedCondition.good_qty) === good && Number(selectedCondition.bad_qty) === bad && selectedCondition.good_qty != null && selectedCondition.bad_qty != null}
                         onChange={() => selectCondition(selectedCondition, good, bad)}
                       />
-                      <Icon name={icon} size={13} />
                       {label}
                     </label>
                   ))}
@@ -572,15 +574,14 @@ export default function UlpConditionReport({
               ) : <Status value={evaluateCondition(selectedCondition).status} />}
               </div>
               <div className="uc-vehicle-inspection-summary">
-                <span className="uc-vehicle-inspection-caption">Inspeksi terakhir</span>
+                <Icon name="calendar" size={18} />
               <span className="uc-vehicle-inspection-hint">
                 {selectedLastInspection
-                  ? timestamp(selectedLastInspection.inspected_at)
+                  ? `Inspeksi terakhir ${timestamp(selectedLastInspection.inspected_at)} · ${selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · ${selectedLastInspection.inspected_by_name || 'Petugas'}`
                   : vehicleInspectionStatus === 'loading' ? 'Memuat inspeksi...'
                     : vehicleInspectionStatus === 'error' ? 'Inspeksi gagal dimuat.'
                       : `Belum ada inspeksi pada ${conditionMonthLabel(month)}`}
               </span>
-                {selectedLastInspection && <span className="uc-vehicle-inspection-by">{selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · {selectedLastInspection.inspected_by_name || 'Petugas'}</span>}
               </div>
               <div className="uc-vehicle-inspection-actions">
               {selectedLastInspection && (
