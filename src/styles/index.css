@@ -12958,24 +12958,83 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   padding-top: 18px;
 }
 
-.uc-vehicle-ref > summary {
+.uc-vehicle-ref-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: max-content;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--color-primary);
-  font-size: 11px;
+  font: inherit;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  list-style: none;
 }
 
-.uc-vehicle-ref > summary::-webkit-details-marker { display: none; }
+.uc-vehicle-ref-trigger:hover { text-decoration: underline; }
+.uc-vehicle-ref-trigger .uc-details-caret { transition: transform .15s ease; }
+.uc-vehicle-ref-trigger:hover .uc-details-caret { transform: translateX(2px); }
 
-.uc-vehicle-ref-body {
+.uc-reference-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--primary-subtle);
+}
+
+.uc-reference-summary-icon {
+  display: inline-flex;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+}
+
+.uc-reference-summary > div { display: grid; gap: 2px; min-width: 0; }
+.uc-reference-summary strong { font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+.uc-reference-summary span { color: var(--color-text-muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.uc-reference-summary .uc-plate-edit { flex: 0 0 auto; margin-left: auto; }
+
+.uc-reference-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 14px;
+}
+
+.uc-reference-grid > div {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--surface-subtle);
+}
+
+.uc-reference-grid span {
+  color: var(--color-text-muted);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.uc-reference-grid strong { font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.uc-reference-note { margin: 12px 0 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
+
+@media (max-width: 600px) {
+  .uc-reference-grid { grid-template-columns: minmax(0, 1fr); }
+  .uc-reference-summary { align-items: flex-start; flex-wrap: wrap; }
+  .uc-reference-summary .uc-plate-edit { margin-left: 0; }
 }
 
 .uc-page-back { min-height: 36px; }

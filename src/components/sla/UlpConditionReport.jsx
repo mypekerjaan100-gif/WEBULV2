@@ -14,6 +14,7 @@ import UlpToolUnitPanel from './UlpToolUnitPanel.jsx'
 import VehicleInspectionModal from './VehicleInspectionModal.jsx'
 import VehicleInspectionResultModal from './VehicleInspectionResultModal.jsx'
 import CoordinatorToolIssues from './CoordinatorToolIssues.jsx'
+import { Button, Modal } from '../ui/Primitives.jsx'
 
 function Status({ value }) {
   return <span className={`uc-status uc-status--${value || 'unfilled'}`}>{CONDITION_LABELS[value] || 'Belum Diisi'}</span>
@@ -68,6 +69,7 @@ export default function UlpConditionReport({
   const [selectedVehicleId, setSelectedVehicleId] = useState(null)
   const [discardPrompt, setDiscardPrompt] = useState(false)
   const [plateEdit, setPlateEdit] = useState(null)
+  const [referenceOpen, setReferenceOpen] = useState(false)
   const [vehicleSearch, setVehicleSearch] = useState('')
   const [vehicleFilter, setVehicleFilter] = useState('all')
   const [focusedToolVehicleId, setFocusedToolVehicleId] = useState(null)
@@ -140,6 +142,11 @@ export default function UlpConditionReport({
   useEffect(() => {
     if (!canPickUlp) setUlpId(ownUlpUuid || '')
   }, [ownUlpUuid, canPickUlp])
+
+  // Popup acuan selalu menutup saat berpindah kendaraan.
+  useEffect(() => {
+    setReferenceOpen(false)
+  }, [selectedVehicleId])
 
   useEffect(() => {
     if (canPickUlp && !overviewEnabled && !ulpId && ulps.length) {
@@ -609,49 +616,60 @@ export default function UlpConditionReport({
               </div>
             </div>
           ) : <p className="uc-assignment-empty">Data kondisi kendaraan tidak tersedia pada laporan ini.</p>}
-          <details className="uc-vehicle-ref" open={plateEdit ? true : undefined}>
-            <summary>
-              <Icon name="file-text" size={13} />
+          <div className="uc-vehicle-ref">
+            <button
+              type="button"
+              className="uc-vehicle-ref-trigger"
+              aria-haspopup="dialog"
+              onClick={() => setReferenceOpen(true)}
+            >
+              <Icon name="file-text" size={16} />
               Detail acuan
-              <Icon name="chevron-down" size={13} className="uc-details-caret" />
-            </summary>
-            <div className="uc-vehicle-ref-body">
-              <div className="uc-assignment-summary-grid">
-                <div><span>Jenis Kendaraan</span><strong>{selectedVehicle.vehicle_type_name || '-'}</strong></div>
-                <div><span>Penugasan</span><strong>{selectedVehicle.assignment_name || '-'}</strong></div>
-                <div><span>Lokasi Tujuan</span><strong>{vehicleLocationLabel(selectedVehicle) || 'Belum ditetapkan'}</strong></div>
-                <div><span>Template</span><strong>{selectedVehicle.template_name || '-'}</strong></div>
-                <div><span>Versi</span><strong>Versi {selectedVehicle.template_version}</strong></div>
-                <div className="uc-assignment-plate">
-                  <span>Nomor Polisi</span>
-                  {selectedVehicle.plate_display
-                    ? (
-                      <div className="uc-plate-inline">
-                        <strong>{selectedVehicle.plate_display}</strong>
-                        {canManagePlateNow && !plateEdit && (
-                          <button
-                            type="button"
-                            className="sla-btn uc-plate-edit"
-                            disabled={saving || vehicleItemsDirty}
-                            title={vehicleItemsDirty ? 'Simpan kondisi yang sedang diisi terlebih dahulu.' : 'Koreksi nopol yang salah ketik'}
-                            onClick={openPlateEdit}
-                          >
-                            Edit Nopol
-                          </button>
-                        )}
-                      </div>
-                    )
-                    : <strong className="uc-plate-unset">Belum diisi</strong>}
-                </div>
-              </div>
-              {selectedVehicle.plate_display && canManagePlateNow && !plateEdit && (
-                <p className="uc-assignment-note">Nopol yang salah ketik dapat dikoreksi; laporan bulanan tersimpan ikut diperbarui.</p>
-              )}
-              {selectedVehicle.contract_reference && <p className="uc-footnote">Acuan: {selectedVehicle.contract_reference}</p>}
-              {selectedVehicle.legacy_metadata && <p className="uc-footnote">Template lama: metadata katalog mengikuti katalog saat ini.</p>}
-            </div>
-          </details>
+              <Icon name="chevron-right" size={14} className="uc-details-caret" />
+            </button>
+          </div>
         </section>
+        <Modal
+          open={referenceOpen}
+          onClose={() => setReferenceOpen(false)}
+          title="Detail acuan"
+          size="small"
+          className="uc-reference-modal"
+          footer={<Button variant="secondary" onClick={() => setReferenceOpen(false)}>Tutup</Button>}
+        >
+          <div className="uc-reference-summary">
+            <span className="uc-reference-summary-icon"><Icon name="vehicle" size={22} /></span>
+            <div>
+              <strong>{selectedVehicle.plate_display || selectedVehicle.label}</strong>
+              <span>{selectedVehicle.label}</span>
+            </div>
+            {selectedVehicle.plate_display && canManagePlateNow && !plateEdit && (
+              <Button
+                variant="secondary"
+                size="small"
+                className="uc-plate-edit"
+                disabled={saving || vehicleItemsDirty}
+                title={vehicleItemsDirty ? 'Simpan kondisi yang sedang diisi terlebih dahulu.' : 'Koreksi nopol yang salah ketik'}
+                onClick={() => { openPlateEdit(); setReferenceOpen(false) }}
+              >
+                Edit Nopol
+              </Button>
+            )}
+          </div>
+          <div className="uc-reference-grid">
+            <div><span>Jenis Kendaraan</span><strong>{selectedVehicle.vehicle_type_name || '-'}</strong></div>
+            <div><span>Penugasan</span><strong>{selectedVehicle.assignment_name || '-'}</strong></div>
+            <div><span>Lokasi Tujuan</span><strong>{vehicleLocationLabel(selectedVehicle) || 'Belum ditetapkan'}</strong></div>
+            <div><span>Template</span><strong>{selectedVehicle.template_name || '-'}</strong></div>
+            <div><span>Versi</span><strong>{selectedVehicle.template_version ? `Versi ${selectedVehicle.template_version}` : '-'}</strong></div>
+            <div><span>Nomor Polisi</span><strong className={selectedVehicle.plate_display ? '' : 'uc-plate-unset'}>{selectedVehicle.plate_display || 'Belum diisi'}</strong></div>
+          </div>
+          {selectedVehicle.plate_display && canManagePlateNow && !plateEdit && (
+            <p className="uc-reference-note">Nopol yang salah ketik dapat dikoreksi; laporan bulanan tersimpan ikut diperbarui.</p>
+          )}
+          {selectedVehicle.contract_reference && <p className="uc-reference-note">Acuan: {selectedVehicle.contract_reference}</p>}
+          {selectedVehicle.legacy_metadata && <p className="uc-reference-note">Template lama: metadata katalog mengikuti katalog saat ini.</p>}
+        </Modal>
         {selectedVehicle.plate_display && canManagePlateNow && plateEdit && (
           <div className="uc-plate-correction">
             <h4>Koreksi Nomor Polisi</h4>
