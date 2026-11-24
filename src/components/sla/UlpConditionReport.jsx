@@ -549,7 +549,7 @@ export default function UlpConditionReport({
             <Status value={selectedSummary.hasAttention ? 'non_compliant' : selectedSummary.isComplete ? 'compliant' : 'draft'} />
           </div>
           <div className="uc-vehicle-hero-title">
-            <span className="uc-vehicle-hero-icon"><Icon name="vehicle" size={30} /></span>
+            <span className="uc-vehicle-hero-icon"><Icon name="vehicle" size={24} /></span>
             <div className="uc-vehicle-identity">
             <h3>{selectedVehicle.plate_display || selectedVehicle.label}</h3>
           <p className="uc-vehicle-hero-meta">
@@ -562,7 +562,7 @@ export default function UlpConditionReport({
           {selectedCondition ? (
             <div className="uc-vehicle-hero-condition">
               <div className="uc-vehicle-condition-group">
-               <span className="uc-vehicle-hero-condition-label"><Icon name="shield" size={20} />Kondisi kendaraan</span>
+               <span className="uc-vehicle-hero-condition-label"><Icon name="shield" size={16} />Kondisi kendaraan</span>
               {editable ? (
                 <div className="uc-condition-options">
                   {[['Baik', 1, 0], ['Rusak', 0, 1]].map(([label, good, bad], index) => (
@@ -581,7 +581,7 @@ export default function UlpConditionReport({
               ) : <Status value={evaluateCondition(selectedCondition).status} />}
               </div>
               <div className="uc-vehicle-inspection-summary">
-                <Icon name="calendar" size={18} />
+                <Icon name="calendar" size={15} />
               <span className="uc-vehicle-inspection-hint">
                 {selectedLastInspection
                   ? `Inspeksi terakhir ${timestamp(selectedLastInspection.inspected_at)} · ${selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · ${selectedLastInspection.inspected_by_name || 'Petugas'}`
@@ -623,9 +623,9 @@ export default function UlpConditionReport({
               aria-haspopup="dialog"
               onClick={() => setReferenceOpen(true)}
             >
-              <Icon name="file-text" size={16} />
+              <Icon name="file-text" size={14} />
               Detail acuan
-              <Icon name="chevron-right" size={14} className="uc-details-caret" />
+              <Icon name="chevron-right" size={12} className="uc-details-caret" />
             </button>
           </div>
         </section>
