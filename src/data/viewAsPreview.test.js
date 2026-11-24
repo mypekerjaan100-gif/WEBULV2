@@ -115,7 +115,7 @@ const sidebar = read('../components/Sidebar.jsx')
 assert(sidebar.includes('previewActive = false'), 'Sidebar harus menerima status pratinjau')
 assert(sidebar.includes('isSuperAdmin && !previewActive'), 'Pengguna & Akses harus disembunyikan saat pratinjau')
 assert(sidebar.includes('!previewActive && (isSuperAdmin || organizationAccess.some'), 'Analisis Finansial harus disembunyikan saat pratinjau')
-assert(sidebar.includes('!previewActive && (isSuperAdmin || allowedContractCodes.has(c.id))'), 'Kontrak lain harus disembunyikan saat pratinjau')
+assert(sidebar.includes('showPelayananTeknik = previewActive || isSuperAdmin || allowedContractCodes.has(pelayananTeknik.id)'), 'Kontrak lain harus disembunyikan saat pratinjau')
 
 // --- Halaman mengikuti role pratinjau ---
 const page = read('../pages/sla/SLAPelayananTeknikPage.jsx')

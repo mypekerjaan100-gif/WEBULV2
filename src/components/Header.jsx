@@ -26,6 +26,8 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
       ? activeAccess.operational_unit_name
       : activeAccess?.operational_up3_name ?? activeAccess?.operational_unit_name ?? activeAccess?.internal_org_unit_name ?? null
   const pendingCount = approvalNotifications?.count ?? 0
+  const notificationMode = approvalNotifications?.mode ?? 'approval'
+  const notificationTitle = approvalNotifications?.title || (notificationMode === 'revision' ? 'Lembur Perlu Revisi' : 'Menunggu Persetujuan')
   const hasSourceError = approvalNotifications?.groups?.some((group) => group.error) ?? false
 
   useEffect(() => {
@@ -114,7 +116,9 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
             <button
               type="button"
               className="approval-notification-trigger"
-              aria-label={`Persetujuan menunggu: ${pendingCount}`}
+              aria-label={notificationMode === 'revision'
+                ? `Lembur perlu revisi: ${pendingCount}`
+                : `Persetujuan menunggu: ${pendingCount}`}
               aria-expanded={notificationOpen}
               onClick={toggleNotifications}
             >
@@ -124,18 +128,22 @@ export default function Header({ onOpenSidebar, preview, approvalNotifications, 
             {notificationOpen && (
               <div className="approval-notification-panel">
                 <div className="approval-notification-heading">
-                  <div><strong>Menunggu Persetujuan</strong><span>{pendingCount} item aktif</span></div>
+                  <div><strong>{notificationTitle}</strong><span>{pendingCount} item aktif</span></div>
                   <button type="button" onClick={onRefreshApprovalNotifications}>Muat ulang</button>
                 </div>
                 {approvalNotificationError ? <p className="approval-notification-empty">{approvalNotificationError}</p> : pendingCount === 0 && !hasSourceError ? (
-                  <p className="approval-notification-empty">Tidak ada persetujuan yang menunggu.</p>
+                  <p className="approval-notification-empty">
+                    {notificationMode === 'revision'
+                      ? 'Tidak ada Lembur yang perlu direvisi.'
+                      : 'Tidak ada persetujuan yang menunggu.'}
+                  </p>
                 ) : approvalNotifications.groups.map((group) => (
                   <section className="approval-notification-group" key={group.id}>
                     <div className="approval-notification-group-title"><strong>{group.label}</strong><span>{group.count}</span></div>
                     {group.items.slice(0, 5).map((item) => (
-                      <button type="button" className="approval-notification-item" data-approval-source={item.source} data-approval-id={item.id} key={`${item.source}:${item.id}`} onClick={() => { setNotificationOpen(false); onOpenApprovalNotification(item) }}>
+                      <button type="button" className="approval-notification-item" data-approval-source={item.source} data-approval-kind={item.kind ?? 'approval'} data-approval-id={item.id} key={`${item.source}:${item.id}`} onClick={() => { setNotificationOpen(false); onOpenApprovalNotification(item) }}>
                         <strong>{item.title}</strong>
-                        <span>{item.unitName}{item.date ? ` · ${item.date}` : ''}</span>
+                        <span>{item.meta || `${item.unitName}${item.date ? ` · ${item.date}` : ''}`}</span>
                       </button>
                     ))}
                     {group.error ? <span className="approval-notification-group-error">{group.error}</span> : group.count === 0 && <span className="approval-notification-group-empty">Tidak ada item.</span>}

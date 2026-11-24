@@ -20,12 +20,14 @@ import { useAuth } from './lib/AppAuth.jsx'
 import { listCustomRoles } from './lib/customRoles.js'
 import { setViewAsActive } from './lib/viewAsState.js'
 import {
+  listAdminUlpRevisionNotifications,
   listAdminUp3ApprovalNotifications,
   listManagementApprovalNotifications,
 } from './data/approvalNotificationRepository.js'
+import { periodLabelFromMonth } from './data/versiSlaPelayananTeknik.js'
 import { listManagementOperationalScopes } from './data/managementScopeRepository.js'
 
-const EMPTY_APPROVAL_NOTIFICATIONS = { scopeKey: null, count: 0, groups: [] }
+const EMPTY_APPROVAL_NOTIFICATIONS = { scopeKey: null, mode: null, title: '', count: 0, groups: [] }
 const SLA_PRIMARY_MODULE_IDS = ['sla', 'variable-cost', 'lembur', 'kendaraan-ulp', 'laporan-bbm']
 
 function mergeApprovalNotifications(current, incoming) {
@@ -34,7 +36,14 @@ function mergeApprovalNotifications(current, incoming) {
     const previous = current.groups.find((item) => item.id === group.id)
     return previous ? { ...previous, error: group.error } : group
   })
-  return { scopeKey: incoming.scopeKey, count: groups.reduce((total, group) => total + group.count, 0), groups }
+  return {
+    ...incoming,
+    scopeKey: incoming.scopeKey,
+    mode: incoming.mode ?? current.mode ?? 'approval',
+    title: incoming.title || current.title || 'Menunggu Persetujuan',
+    count: groups.reduce((total, group) => total + group.count, 0),
+    groups,
+  }
 }
 
 export default function App() {
@@ -69,6 +78,7 @@ export default function App() {
   const [approvalNotifications, setApprovalNotifications] = useState(EMPTY_APPROVAL_NOTIFICATIONS)
   const [approvalNotificationError, setApprovalNotificationError] = useState('')
   const [approvalTarget, setApprovalTarget] = useState(null)
+  const [revisionTarget, setRevisionTarget] = useState(null)
   const approvalRequestId = useRef(0)
   const approvalInFlight = useRef(null)
   const lastApprovalStart = useRef(0)
@@ -152,16 +162,25 @@ export default function App() {
   }, [canViewAdminUp3Modules, canViewReadOnlyMasterLocations, customMenuAccess])
   const canAccessFinancial = !previewActive && (isSuperAdmin || organizationAccess.some((a) => FINANCIAL_ROLES.includes(a.organization_role)))
   const adminUp3Access = previewActive
-    ? previewApprovalAccess
+    ? (viewAsRoleCode === 'ADMIN_UP3' ? previewApprovalAccess : null)
     : !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_UP3'
       ? contractAccess[0]
       : null
+  const adminUlpAccess = previewActive
+    ? (viewAsRoleCode === 'ADMIN_ULP' ? previewApprovalAccess : null)
+    : !isSuperAdmin && contractAccess.length === 1 && contractAccess[0]?.role === 'ADMIN_ULP' &&
+        contractAccess[0]?.operational_unit_id
+      ? contractAccess[0]
+      : null
   const adminUp3ScopeKey = adminUp3Access ? `${adminUp3Access.contract_id}:${adminUp3Access.operational_up3_id}` : null
+  const adminUlpScopeKey = adminUlpAccess
+    ? `${adminUlpAccess.contract_id}:${adminUlpAccess.operational_up3_id}:${adminUlpAccess.operational_unit_id}`
+    : null
   const managementScopeKey = managementScopes.length
     ? `management:${managementScopes.map((scope) => scope.key).sort().join('|')}`
     : null
-  const effectiveApprovalAccess = adminUp3Access || managementScopes.length > 0
-  const effectiveApprovalScopeKey = adminUp3ScopeKey || managementScopeKey
+  const effectiveApprovalAccess = adminUp3Access || adminUlpAccess || managementScopes.length > 0
+  const effectiveApprovalScopeKey = adminUp3ScopeKey || adminUlpScopeKey || managementScopeKey
   const selectedManagementScope = managementScopes.find((scope) => scope.key === selectedManagementScopeKey)
     ?? managementScopes[0]
     ?? null
@@ -203,7 +222,7 @@ export default function App() {
       return approvalInFlight.current.promise
     }
     const requestId = ++approvalRequestId.current
-    if (!adminUp3Access && !managementScopes.length) {
+    if (!adminUp3Access && !adminUlpAccess && !managementScopes.length) {
       setApprovalNotifications(EMPTY_APPROVAL_NOTIFICATIONS)
       setApprovalNotificationError('')
       return
@@ -218,7 +237,14 @@ export default function App() {
               up3Id: adminUp3Access.operational_up3_id,
               units: orgUnits,
             })
-          : await listManagementApprovalNotifications({ scopes: managementScopes, units: orgUnits })
+          : adminUlpAccess
+            ? await listAdminUlpRevisionNotifications({
+                contractId: adminUlpAccess.contract_id,
+                up3Id: adminUlpAccess.operational_up3_id,
+                unitId: adminUlpAccess.operational_unit_id,
+                units: orgUnits,
+              })
+            : await listManagementApprovalNotifications({ scopes: managementScopes, units: orgUnits })
         if (requestId !== approvalRequestId.current) return
         const scopedResult = { ...result, scopeKey: effectiveApprovalScopeKey }
         setApprovalNotifications((current) => current.scopeKey === effectiveApprovalScopeKey
@@ -227,14 +253,16 @@ export default function App() {
         setApprovalNotificationError('')
       } catch (error) {
         if (requestId !== approvalRequestId.current) return
-        setApprovalNotificationError(error.message || 'Notifikasi persetujuan gagal dimuat.')
+        setApprovalNotificationError(error.message || (adminUlpAccess
+          ? 'Notifikasi revisi Lembur gagal dimuat.'
+          : 'Notifikasi persetujuan gagal dimuat.'))
       } finally {
         if (approvalInFlight.current?.promise === promise) approvalInFlight.current = null
       }
     })()
     approvalInFlight.current = { scopeKey: effectiveApprovalScopeKey, promise }
     return promise
-  }, [adminUp3Access?.contract_id, adminUp3Access?.operational_up3_id, effectiveApprovalScopeKey, managementScopes])
+  }, [adminUlpAccess?.contract_id, adminUlpAccess?.operational_unit_id, adminUlpAccess?.operational_up3_id, adminUp3Access?.contract_id, adminUp3Access?.operational_up3_id, effectiveApprovalScopeKey, managementScopes])
 
   useEffect(() => {
     refreshApprovalNotifications()
@@ -371,26 +399,30 @@ export default function App() {
           : []
   const isActiveContractAuthorized = !activeContractId || effectiveIsSuperAdmin || authorizedContractIds.includes(activeContractId)
 
-  // Pratinjau Admin UP3 memakai scope UP3 yang sedang dipilih, termasuk notifikasi persetujuan.
+  // Pratinjau Admin UP3/Admin ULP memakai scope yang sedang dipilih, termasuk
+  // notifikasi persetujuan (UP3) dan pengingat revisi (ULP).
   useEffect(() => {
     setPreviewApprovalAccess(null)
-    if (!previewActive || viewAsRoleCode !== 'ADMIN_UP3') return undefined
+    if (!previewActive || !['ADMIN_UP3', 'ADMIN_ULP'].includes(viewAsRoleCode)) return undefined
     let cancelled = false
     Promise.all([
       resolveContractCodeToUuid('pelayanan-teknik'),
       resolveLegacyKeyToUuid(actualUp3Id),
+      viewAsRoleCode === 'ADMIN_ULP' ? resolveLegacyKeyToUuid(actualUnitId) : Promise.resolve(null),
     ])
-      .then(([contractId, up3Uuid]) => {
-        if (cancelled) return
+      .then(([contractId, up3Uuid, ulpUuid]) => {
+        if (cancelled || !contractId || !up3Uuid) return
+        if (viewAsRoleCode === 'ADMIN_ULP' && !ulpUuid) return
         setPreviewApprovalAccess({
           contract_id: contractId,
           contract_code: 'pelayanan-teknik',
           operational_up3_id: up3Uuid,
+          operational_unit_id: ulpUuid,
         })
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [actualUp3Id, previewActive, viewAsRoleCode])
+  }, [actualUnitId, actualUp3Id, previewActive, viewAsRoleCode])
 
   useEffect(() => {
     if (currentPage === 'pengguna-akses' && !effectiveIsSuperAdmin) setCurrentPage(null)
@@ -469,6 +501,8 @@ export default function App() {
     setSlaActiveModule('sla')
     setFinRouteRequest(null)
     setToolIssueTarget(null)
+    setApprovalTarget(null)
+    setRevisionTarget(null)
     writeRouteHash({ segments: contractId ? [contractId] : [], periode: null }, { push: true })
   }
 
@@ -489,6 +523,8 @@ export default function App() {
     setActiveContractId(null)
     setSlaActiveModule('sla')
     setToolIssueTarget(null)
+    setApprovalTarget(null)
+    setRevisionTarget(null)
     if (pageId !== 'analisis-finansial') setFinRouteRequest(null)
     setSlaRouteRequest(null)
     writeRouteHash({ segments: [pageId], periode: null }, { push: true })
@@ -499,6 +535,7 @@ export default function App() {
     if (item.managementScopeKey) setSelectedManagementScopeKey(item.managementScopeKey)
     if (item.source === 'alat') {
       setApprovalTarget(null)
+      setRevisionTarget(null)
       setToolIssueTarget({
         issueId: item.id,
         ulpId: item.unitId,
@@ -512,8 +549,22 @@ export default function App() {
       writeRouteHash({ segments: ['pelayanan-teknik', 'kendaraan-ulp'], periode: null }, { push: true })
       return
     }
+    if (item.kind === 'revision') {
+      const revisionPeriod = periodLabelFromMonth(item.periodMonth)
+      setApprovalTarget(null)
+      setToolIssueTarget(null)
+      setRevisionTarget({ ...item, token: `revision:${item.id}:${Date.now()}` })
+      setActiveContractId('pelayanan-teknik')
+      setCurrentPage(null)
+      setSlaActiveModule('lembur')
+      setSlaRouteRequest(null)
+      setFinRouteRequest(null)
+      writeRouteHash({ segments: ['pelayanan-teknik', 'lembur'], periode: revisionPeriod }, { push: true })
+      return
+    }
     const contractCode = adminUp3Access?.contract_code ?? 'pelayanan-teknik'
     setToolIssueTarget(null)
+    setRevisionTarget(null)
     setApprovalTarget({ ...item, token: `${item.source}:${item.id}:${Date.now()}` })
     setActiveContractId(contractCode)
     setCurrentPage(null)
@@ -525,6 +576,8 @@ export default function App() {
 
   const handleViewAsChange = (nextRole) => {
     if (!isSuperAdmin) return
+    setApprovalTarget(null)
+    setRevisionTarget(null)
     if (nextRole === 'super') {
       setViewAsRoleCode(null)
       setRole('up3')
@@ -591,15 +644,20 @@ export default function App() {
     setActiveContractId('pelayanan-teknik')
     setSlaActiveModule(moduleId)
     setToolIssueTarget(null)
+    setApprovalTarget(null)
+    setRevisionTarget(null)
     setSlaRouteRequest({ module: moduleId, periode: null, token: Date.now() })
   }
 
   const activeContract = contracts.find((contract) =>
     contract.id === activeContractId && (effectiveIsSuperAdmin || authorizedContractIds.includes(contract.id)),
   )
-  const visibleApprovalNotifications = (adminUp3Access && (isRealScopedUser || previewActive) && approvalNotifications.scopeKey === adminUp3ScopeKey) || (isManagementUser && approvalNotifications.scopeKey === managementScopeKey)
-    ? approvalNotifications
-    : null
+  const visibleApprovalNotifications =
+    ((adminUp3Access && (isRealScopedUser || previewActive) && approvalNotifications.scopeKey === adminUp3ScopeKey)
+      || (adminUlpAccess && (isRealScopedUser || previewActive) && approvalNotifications.scopeKey === adminUlpScopeKey)
+      || (isManagementUser && approvalNotifications.scopeKey === managementScopeKey))
+      ? approvalNotifications
+      : null
   const slaApprovalCounts = Object.fromEntries(
     (visibleApprovalNotifications?.groups ?? []).map((group) => [group.id, group.count]),
   )
@@ -689,6 +747,8 @@ export default function App() {
               onManagementScopeChange={setSelectedManagementScopeKey}
               approvalTarget={approvalTarget}
               onApprovalTargetHandled={() => setApprovalTarget(null)}
+              revisionTarget={revisionTarget}
+              onRevisionTargetHandled={() => setRevisionTarget(null)}
               onApprovalChange={refreshApprovalNotifications}
               initialModule={slaRouteRequest?.module ?? null}
               initialPeriode={slaRouteRequest?.periode ?? null}

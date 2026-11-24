@@ -85,6 +85,88 @@ const APPROVAL_SOURCES = [
   },
 ]
 
+function revisionPeriodMonth(value) {
+  const match = /^(\d{4})-(\d{2})/.exec(String(value ?? ''))
+  return match ? `${match[1]}-${match[2]}-01` : null
+}
+
+function revisionItem(row, units, reviewStatus) {
+  if (reviewStatus !== 'CORRECTION_REQUIRED') return null
+  if (row.revisionDeadlineAt && new Date(row.revisionDeadlineAt).getTime() < Date.now()) return null
+  const participantName = row.participant_name ?? row.participantName ?? ''
+  const unitLabel = unitName(units, row.unitId)
+  const periodMonth = revisionPeriodMonth(row.periodMonth)
+  const deadline = row.revisionDeadlineAt
+    ? new Intl.DateTimeFormat('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Pontianak',
+    }).format(new Date(row.revisionDeadlineAt))
+    : null
+  const lastRevision = Number(row.rejectionCount ?? 0) >= 2
+  return {
+    id: row.entryId ? `${row.id}:${row.entryId}` : row.id,
+    source: 'lembur',
+    kind: 'revision',
+    entryId: row.entryId ?? null,
+    activityId: row.id,
+    participantName,
+    unitId: row.unitId,
+    unitName: unitLabel,
+    title: participantName ? `${activityName(row)} · ${participantName}` : activityName(row),
+    meta: [
+      unitLabel,
+      row.date,
+      deadline ? `Batas revisi ${deadline} WITA` : null,
+      lastRevision ? 'Revisi terakhir' : null,
+    ].filter(Boolean).join(' · '),
+    date: row.date ?? null,
+    periodMonth,
+    revisionDeadlineAt: row.revisionDeadlineAt ?? null,
+    lastRevision,
+    sortAt: row.revisionDeadlineAt ?? row.updatedAt ?? row.date,
+  }
+}
+
+// Admin ULP hanya perlu melihat pengajuan milik ULP-nya yang dikembalikan
+// Admin UP3 untuk diperbaiki. Revisi yang sudah kedaluwarsa tidak dihitung
+// karena sudah tidak dapat diajukan ulang.
+export async function listAdminUlpRevisionNotifications({ contractId, up3Id, unitId, units = [] }) {
+  const [replacements, work] = await Promise.allSettled([
+    withTimeout(listOvertimeReplacements({ contractId, up3Id, unitId, periodMonth: null }), 'Revisi Lembur'),
+    withTimeout(listOvertimeWork({ contractId, up3Id, unitId, periodMonth: null }), 'Revisi Lembur Pekerjaan'),
+  ])
+  if (replacements.status === 'rejected' && work.status === 'rejected') {
+    throw replacements.reason
+  }
+  const items = [
+    ...(replacements.status === 'fulfilled'
+      ? replacements.value.map((row) => revisionItem(row, units, row.status)).filter(Boolean)
+      : []),
+    ...(work.status === 'fulfilled'
+      ? work.value.map((row) => revisionItem(row, units, row.entryStatus ?? row.status)).filter(Boolean)
+      : []),
+  ]
+  items.sort((left, right) => String(left.sortAt ?? '').localeCompare(String(right.sortAt ?? '')))
+  const error = replacements.status === 'rejected' || work.status === 'rejected'
+    ? 'Sebagian data revisi Lembur gagal dimuat.'
+    : ''
+  return {
+    mode: 'revision',
+    title: 'Lembur Perlu Revisi',
+    count: items.length,
+    groups: [{
+      id: 'lembur',
+      label: 'Lembur',
+      count: items.length,
+      items,
+      error,
+    }],
+  }
+}
+
 export async function listAdminUp3ApprovalNotifications({ contractId, up3Id, units = [] }) {
   const groups = await Promise.all(APPROVAL_SOURCES.map(async (source) => {
     try {
@@ -95,7 +177,12 @@ export async function listAdminUp3ApprovalNotifications({ contractId, up3Id, uni
       return { id: source.id, label: source.label, count: 0, items: [], error: error.message || `${source.label} gagal dimuat.` }
     }
   }))
-  return { count: groups.reduce((total, group) => total + group.count, 0), groups }
+  return {
+    mode: 'approval',
+    title: 'Menunggu Persetujuan',
+    count: groups.reduce((total, group) => total + group.count, 0),
+    groups,
+  }
 }
 
 export async function listManagementApprovalNotifications({ scopes, units = [] }) {
@@ -122,5 +209,10 @@ export async function listManagementApprovalNotifications({ scopes, units = [] }
     )
     return { id: source.id, label: source.label, count: sortedItems.length, items: sortedItems, error }
   })
-  return { count: groups.reduce((total, group) => total + group.count, 0), groups }
+  return {
+    mode: 'approval',
+    title: 'Menunggu Persetujuan',
+    count: groups.reduce((total, group) => total + group.count, 0),
+    groups,
+  }
 }

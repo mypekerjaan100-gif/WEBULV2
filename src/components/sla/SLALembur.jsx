@@ -339,6 +339,7 @@ export default function SLALembur({
   periodMonth,
   periods = [],
   records,
+  dataReady = true,
   canMutate,
   isAdminUp3,
   isExactAdminUp3 = false,
@@ -364,6 +365,9 @@ export default function SLALembur({
   managementScopeLabel = null,
   approvalTarget = null,
   onApprovalTargetHandled,
+  revisionTarget = null,
+  onRevisionTargetHandled,
+  isAdminUlp = false,
 }) {
   const participantEmployeesById = useMemo(
     () => new Map((employees ?? []).map((employee) => [employee.id, employee])),
@@ -679,6 +683,10 @@ export default function SLALembur({
     ?? activeRecords.find((entry) => recordReviewStatus(entry) === 'CORRECTION_REQUIRED')?.participantName
     ?? ''
   const isPartialApprovalRevision = Boolean(isRevision && activeHasApproved && (activeRevisionEntryId ?? activeRevisionRecord))
+  const periodRevisionRecords = records.filter(
+    (record) => recordReviewStatus(record) === 'CORRECTION_REQUIRED' && !recordIsExpired(record),
+  )
+  const periodRevisionCount = periodRevisionRecords.length
   const formReadOnly = activeInitialExpired || activeRevisionExpired
   const isEvidenceOnlyRevision = Boolean(isPartialApprovalRevision)
   // Model evidence per peserta: aktivitas V2, atau draft pekerjaan baru
@@ -1106,6 +1114,27 @@ export default function SLALembur({
     setFormOpen(true)
     refreshParticipantEntries(first.id).catch(() => {})
   }
+
+  // Notifikasi revisi dari lonceng: buka form revisi peserta yang tepat
+  // setelah record periode target benar-benar selesai dimuat.
+  const handledRevisionToken = useRef(null)
+  useEffect(() => {
+    const token = revisionTarget?.token
+    if (!token || token === handledRevisionToken.current) return
+    if (!dataReady || loading) return
+    const match = records.find((record) => record.id === revisionTarget.activityId
+      && (revisionTarget.entryId != null
+        ? record.entryId === revisionTarget.entryId
+        : recordReviewStatus(record) === 'CORRECTION_REQUIRED'))
+    handledRevisionToken.current = token
+    if (!match) {
+      setMessage('Revisi Lembur tidak ditemukan pada periode ini. Muat ulang daftar lalu buka kembali.')
+      onRevisionTargetHandled?.()
+      return
+    }
+    editDraft(match)
+    onRevisionTargetHandled?.()
+  }, [revisionTarget?.token, dataReady, loading, records]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Validasi terstruktur: pesan + kunci field pertama yang belum lengkap
   // agar form dapat menampilkan warning, menandai field, dan fokus ke sana.
@@ -2865,6 +2894,12 @@ export default function SLALembur({
           {isUpManagement && <Alert tone="info" className="lembur-readonly-notice">Unit Pelaksana Kalimantan 1 · 1 Unit Layanan terhubung (Singkawang) · monitoring read-only.</Alert>}
           {isManagement && !records.length && !loading && !loadError && (
             <Alert tone="warning">Belum ada Unit Layanan yang terhubung dengan scope Pelayanan Teknik untuk akun ini.</Alert>
+          )}
+          {isAdminUlp && dataReady && periodRevisionCount > 0 && (
+            <Alert tone="warning" title="Lembur perlu revisi" className="lembur-readonly-notice lembur-revision-notice">
+              {periodRevisionCount} peserta pada periode ini dikembalikan untuk direvisi. Gunakan tombol
+              {' '}<strong>Revisi Pengajuan</strong> pada baris terkait sebelum batas revisi berakhir.
+            </Alert>
           )}
 
           <FilterBar className="lembur-filter-bar">

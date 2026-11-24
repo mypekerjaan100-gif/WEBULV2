@@ -165,6 +165,8 @@ export default function SLAPelayananTeknikPage({
   onManagementScopeChange,
   approvalTarget = null,
   onApprovalTargetHandled,
+  revisionTarget = null,
+  onRevisionTargetHandled,
   onApprovalChange,
   initialModule = null,
   initialPeriode = null,
@@ -187,6 +189,9 @@ export default function SLAPelayananTeknikPage({
     return VEHICLE_TAB_DISABLED && initialModule === 'kendaraan-ulp' ? 'sla' : (initialModule ?? 'sla')
   })
   const [period, setPeriod] = useState(() => initialPeriode ?? defaultSlaPeriod())
+  // Token revisi yang sudah dikonfirmasi (termasuk lolos prompt perubahan
+  // belum disimpan) sebelum form revisi boleh dibuka.
+  const [activeRevisionToken, setActiveRevisionToken] = useState(null)
   const [versionId, setVersionId] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
   const [changeRequests, setChangeRequests] = useState([])
@@ -293,6 +298,28 @@ export default function SLAPelayananTeknikPage({
       }, { description: 'Perubahan belum disimpan. Buka target persetujuan lembur?' })
     }
   }, [canManageUp3Operations, approvalTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Notifikasi revisi Admin ULP: pindahkan modul/periode ke record yang
+  // dikembalikan, lalu SLALembur membuka form revisinya.
+  useEffect(() => {
+    if (!revisionTarget?.token) return
+    if (orgMapStatus === 'loading') return
+    if (!(isAdminUlp || isSuperAdmin)) {
+      onRevisionTargetHandled?.()
+      return
+    }
+    const targetPeriod = slaPeriods.find((label) => periodKeyFromLabel(label) === revisionTarget.periodMonth)
+      ?? periodLabelFromMonth(revisionTarget.periodMonth)
+    if (!targetPeriod) {
+      onRevisionTargetHandled?.()
+      return
+    }
+    requestLeaveEditor(() => {
+      setModuleId('lembur')
+      setPeriod(targetPeriod)
+      setActiveRevisionToken(revisionTarget.token)
+    }, { description: 'Perubahan belum disimpan. Buka revisi Lembur?' })
+  }, [revisionTarget?.token, orgMapStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Laporkan tab/periode ke URL (ditulis sebagai replace, tanpa loop).
   const routeChangeRef = useRef(onRouteChange)
@@ -468,6 +495,7 @@ export default function SLAPelayananTeknikPage({
   const [targets, setTargets] = useState({})
   const [lemburRecords, setLemburRecords] = useState([])
   const [lemburLoadStatus, setLemburLoadStatus] = useState('idle')
+  const [lemburLoadedPeriod, setLemburLoadedPeriod] = useState('')
   const [lemburLoadError, setLemburLoadError] = useState('')
   const lemburRequestId = useRef(0)
 
@@ -758,6 +786,7 @@ export default function SLAPelayananTeknikPage({
     if (!orgMap?.contractUuid || !orgMap?.up3Uuid || (role === 'ulp' && !lemburUnitUuid)) {
       setLemburRecords([])
       setLemburLoadStatus('idle')
+      setLemburLoadedPeriod('')
       return
     }
     // Refresh latar (sinkron/fokus) tidak boleh menumpuk dengan request berjalan;
@@ -765,7 +794,10 @@ export default function SLAPelayananTeknikPage({
     if (options.background && lemburRefreshInFlight.current) return
     const requestId = ++lemburRequestId.current
     lemburRefreshInFlight.current = true
-    if (!options.background) setLemburLoadStatus('loading')
+    if (!options.background) {
+      setLemburLoadStatus('loading')
+      setLemburLoadedPeriod('')
+    }
     setLemburLoadError('')
     if (!options.background) setLemburRecords([])
     try {
@@ -791,11 +823,15 @@ export default function SLAPelayananTeknikPage({
       ])
       if (requestId !== lemburRequestId.current) return
       setLemburRecords([...repRows, ...workRows])
+      setLemburLoadedPeriod(lemburPeriodMonth)
       setLemburLoadStatus('ready')
     } catch (error) {
       if (requestId !== lemburRequestId.current) return
       setLemburLoadError(error.message || 'Gagal memuat data lembur. Data tersinkron tidak tersedia.')
-      if (!options.background) setLemburLoadStatus('error')
+      if (!options.background) {
+        setLemburLoadStatus('error')
+        setLemburLoadedPeriod('')
+      }
     } finally {
       if (requestId === lemburRequestId.current) lemburRefreshInFlight.current = false
     }
@@ -1416,6 +1452,7 @@ export default function SLAPelayananTeknikPage({
             periodMonth={lemburPeriodMonth}
             periods={slaPeriods.map(periodKeyFromLabel)}
             records={lemburRecords}
+            dataReady={lemburLoadStatus === 'ready' && lemburLoadedPeriod === lemburPeriodMonth}
             canMutate={isSuperAdmin || (isAdminUlp && role === 'ulp') || isAdminUp3 || (isCustomRole && customCanEdit('lembur'))}
             isExactAdminUp3={isAdminUp3}
             isAdminUp3={canManageUp3Operations}
@@ -1449,6 +1486,9 @@ export default function SLAPelayananTeknikPage({
             }}
             approvalTarget={canManageUp3Operations && periodKeyFromLabel(period) === approvalTarget?.periodMonth ? approvalTarget : null}
             onApprovalTargetHandled={onApprovalTargetHandled}
+            revisionTarget={activeRevisionToken === revisionTarget?.token && periodKeyFromLabel(period) === revisionTarget?.periodMonth ? revisionTarget : null}
+            onRevisionTargetHandled={onRevisionTargetHandled}
+            isAdminUlp={isAdminUlp}
           />
         )
       ) : moduleId === 'laporan-bbm' ? (
