@@ -546,11 +546,12 @@ export default function UlpConditionReport({
             <h3>{selectedVehicle.plate_display || selectedVehicle.label}</h3>
           </div>
           <p className="uc-vehicle-hero-meta">
-            {selectedVehicle.label} · {selectedVehicle.vehicle_type_name} / {selectedVehicle.assignment_name}
+            {[selectedVehicle.vehicle_type_name, selectedVehicle.assignment_name].filter(Boolean).join(' · ') || selectedVehicle.label}
             {vehicleLocationLabel(selectedVehicle) ? <><span aria-hidden="true">·</span><Icon name="map-pin" size={12} />{vehicleLocationLabel(selectedVehicle)}</> : ''}
           </p>
           {selectedCondition ? (
             <div className="uc-vehicle-hero-condition">
+              <div className="uc-vehicle-condition-group">
               <span className="uc-vehicle-hero-condition-label"><Icon name="check-circle" size={14} />Kondisi kendaraan *</span>
               {editable ? (
                 <div className="uc-condition-options">
@@ -569,14 +570,19 @@ export default function UlpConditionReport({
                   ))}
                 </div>
               ) : <Status value={evaluateCondition(selectedCondition).status} />}
+              </div>
+              <div className="uc-vehicle-inspection-summary">
+                <span className="uc-vehicle-inspection-caption">Inspeksi terakhir</span>
               <span className="uc-vehicle-inspection-hint">
-                <Icon name="camera" size={12} />
                 {selectedLastInspection
-                  ? `Inspeksi terakhir ${timestamp(selectedLastInspection.inspected_at)} · ${selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · ${selectedLastInspection.inspected_by_name || 'Petugas'}`
+                  ? timestamp(selectedLastInspection.inspected_at)
                   : vehicleInspectionStatus === 'loading' ? 'Memuat inspeksi...'
                     : vehicleInspectionStatus === 'error' ? 'Inspeksi gagal dimuat.'
                       : `Belum ada inspeksi pada ${conditionMonthLabel(month)}`}
               </span>
+                {selectedLastInspection && <span className="uc-vehicle-inspection-by">{selectedLastInspection.condition === 'DAMAGED' ? 'Rusak' : 'Baik'} · {selectedLastInspection.inspected_by_name || 'Petugas'}</span>}
+              </div>
+              <div className="uc-vehicle-inspection-actions">
               {selectedLastInspection && (
                 <button
                   type="button"
@@ -591,7 +597,7 @@ export default function UlpConditionReport({
               {canInspect && !future && !historical && (
                 <button
                   type="button"
-                  className="sla-btn uc-vehicle-inspect-btn"
+                  className="sla-btn uc-vehicle-inspect-btn is-primary"
                   disabled={saving}
                   onClick={() => { setModalError(''); setModalMessage(''); setVehicleInspectionOpen(true) }}
                 >
@@ -599,6 +605,7 @@ export default function UlpConditionReport({
                   Inspeksi Kendaraan
                 </button>
               )}
+              </div>
             </div>
           ) : <p className="uc-assignment-empty">Data kondisi kendaraan tidak tersedia pada laporan ini.</p>}
           <details className="uc-vehicle-ref" open={plateEdit ? true : undefined}>

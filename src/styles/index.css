@@ -12879,8 +12879,8 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 
 .uc-vehicle-hero {
   display: grid;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 20px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-surface);
@@ -12935,11 +12935,11 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 }
 
 .uc-vehicle-hero-condition {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) auto;
   align-items: center;
-  gap: 8px 14px;
-  padding-top: 10px;
+  gap: 16px 24px;
+  padding: 16px 0 4px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -12978,6 +12978,72 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 }
 
 .uc-page-back { min-height: 36px; }
+.uc-vehicle-hero .uc-page-back {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.uc-vehicle-hero .uc-page-back:hover { color: var(--color-primary); background: transparent; }
+
+.uc-vehicle-condition-group,
+.uc-vehicle-inspection-summary { display: grid; gap: 6px; min-width: 0; }
+.uc-vehicle-inspection-caption { color: var(--color-text-muted); font-size: 11.5px; font-weight: 600; }
+.uc-vehicle-inspection-by { color: var(--color-text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.uc-vehicle-hero .uc-condition-options {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+.uc-vehicle-hero .uc-condition-options label {
+  position: relative;
+  min-height: 32px;
+  padding: 5px 14px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+}
+.uc-vehicle-hero .uc-condition-options label:has(input:checked) {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-primary);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
+}
+.uc-vehicle-hero .uc-condition-options input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.uc-vehicle-hero .uc-condition-options label:has(input:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.uc-vehicle-inspection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.uc-vehicle-hero .uc-vehicle-inspect-btn { min-height: 36px; border-radius: 8px; }
+.uc-vehicle-hero .uc-vehicle-inspect-btn.is-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.uc-vehicle-hero .uc-vehicle-inspect-btn.is-primary:hover:not(:disabled) { filter: brightness(.94); }
+@media (max-width: 1200px) {
+  .uc-vehicle-hero-condition { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .uc-vehicle-inspection-actions { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .uc-vehicle-hero-condition { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .uc-vehicle-inspection-actions { grid-column: auto; }
+  .uc-vehicle-inspection-actions .uc-vehicle-inspect-btn { flex: 1 1 auto; justify-content: center; }
+}
 
 .uc-vehicle-inspection-hint {
   display: inline-flex;
