@@ -648,8 +648,8 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
             <span className="bbm-ai-scan-sparkle"><Icon name="sparkles" size={15} /></span>
           </div>
           <div className="bbm-ai-loading-copy">
-            <strong>AI sedang membaca foto odometer</strong>
-            <p>Foto sedang dipindai dan angkanya dicocokkan dengan Stand Akhir.</p>
+            <strong>Sistem sedang memverifikasi foto odometer</strong>
+            <p>Angka pada foto sedang dibaca dan dicocokkan dengan Stand Akhir.</p>
           </div>
           <dl className="bbm-ai-dialog-facts">
             <div><dt>Tanggal</dt><dd>{labelDate(aiDialogDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>
