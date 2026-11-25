@@ -22,7 +22,7 @@ try{
   await page.route('**/src/data/toolEvidence.js*',route=>route.fulfill({contentType:'application/javascript',body:'export const prepareToolEvidence=async(file)=>file; export const prepareVehicleEvidence=async(file)=>file;'}))
   await page.route('**/src/data/toolInspectionRepository.js*',route=>route.fulfill({contentType:'application/javascript',body:`
     export const getToolInspectionBundle=async()=>({vehicles:[{id:'vehicle',assets:[{id:'asset',equipment_id:'tool',equipment_name:'Teropong',asset_sequence:1,commissioned_at:window.replaced?'2026-11-02T03:00:00Z':null,handover:window.replaced?{resolved_at:'2026-11-02T03:00:00Z',resolved_by_name:'Widodo',photo_paths:['replacement.png']}:null,open_issue:window.damaged?{id:'issue',revision:1,opened_at:'2026-10-09T00:00:00Z',handover_verified_at:window.verifiedAt}:null}]}],history:[],openIssues:window.damaged?[{id:'issue',vehicle_id:'vehicle',equipment_name:'Teropong'}]:[]});
-    export const listOpenToolIssues=async()=>[{id:'issue',revision:1,ulp_id:'ulp',equipment_name:'Teropong',vehicle_label:'Roda 2',opened_at:'2026-10-09T00:00:00Z',handover_verified_at:window.verifiedAt}];
+    export const listOpenToolIssues=async()=>[{id:'issue',revision:1,ulp_id:'ulp',equipment_name:'Teropong',vehicle_label:'Roda 2',opened_at:'2026-10-09T00:00:00Z',handover_verified_at:window.verifiedAt},{id:'issue-nov',revision:1,ulp_id:'ulp',equipment_name:'HT',vehicle_label:'Roda 4',opened_at:'2026-11-24T03:29:00Z',handover_verified_at:window.verifiedAt}];
     export const verifyToolIssueHandover=async({verifiedAt})=>{window.verifiedAt=verifiedAt;return {}};
     export const listVehicleLastInspections=async()=>[];
     export const submitToolInspection=async()=>{window.damaged=true;window.checked=true;return {issue:{id:'issue'}}};
@@ -88,12 +88,23 @@ try{
     const {default:Coordinator}=await import('/src/components/sla/CoordinatorToolIssues.jsx')
     const host=document.createElement('div');host.id='coordinator';document.body.append(host)
     window.coordinatorRoot=(dom.createRoot??dom.default.createRoot)(host)
-    window.coordinatorRoot.render(React.createElement(Coordinator,{contractId:'contract',up3Id:'up3',units:[{uuid:'ulp',type:'ULP',displayName:'ULP'}]}))
+    const units=[{uuid:'ulp',type:'ULP',displayName:'ULP'}]
+    window.coordinatorRender=month=>window.coordinatorRoot.render(React.createElement(Coordinator,{contractId:'contract',up3Id:'up3',month,units}))
+    window.coordinatorRender('2026-10')
   })
+  const coordinator=page.locator('#coordinator')
+  await coordinator.getByText('Periode Oktober 2026',{exact:true}).waitFor()
+  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).count(),1)
+  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'HT'}).count(),0)
+  assert.match(await coordinator.innerText(),/1 issue terbuka pada Oktober 2026/)
   await page.getByRole('button',{name:'Verifikasi Penyerahan Alat Pengganti',exact:true}).click()
   await page.getByRole('dialog').locator('input[type=datetime-local]').fill('2026-11-02T09:00')
   await page.getByRole('button',{name:'Simpan Verifikasi',exact:true}).click()
   await page.locator('#coordinator').getByText(/menunggu serah terima ke ULP$/).waitFor()
+  await page.evaluate(()=>window.coordinatorRender('2026-11'))
+  await coordinator.getByText('Periode November 2026',{exact:true}).waitFor()
+  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).count(),0)
+  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'HT'}).count(),1)
   await page.evaluate(()=>{window.coordinatorRoot.unmount();document.getElementById('coordinator').remove()})
   await page.evaluate(()=>window.renderReport('2026-11'))
   await page.locator('.uc-vehicle-card').click()
@@ -108,6 +119,6 @@ try{
   await page.getByRole('button',{name:'Kembali ke daftar kendaraan'}).click()
   await page.getByText('Semua alat sudah diperiksa bulan ini',{exact:true}).waitFor()
   assert.deepEqual(errors,[])
-  console.log('Tool sync browser checks passed: read-only counts, inspection refresh, month-specific card, carryover, handover refresh.')
+  console.log('Tool sync browser checks passed: read-only counts, inspection refresh, monthly issue filtering, month-specific card, carryover, handover refresh.')
 }catch(error){console.error(error.message,errors,(await page?.locator('body').innerText())?.slice(0,2000));process.exitCode=1}
 finally{await browser?.close();await server.close()}

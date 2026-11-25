@@ -1090,7 +1090,7 @@ export default function SLAPelayananTeknikPage({
 
   return (
     <div className="page page-sla">
-      <header className="pt-page-header">
+      <header className={`pt-page-header${moduleId === 'kendaraan-ulp' ? ' pt-page-header-vehicle' : ''}`}>
         <div>
           <h1 className="page-title">Pelayanan Teknik</h1>
         </div>

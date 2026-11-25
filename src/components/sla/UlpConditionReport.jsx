@@ -526,14 +526,34 @@ export default function UlpConditionReport({
   })
 
   return <section className="uc-workspace">
-    <header className="uc-header"><div><h2><span className="uc-header-icon"><Icon name="wrench" size={16} /></span>Alat &amp; Kendaraan</h2></div><div className="uc-context">
-      {onOpenStandards && <button type="button" className="sla-btn" disabled={saving} onClick={onOpenStandards}>Kelola Template & Kendaraan</button>}
-      {canPickUlp ? <label>Unit Layanan<select value={ulpId} disabled={saving} onChange={(event) => changeUlp(event.target.value)}>{overviewEnabled && <option value="">Semua ULP</option>}{ulps.map((unit) => <option key={unit.uuid} value={unit.uuid}>{unit.displayName || unit.legacyKey}</option>)}</select></label> : <div className="uc-unit-label">{unitName}</div>}
-      <label>Periode<input type="month" value={month} disabled={saving} onChange={(event) => changeMonth(event.target.value)} /></label>
-    </div></header>
+    <header className="uc-header">
+      <div className="uc-header-title">
+        <span className="uc-header-icon"><Icon name="wrench" size={16} /></span>
+        <h2>Alat &amp; Kendaraan</h2>
+      </div>
+      <div className="uc-context">
+        {onOpenStandards && <button type="button" className="sla-btn uc-header-action" disabled={saving} onClick={onOpenStandards}>Kelola Template &amp; Kendaraan</button>}
+        {canPickUlp ? (
+          <label className="uc-context-field">Unit Layanan
+            <select value={ulpId} disabled={saving} onChange={(event) => changeUlp(event.target.value)}>
+              {overviewEnabled && <option value="">Semua ULP</option>}
+              {ulps.map((unit) => <option key={unit.uuid} value={unit.uuid}>{unit.displayName || unit.legacyKey}</option>)}
+            </select>
+          </label>
+        ) : (
+          <div className="uc-context-field uc-unit-field">
+            <span>Unit Layanan</span>
+            <strong title={unitName}>{unitName}</strong>
+          </div>
+        )}
+        <label className="uc-context-field uc-period-field">Periode
+          <input type="month" value={month} disabled={saving} onChange={(event) => changeMonth(event.target.value)} />
+        </label>
+      </div>
+    </header>
 
     {error && <div className="uc-alert uc-alert--error" role="alert">{error}<button type="button" className="sla-btn" disabled={saving} onClick={() => { if (canChangeContext()) setReloadToken((value) => value + 1) }}>Muat Ulang</button></div>}
-    {canVerifyIssue && <CoordinatorToolIssues contractId={contractUuid} up3Id={up3Uuid} ulpId={ulpId} units={units} reloadToken={toolReloadToken} onChanged={handleToolChanged} />}
+    {canVerifyIssue && <CoordinatorToolIssues contractId={contractUuid} up3Id={up3Uuid} ulpId={ulpId} month={month} units={units} reloadToken={toolReloadToken} onChanged={handleToolChanged} />}
     {message && <p className="uc-alert" role="status">{message}</p>}
 
     {selectedVehicle && selectedSummary ? (

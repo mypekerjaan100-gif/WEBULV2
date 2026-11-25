@@ -1350,6 +1350,32 @@ summary:focus-visible {
 
 .pt-page-header .page-title { font-size: 18px; }
 
+.pt-page-header-vehicle {
+  margin-bottom: 6px;
+  padding: 0;
+}
+.pt-page-header-vehicle .page-title {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+.pt-page-header-vehicle .pt-back-button {
+  min-height: 30px;
+  margin: 0;
+  padding: 4px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.pt-page-header-vehicle .pt-back-button:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-primary);
+}
+
 .dashboard-page-header {
   margin-bottom: 18px;
   padding: 2px 0;
@@ -11172,21 +11198,56 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
   padding: 16px;
 }
 
-.uc-workspace { display: grid; gap: 20px; min-width: 0; color: var(--color-text); }
+.uc-workspace { display: grid; gap: 16px; min-width: 0; color: var(--color-text); }
 .uc-header, .uc-admin-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 20px; }
-.uc-header { align-items: center; gap: 14px; }
-.uc-header h2 { display: flex; align-items: center; margin: 0; font-size: 20px; line-height: 1.25; letter-spacing: -.02em; }
-.uc-header-icon { display: inline-flex; margin-right: 8px; color: var(--color-primary); }
+.uc-header {
+  align-items: center;
+  gap: 10px 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+.uc-header-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.uc-header h2 { display: flex; align-items: center; margin: 0; font-size: 18px; line-height: 1.3; letter-spacing: -.02em; }
+.uc-header-icon {
+  display: inline-flex;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--primary-subtle);
+  color: var(--color-primary);
+}
 .uc-header p, .uc-admin-header p { margin: 0; max-width: 680px; color: var(--color-text-muted); font-size: 13px; line-height: 1.6; }
 .uc-eyebrow { color: var(--color-primary); font-size: 10px; font-weight: 800; letter-spacing: .14em; }
-.uc-context { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
-.uc-context label, .uc-field { display: grid; gap: 6px; color: var(--color-text-muted); font-size: 11px; font-weight: 600; }
+.uc-context { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: 10px; }
+.uc-context label, .uc-context-field, .uc-field { display: grid; gap: 4px; color: var(--color-text-muted); font-size: 10px; font-weight: 600; }
 .uc-context input, .uc-context select, .uc-field input, .uc-field select, .uc-catalog input, .uc-catalog select {
-  box-sizing: border-box; min-width: 0; max-width: 100%; height: 40px; padding: 0 11px;
-  border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 13px;
+  box-sizing: border-box; min-width: 0; max-width: 100%; height: 36px; padding: 0 10px;
+  border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 12.5px;
 }
-.uc-context select { max-width: 250px; }
-.uc-unit-label { padding: 11px 0; font-size: 14px; font-weight: 700; }
+.uc-context select { max-width: 230px; }
+.uc-period-field input { width: 168px; }
+.uc-unit-field strong {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  max-width: 230px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--color-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.uc-header .uc-header-action { min-height: 36px; padding: 0 11px; font-size: 11.5px; }
 .uc-reference { display: flex; flex-wrap: wrap; gap: 16px 32px; padding: 15px 18px; border-left: 3px solid var(--color-primary); background: var(--surface-subtle); border-radius: 0 8px 8px 0; }
 .uc-reference > div { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
 .uc-reference > div > span:first-child { color: var(--color-text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
@@ -11848,12 +11909,15 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 :root[data-theme='dark'] .uc-status--draft { color: #ebcd8f; background: #413623; }
 :root[data-theme='dark'] .uc-status--default { color: #a9c5ff; background: #1e355d; }
 @media (max-width: 720px) {
-  .uc-workspace { gap: 16px; }
+  .uc-workspace { gap: 14px; }
   .uc-header, .uc-context { align-items: stretch; flex-direction: column; width: 100%; }
+  .uc-header { gap: 10px; }
   .uc-context { flex-direction: row; }
   .uc-context > * { flex: 1 1 140px; }
   .uc-context select { width: 100%; max-width: none; }
-  .uc-header h2 { font-size: 22px; }
+  .uc-unit-field strong { max-width: none; }
+  .uc-period-field input { width: 100%; }
+  .uc-header h2 { font-size: 18px; }
   .uc-reference { gap: 14px; }
   .uc-reference > div { flex: 1 1 190px; }
   .uc-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 16px; }
@@ -14671,6 +14735,26 @@ button.lembur-profile-thumb > img { display: block; width: 100%; height: 100%; o
 .tool-section-heading > span {
   color: var(--color-text-muted);
   font-size: 11px;
+}
+
+.tool-issue-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.tool-issue-period {
+  padding: 3px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
 }
 
 .tool-issues {
