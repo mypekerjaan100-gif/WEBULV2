@@ -89,7 +89,6 @@ export default function App() {
   const [viewAsRoleCode, setViewAsRoleCode] = useState(null)
   const [customRoleList, setCustomRoleList] = useState([])
   const [previewApprovalAccess, setPreviewApprovalAccess] = useState(null)
-  const [toolIssueTarget, setToolIssueTarget] = useState(null)
   const routeRestoredRef = useRef(false)
   const isSuperAdmin = authority?.actor?.is_super_admin === true
   const contractAccess = authority?.actor?.contract_access ?? []
@@ -500,7 +499,6 @@ export default function App() {
     setSlaRouteRequest(null)
     setSlaActiveModule('sla')
     setFinRouteRequest(null)
-    setToolIssueTarget(null)
     setApprovalTarget(null)
     setRevisionTarget(null)
     writeRouteHash({ segments: contractId ? [contractId] : [], periode: null }, { push: true })
@@ -522,7 +520,6 @@ export default function App() {
     setCurrentPage(pageId)
     setActiveContractId(null)
     setSlaActiveModule('sla')
-    setToolIssueTarget(null)
     setApprovalTarget(null)
     setRevisionTarget(null)
     if (pageId !== 'analisis-finansial') setFinRouteRequest(null)
@@ -533,26 +530,9 @@ export default function App() {
   const openApprovalNotification = (item) => {
     if (!effectiveApprovalAccess) return
     if (item.managementScopeKey) setSelectedManagementScopeKey(item.managementScopeKey)
-    if (item.source === 'alat') {
-      setApprovalTarget(null)
-      setRevisionTarget(null)
-      setToolIssueTarget({
-        issueId: item.id,
-        ulpId: item.unitId,
-        token: `alat:${item.id}:${Date.now()}`,
-      })
-      setActiveContractId('pelayanan-teknik')
-      setCurrentPage(null)
-      setSlaActiveModule('kendaraan-ulp')
-      setSlaRouteRequest({ module: 'kendaraan-ulp', periode: null, token: Date.now() })
-      setFinRouteRequest(null)
-      writeRouteHash({ segments: ['pelayanan-teknik', 'kendaraan-ulp'], periode: null }, { push: true })
-      return
-    }
     if (item.kind === 'revision') {
       const revisionPeriod = periodLabelFromMonth(item.periodMonth)
       setApprovalTarget(null)
-      setToolIssueTarget(null)
       setRevisionTarget({ ...item, token: `revision:${item.id}:${Date.now()}` })
       setActiveContractId('pelayanan-teknik')
       setCurrentPage(null)
@@ -563,7 +543,6 @@ export default function App() {
       return
     }
     const contractCode = adminUp3Access?.contract_code ?? 'pelayanan-teknik'
-    setToolIssueTarget(null)
     setRevisionTarget(null)
     setApprovalTarget({ ...item, token: `${item.source}:${item.id}:${Date.now()}` })
     setActiveContractId(contractCode)
@@ -643,7 +622,6 @@ export default function App() {
     setCurrentPage(null)
     setActiveContractId('pelayanan-teknik')
     setSlaActiveModule(moduleId)
-    setToolIssueTarget(null)
     setApprovalTarget(null)
     setRevisionTarget(null)
     setSlaRouteRequest({ module: moduleId, periode: null, token: Date.now() })
@@ -755,9 +733,9 @@ export default function App() {
               routeRequest={slaRouteRequest}
               customMenuAccess={customMenuAccess}
               customScopeLevel={previewCustomRole?.scopeLevel ?? customContractAccess?.role_level}
+              customRoleCode={previewCustomRole?.code ?? customContractAccess?.role ?? null}
               viewAsRoleCode={previewActive ? viewAsRoleCode : null}
               viewAsLabel={previewLabel}
-              toolIssueTarget={toolIssueTarget}
               onRouteChange={({ module, periode }) => {
                 setSlaActiveModule(module ?? 'sla')
                 writeRouteHash(

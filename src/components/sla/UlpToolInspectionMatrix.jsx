@@ -57,9 +57,9 @@ function agePhrase(months, label = 'Umur') {
   return months == null ? `${label} belum diketahui` : `${label} ${ageLabel(months)}`
 }
 
-function UnitDetailCard({ asset, highlightedIssueId }) {
-  const status = assetStatus(asset)
-  const issue = asset.open_issue
+function UnitDetailCard({ asset, highlightedIssueId, canViewToolIssues = false }) {
+  const issue = canViewToolIssues ? asset.open_issue : null
+  const status = assetStatus(issue ? asset : { ...asset, open_issue: null })
   const handover = asset.handover
   const age = issue ? issue.age_at_failure_months : asset.age_months
   const life = issue ? issue.standard_life_months : asset.useful_life_months
@@ -106,6 +106,8 @@ export default function UlpToolInspectionMatrix({
   canManage = false,
   canInspect = false,
   canResolveIssue = false,
+  canViewToolIssues = false,
+  canViewIssueCounts = false,
   showInspections = true,
   future = false,
   inspectionStatus = 'ready',
@@ -141,7 +143,7 @@ export default function UlpToolInspectionMatrix({
         rows.filter((item) => {
           if (onlyAttention) {
             const result = evaluateCondition(item)
-            const hasIssue = assets.some(
+            const hasIssue = canViewIssueCounts && assets.some(
               (asset) => asset.equipment_id === item.equipment_id && asset.open_issue,
             )
             if (!hasIssue && !['non_compliant', 'invalid'].includes(result.status)) return false
@@ -153,7 +155,7 @@ export default function UlpToolInspectionMatrix({
         }),
       ])
       .filter(([, rows]) => rows.length > 0)
-  }, [assets, items, onlyAttention, query])
+  }, [assets, canViewIssueCounts, items, onlyAttention, query])
   const visibleItemCount = groups.reduce((total, [, rows]) => total + rows.length, 0)
   const editorItem = editor ? items.find((item) => item.key === editor.itemKey) || null : null
 
@@ -187,7 +189,7 @@ export default function UlpToolInspectionMatrix({
   }
 
   const openInspect = (item, asset) => {
-    if (submitting || !canInspect || asset.open_issue || future) return
+    if (submitting || !canInspect || !canViewToolIssues || asset.open_issue || future) return
     if (!confirmSwitch(asset.id)) return
     const init = { condition: 'GOOD', inspectedAt: pontianakInputValue(), note: '' }
     editorInitRef.current = init
@@ -428,8 +430,9 @@ export default function UlpToolInspectionMatrix({
                           {inspectionStatus === 'ready' && (
                             <>
                               {unitAssets.map((asset) => {
-                                const status = assetStatus(asset)
-                                const issue = asset.open_issue
+                                const underlyingIssue = asset.open_issue
+                                const issue = canViewToolIssues ? underlyingIssue : null
+                                const status = assetStatus(issue ? asset : { ...asset, open_issue: null })
                                 return (
                                   <div className="tool-unit-summary" key={asset.id}>
                                     <span className="tool-unit-id">Unit {asset.asset_sequence}</span>
@@ -440,13 +443,13 @@ export default function UlpToolInspectionMatrix({
                                           <Icon name="refresh-cw" size={12} /> Serah Terima
                                         </button>
                                       )}
-                                      {!issue && canInspect && !future && (
+                                      {!underlyingIssue && canInspect && canViewToolIssues && !future && (
                                         <button type="button" className="tool-action-btn" disabled={submitting} onClick={() => openInspect(item, asset)}>
                                           <Icon name="shield" size={12} /> Inspeksi
                                         </button>
                                       )}
-                                      {issue && <span className="tool-unit-hint"><Icon name="clock" size={11} /> {issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)}` : 'Menunggu verifikasi Koordinator Area'}</span>}
-                                      {!issue && !canInspect && <span className="tool-unit-hint"><Icon name="shield" size={11} /> Hanya lihat</span>}
+                                      {issue && <span className="tool-unit-hint"><Icon name="clock" size={11} /> {issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)}` : 'Menunggu verifikasi Koordinator ULP'}</span>}
+                                      {!underlyingIssue && !canInspect && <span className="tool-unit-hint"><Icon name="shield" size={11} /> Hanya lihat</span>}
                                     </span>
                                   </div>
                                 )
@@ -488,13 +491,13 @@ export default function UlpToolInspectionMatrix({
                               Default rekap · belum disimpan bulan ini
                             </span>
                           )}
-                          {showInspections && issueCount > 0 && (
+                          {showInspections && canViewIssueCounts && issueCount > 0 && (
                             <span className="tool-status-note is-warning">
                               <Icon name="alert-triangle" size={11} />
                               {issueCount} issue unit terbuka
                             </span>
                           )}
-                          {showInspections && itemHistory.length > 0 && (
+                          {showInspections && canViewToolIssues && itemHistory.length > 0 && (
                             <button
                               type="button"
                               className="tool-link-button"
@@ -525,14 +528,14 @@ export default function UlpToolInspectionMatrix({
                             </div>
                             <div className="tool-matrix-units">
                               {unitAssets.map((asset) => (
-                                <UnitDetailCard key={asset.id} asset={asset} highlightedIssueId={highlightedIssueId} />
+                                <UnitDetailCard key={asset.id} asset={asset} highlightedIssueId={highlightedIssueId} canViewToolIssues={canViewToolIssues} />
                               ))}
                             </div>
                           </div>
                         </td>
                       </tr>
                     )}
-                    {expandedHistoryKey === item.key && itemHistory.length > 0 && (
+                    {canViewToolIssues && expandedHistoryKey === item.key && itemHistory.length > 0 && (
                       <tr className="tool-matrix-history-row">
                         <td colSpan={columnCount}>
                           <ul className="tool-history-list">

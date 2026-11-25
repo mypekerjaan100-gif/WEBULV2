@@ -43,8 +43,9 @@ function vehicleBadge(summary) {
 
 export default function UlpConditionReport({
   contractUuid, up3Uuid, ownUlpUuid, canManage, canManagePlate = false, canInspect = false,
-  canResolveIssue = false, canVerifyIssue = false, canPickUlp, units = [], initialMonth, initialUlpId = null,
-  overviewEnabled = true, onMonthChange, onEditorStateChange, onOpenStandards, issueTarget = null,
+  canResolveIssue = false, canVerifyIssue = false, canViewToolIssues = false,
+  canPickUlp, units = [], initialMonth, initialUlpId = null,
+  overviewEnabled = true, onMonthChange, onEditorStateChange, onOpenStandards,
 }) {
   const ulps = units.filter((unit) => unit.type === 'ULP')
   const [ulpId, setUlpId] = useState(() => {
@@ -156,12 +157,6 @@ export default function UlpConditionReport({
       setUlpId(preferred)
     }
   }, [canPickUlp, initialUlpId, overviewEnabled, ulpId, ulps])
-
-  useEffect(() => {
-    if (!issueTarget?.token) return
-    if (issueTarget.ulpId && canPickUlp && issueTarget.ulpId !== ulpId) setUlpId(issueTarget.ulpId)
-    setHighlightIssueId(issueTarget.issueId ?? null)
-  }, [issueTarget?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let active = true
@@ -553,7 +548,7 @@ export default function UlpConditionReport({
     </header>
 
     {error && <div className="uc-alert uc-alert--error" role="alert">{error}<button type="button" className="sla-btn" disabled={saving} onClick={() => { if (canChangeContext()) setReloadToken((value) => value + 1) }}>Muat Ulang</button></div>}
-    {canVerifyIssue && <CoordinatorToolIssues contractId={contractUuid} up3Id={up3Uuid} ulpId={ulpId} month={month} units={units} reloadToken={toolReloadToken} onChanged={handleToolChanged} />}
+    {canVerifyIssue && <CoordinatorToolIssues contractId={contractUuid} up3Id={up3Uuid} ulpId={ulpId} units={units} reloadToken={toolReloadToken} onChanged={handleToolChanged} />}
     {message && <p className="uc-alert" role="status">{message}</p>}
 
     {selectedVehicle && selectedSummary ? (
@@ -738,7 +733,7 @@ export default function UlpConditionReport({
               </summary>
               <p>Satu baris per alat. Jumlah Baik + Rusak harus sama dengan jumlah kontrak. Jumlah kondisi otomatis mengikuti inspeksi dan serah terima sampai akhir periode yang dipilih. Issue belum selesai tetap dihitung Rusak pada bulan berikutnya. Unit belum diinspeksi mengikuti kondisi awal Baik. Simpan Rekap digunakan untuk catatan dan kondisi kendaraan.</p>
             </details>
-            {selectedOpenIssues.length > 0 && (
+            {canVerifyIssue && selectedOpenIssues.length > 0 && (
               <p className="uc-alert" role="status">
                 Ada {selectedOpenIssues.length} issue unit terbuka saat ini. Jumlah Baik/Rusak dihitung otomatis sesuai periode;
                 issue hanya selesai melalui tombol Serah Terima pada unit terkait.
@@ -748,6 +743,8 @@ export default function UlpConditionReport({
               items={selectedToolItems}
               assets={selectedToolAssets}
               history={selectedToolHistory}
+              canViewToolIssues={canViewToolIssues}
+              canViewIssueCounts={canVerifyIssue}
               canManage={editable}
               canInspect={canInspect && !future}
               canResolveIssue={canResolveIssue && !future}
@@ -812,7 +809,7 @@ export default function UlpConditionReport({
       {future && <p className="uc-alert">Periode mendatang hanya untuk melihat penetapan. Nopol dan kondisi belum dapat disimpan dari periode ini.</p>}
       {historical && <p className="uc-alert">Melihat riwayat {timestamp(historical.created_at)}. <button type="button" className="sla-btn" onClick={() => setHistorical(null)}>Kembali ke Laporan Terkini</button></p>}
       {!historical && toolStatus === 'error' && <p className="uc-alert">Rincian inspeksi per unit tidak dapat dimuat: {toolError}</p>}
-      {!historical && !selectedVehicle && !focusedToolVehicle && toolBundle.openIssues.length > 0 && (
+      {!historical && canVerifyIssue && !selectedVehicle && !focusedToolVehicle && toolBundle.openIssues.length > 0 && (
         <section className="tool-issues">
           <div className="tool-section-heading">
             <h3>Temuan alat terbuka</h3>
@@ -872,6 +869,7 @@ export default function UlpConditionReport({
             vehicle={focusedToolVehicle}
             assets={focusedToolVehicle.assets}
             history={focusedToolHistory}
+            canViewToolIssues={canViewToolIssues}
             canInspect={canInspect && !future}
             canResolveIssue={canResolveIssue && !future}
             highlightedIssueId={highlightIssueId}
@@ -896,7 +894,7 @@ export default function UlpConditionReport({
           const badge = vehicleBadge(vehicleSummary)
           const percentage = vehicleSummary.total ? Math.round(vehicleSummary.filled / vehicleSummary.total * 100) : 0
           const inspection = historical ? null : bundle.inspection_summary?.find((row) => row.vehicle_id === vehicle.id)
-          const vehicleIssueCount = inspection?.open_issues ?? 0
+          const vehicleIssueCount = canVerifyIssue ? (inspection?.open_issues ?? 0) : 0
           return <button type="button" key={vehicle.id} className={`uc-vehicle-card is-${badge.tone}`} onClick={() => openVehicle(vehicle.id)}>
             <span className="uc-vehicle-card-main">
               <span className="uc-vehicle-card-label">{vehicle.label}</span>

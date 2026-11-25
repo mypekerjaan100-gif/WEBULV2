@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { listOpenToolIssues, verifyToolIssueHandover } from '../../data/toolInspectionRepository.js'
-import { filterToolIssuesByMonth, toolIssueMonthLabel } from '../../data/toolIssuePeriod.js'
 import { Modal, Button, FormField, Input, Alert } from '../ui/Primitives.jsx'
 import { formatDateTime, pontianakInputValue, inputValueToIso } from './ToolEvidence.jsx'
 
-export default function CoordinatorToolIssues({ contractId, up3Id, ulpId, month, units, reloadToken, onChanged }) {
+export default function CoordinatorToolIssues({ contractId, up3Id, ulpId, units, reloadToken, onChanged }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -23,9 +22,7 @@ export default function CoordinatorToolIssues({ contractId, up3Id, ulpId, month,
       .finally(() => { clearTimeout(timeout); if (active) setLoading(false) })
     return () => { active = false; clearTimeout(timeout) }
   }, [contractId, up3Id, reload, reloadToken])
-  const periodLabel = toolIssueMonthLabel(month)
-  const periodRows = filterToolIssuesByMonth(rows, month)
-  const visible = periodRows.filter((row) => !ulpId || row.ulp_id === ulpId)
+  const visible = rows.filter((row) => !ulpId || row.ulp_id === ulpId)
   const save = async () => {
     if (!target || lock.current) return
     if (!time) { setFormError('Waktu verifikasi wajib diisi.'); return }
@@ -39,24 +36,23 @@ export default function CoordinatorToolIssues({ contractId, up3Id, ulpId, month,
   return <section className="tool-issues">
     <div className="tool-section-heading">
       <div className="tool-issue-heading">
-        <h3>Verifikasi penyerahan alat pengganti ke K3</h3>
-        {periodLabel && <span className="tool-issue-period">Periode {periodLabel}</span>}
+        <h3>Issue alat terbuka</h3>
       </div>
       <Button variant="secondary" size="small" disabled={loading || busy} onClick={() => setReload((n) => n + 1)}>Muat ulang</Button>
     </div>
-    <p className="tool-muted">Menampilkan issue terbuka yang tanggal temuannya berada pada periode terpilih. Issue dari bulan lain tidak ditampilkan. Koordinator memverifikasi bahwa alat pengganti sudah diserahkan ke K3. Issue tetap terbuka sampai K3 menyerahkan alat pengganti ke ULP.</p>
+    <p className="tool-muted">Menampilkan semua issue yang belum selesai pada ULP ini, termasuk temuan dari bulan sebelumnya. Koordinator ULP memverifikasi penyerahan alat pengganti ke K3. Issue tetap terbuka sampai K3 menyerahkan alat pengganti ke ULP.</p>
     {loading ? <p role="status">Memuat issue...</p> : error ? <Alert tone="danger">{error}</Alert> : <>
-      <p>{visible.length} issue terbuka{periodLabel ? ` pada ${periodLabel}` : ''} · {visible.filter((r) => !r.handover_verified_at).length} menunggu verifikasi</p>
+      <p>{visible.length} issue terbuka · {visible.filter((r) => !r.handover_verified_at).length} menunggu verifikasi</p>
       <div className="tool-table-wrap"><table className="tool-table"><thead><tr><th>ULP</th><th>Terbuka</th><th>Belum diverifikasi</th></tr></thead><tbody>
-        {units.filter((u) => u.type === 'ULP' && (!ulpId || u.uuid === ulpId)).map((u) => <tr key={u.uuid}><td>{u.displayName || u.legacyKey}</td><td>{periodRows.filter((r) => r.ulp_id === u.uuid).length}</td><td>{periodRows.filter((r) => r.ulp_id === u.uuid && !r.handover_verified_at).length}</td></tr>)}
+        {units.filter((u) => u.type === 'ULP' && (!ulpId || u.uuid === ulpId)).map((u) => <tr key={u.uuid}><td>{u.displayName || u.legacyKey}</td><td>{visible.filter((r) => r.ulp_id === u.uuid).length}</td><td>{visible.filter((r) => r.ulp_id === u.uuid && !r.handover_verified_at).length}</td></tr>)}
       </tbody></table></div>
       <div className="tool-issue-grid">{visible.map((row) => <article className="tool-issue-card" key={row.id}>
         <strong>{row.equipment_name}</strong><span>{units.find((u) => u.uuid === row.ulp_id)?.displayName || row.ulp_id?.slice(0, 8)} · {row.vehicle_label} · {row.plate_display || 'Nopol belum diisi'}</span>
         {row.note && <p>{row.note}</p>}<span>Ditemukan {formatDateTime(row.opened_at)}</span>
-        {row.handover_verified_at ? <p className="tool-note">Diverifikasi {formatDateTime(row.handover_verified_at)} · {row.handover_verified_by_name || 'Koordinator Area'} · menunggu serah terima ke ULP</p>
+        {row.handover_verified_at ? <p className="tool-note">Diverifikasi {formatDateTime(row.handover_verified_at)} · {row.handover_verified_by_name || 'Koordinator ULP'} · menunggu serah terima ke ULP</p>
           : <Button variant="primary" size="small" onClick={() => { setTarget(row); setTime(pontianakInputValue()); setFormError('') }}>Verifikasi Penyerahan Alat Pengganti</Button>}
       </article>)}</div>
-      {!visible.length && <p>Tidak ada issue terbuka yang ditemukan pada {periodLabel || 'periode ini'}.</p>}
+      {!visible.length && <p>Tidak ada issue terbuka pada ULP ini.</p>}
     </>}
     <Modal open={Boolean(target)} onClose={() => { if (!busy) setTarget(null) }} title="Verifikasi Penyerahan Alat Pengganti ke K3" dismissDisabled={busy} footer={<>
       <Button variant="ghost" disabled={busy} onClick={() => setTarget(null)}>Batal</Button>

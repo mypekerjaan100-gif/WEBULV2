@@ -174,9 +174,9 @@ export default function SLAPelayananTeknikPage({
   onRouteChange = null,
   customMenuAccess = null,
   customScopeLevel = 'ULP',
+  customRoleCode = null,
   viewAsRoleCode = null,
   viewAsLabel = '',
-  toolIssueTarget = null,
 }) {
   const [moduleId, setModuleId] = useState(() => {
     if (customMenuAccess) {
@@ -259,6 +259,9 @@ export default function SLAPelayananTeknikPage({
   const customMenuLevel = (menu) => customMenuAccess?.[menu] ?? 'none'
   const customCanRead = (menu) => ['read', 'edit', 'verify'].includes(customMenuLevel(menu))
   const isCustomUp3 = Boolean(customMenuAccess) && customScopeLevel === 'UP3'
+  const isCustomK3 = customRoleCode === 'CUSTOM_K3' && customScopeLevel === 'ULP'
+  const isCustomCoordinatorUlp = customRoleCode === 'CUSTOM_KOORDINATOR_ULP' && customScopeLevel === 'ULP'
+  const canViewToolIssues = isCustomK3 || isCustomCoordinatorUlp
   const customCanEdit = (menu) => customMenuLevel(menu) === 'edit'
   const canViewVehicles = isSuperAdmin || isAdminUp3 || isAdminUlp || isManagement || customCanRead('alat_kendaraan')
   const canMutateMasterLocations = isSuperAdmin
@@ -1523,7 +1526,8 @@ export default function SLAPelayananTeknikPage({
           initialUlpId={isManagement && !isSuperAdmin && !isAdminUp3 ? selectedUnitUuid : null}
           overviewEnabled={isSuperAdmin || isAdminUp3 || !isManagement}
           canPickUlp={isSuperAdmin || isAdminUp3 || isManagement || isCustomUp3}
-          canVerifyIssue={isSuperAdmin || (isCustomUp3 && customMenuLevel('alat_kendaraan') === 'verify')}
+          canViewToolIssues={canViewToolIssues}
+          canVerifyIssue={isCustomCoordinatorUlp && customCanRead('alat_kendaraan')}
           canManage={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
           canManagePlate={isSuperAdmin || isAdminUlp}
           canInspect={isSuperAdmin || (isCustomRole && customCanEdit('alat_kendaraan'))}
@@ -1531,7 +1535,6 @@ export default function SLAPelayananTeknikPage({
           units={orgMap.units}
           initialMonth={periodMonth}
           onMonthChange={(month) => setPeriod(periodLabelFromMonth(month))}
-          issueTarget={toolIssueTarget}
           onEditorStateChange={handleEditorStateChange}
           onOpenStandards={isSuperAdmin || isAdminUp3 ? () => selectModule('alat-kendaraan') : undefined}
         />

@@ -1,5 +1,4 @@
 import { listOvertimeReplacements, listOvertimeWork } from './overtimeReplacementRepository.js'
-import { listOpenToolIssues } from './toolInspectionRepository.js'
 
 const NOTIFICATION_SOURCE_TIMEOUT_MS = 10000
 
@@ -65,22 +64,6 @@ const APPROVAL_SOURCES = [
         })
       }
       return items
-    },
-  },
-  {
-    id: 'alat',
-    label: 'Alat & Kendaraan',
-    load: async ({ contractId, up3Id, units }) => {
-      const rows = await listOpenToolIssues({ contractId, up3Id })
-      return rows.map((row) => ({
-        id: row.id,
-        source: 'alat',
-        unitId: row.ulp_id,
-        unitName: unitName(units, row.ulp_id),
-        title: `${row.equipment_name} · ${row.vehicle_label || row.plate_display || 'Kendaraan'}`,
-        date: row.opened_at?.slice(0, 10) ?? null,
-        sortAt: row.opened_at,
-      }))
     },
   },
 ]

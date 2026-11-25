@@ -33,6 +33,7 @@ export default function UlpToolUnitPanel({
   history = [],
   canInspect = false,
   canResolveIssue = false,
+  canViewToolIssues = false,
   highlightedIssueId = null,
   onChanged,
   onMessage,
@@ -55,7 +56,7 @@ export default function UlpToolUnitPanel({
   const issueCount = assets.filter((asset) => asset.open_issue).length
 
   const openInspect = (asset) => {
-    if (!canInspect || asset.open_issue) return
+    if (!canInspect || !canViewToolIssues || asset.open_issue) return
     setInspectTarget({ asset })
     setInspectForm({ condition: 'GOOD', inspectedAt: pontianakInputValue(), note: '', files: [] })
     setInspectError('')
@@ -92,7 +93,7 @@ export default function UlpToolUnitPanel({
         photoPaths: paths,
       })
       onMessage?.(result?.issue
-        ? `Kerusakan ${inspectTarget.asset.equipment_name} dicatat. Issue terbuka dan notifikasi dikirim ke Admin UP3 serta manajemen terkait.`
+        ? `Kerusakan ${inspectTarget.asset.equipment_name} dicatat. Issue terbuka pada daftar Koordinator ULP.`
         : `Kondisi ${inspectTarget.asset.equipment_name} tersimpan sebagai Baik.`)
       setInspectTarget(null)
       onChanged?.()
@@ -161,7 +162,7 @@ export default function UlpToolUnitPanel({
     <div className="tool-unit-panel">
       <div className="tool-section-heading">
         <h3>Unit alat</h3>
-        <span>{checkedCount}/{assets.length} unit diperiksa · {issueCount} issue terbuka</span>
+        <span>{checkedCount}/{assets.length} unit diperiksa{canViewToolIssues ? ` · ${issueCount} issue terbuka` : ''}</span>
       </div>
       <p className="tool-muted">
         Rincian ini tambahan. Rekap jumlah Baik/Rusak di atas tetap menjadi laporan bulanan.
@@ -180,8 +181,9 @@ export default function UlpToolUnitPanel({
           </thead>
           <tbody>
             {assets.map((asset) => {
-              const status = assetStatus(asset)
-              const issue = asset.open_issue
+              const underlyingIssue = asset.open_issue
+              const issue = canViewToolIssues ? underlyingIssue : null
+              const status = assetStatus(issue ? asset : { ...asset, open_issue: null })
               const age = issue ? issue.age_at_failure_months : asset.age_months
               const life = issue ? issue.standard_life_months : asset.useful_life_months
               const beforeLife = issue?.damaged_before_life
@@ -231,13 +233,13 @@ export default function UlpToolUnitPanel({
                     {issue && canResolveIssue && (
                       <Button variant="primary" size="small" disabled={!issue.handover_verified_at} onClick={() => openResolve(asset)}>Selesaikan</Button>
                     )}
-                    {!issue && canInspect && (
+                    {!underlyingIssue && canInspect && canViewToolIssues && (
                       <Button variant="secondary" size="small" disabled={!asset.id} onClick={() => openInspect(asset)}>
                         Inspeksi
                       </Button>
                     )}
-                    {!issue && !canInspect && <span className="tool-muted">Hanya lihat</span>}
-                    {issue && <span className="tool-muted">{issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)} · menunggu serah terima ke ULP` : 'Menunggu verifikasi Koordinator Area'}</span>}
+                    {!underlyingIssue && !canInspect && <span className="tool-muted">Hanya lihat</span>}
+                    {issue && <span className="tool-muted">{issue.handover_verified_at ? `Diverifikasi ${formatDateTime(issue.handover_verified_at)} · menunggu serah terima ke ULP` : 'Menunggu verifikasi Koordinator ULP'}</span>}
                   </td>
                 </tr>
               )
@@ -334,7 +336,7 @@ export default function UlpToolUnitPanel({
           </FormField>
           {inspectForm.condition === 'DAMAGED' && (
             <Alert tone="warning">
-              Menyimpan kondisi Rusak akan membuka issue dan mengirim notifikasi. Issue tetap terbuka sampai
+              Menyimpan kondisi Rusak akan membuka issue pada daftar Koordinator ULP. Issue tetap terbuka sampai
               penggantian diserahkan dengan bukti foto.
             </Alert>
           )}

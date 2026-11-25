@@ -21,9 +21,9 @@ try{
   `}))
   await page.route('**/src/data/toolEvidence.js*',route=>route.fulfill({contentType:'application/javascript',body:'export const prepareToolEvidence=async(file)=>file; export const prepareVehicleEvidence=async(file)=>file;'}))
   await page.route('**/src/data/toolInspectionRepository.js*',route=>route.fulfill({contentType:'application/javascript',body:`
-    export const getToolInspectionBundle=async()=>({vehicles:[{id:'vehicle',assets:[{id:'asset',equipment_id:'tool',equipment_name:'Teropong',asset_sequence:1,commissioned_at:window.replaced?'2026-11-02T03:00:00Z':null,handover:window.replaced?{resolved_at:'2026-11-02T03:00:00Z',resolved_by_name:'Widodo',photo_paths:['replacement.png']}:null,open_issue:window.damaged?{id:'issue',revision:1,opened_at:'2026-10-09T00:00:00Z',handover_verified_at:window.verifiedAt}:null}]}],history:[],openIssues:window.damaged?[{id:'issue',vehicle_id:'vehicle',equipment_name:'Teropong'}]:[]});
-    export const listOpenToolIssues=async()=>[{id:'issue',revision:1,ulp_id:'ulp',equipment_name:'Teropong',vehicle_label:'Roda 2',opened_at:'2026-10-09T00:00:00Z',handover_verified_at:window.verifiedAt},{id:'issue-nov',revision:1,ulp_id:'ulp',equipment_name:'HT',vehicle_label:'Roda 4',opened_at:'2026-11-24T03:29:00Z',handover_verified_at:window.verifiedAt}];
-    export const verifyToolIssueHandover=async({verifiedAt})=>{window.verifiedAt=verifiedAt;return {}};
+     export const getToolInspectionBundle=async()=>({vehicles:[{id:'vehicle',assets:[{id:'asset',equipment_id:'tool',equipment_name:'Teropong',asset_sequence:1,commissioned_at:window.replaced?'2026-11-02T03:00:00Z':null,handover:window.replaced?{resolved_at:'2026-11-02T03:00:00Z',resolved_by_name:'Widodo',photo_paths:['replacement.png']}:null,open_issue:window.damaged?{id:'issue',revision:1,opened_at:'2026-10-09T00:00:00Z',handover_verified_at:window.verifiedAt.issue}:null}]}],history:[],openIssues:window.damaged?[{id:'issue',vehicle_id:'vehicle',equipment_name:'Teropong'}]:[]});
+     export const listOpenToolIssues=async()=>[{id:'issue',revision:1,ulp_id:'ulp',equipment_name:'Teropong',vehicle_label:'Roda 2',opened_at:'2026-10-09T00:00:00Z',handover_verified_at:window.verifiedAt.issue},{id:'issue-nov',revision:1,ulp_id:'ulp',equipment_name:'HT',vehicle_label:'Roda 4',opened_at:'2026-11-24T03:29:00Z',handover_verified_at:window.verifiedAt['issue-nov']}];
+     export const verifyToolIssueHandover=async({issueId,verifiedAt})=>{window.verifiedAt[issueId]=verifiedAt;return {}};
     export const listVehicleLastInspections=async()=>[];
     export const submitToolInspection=async()=>{window.damaged=true;window.checked=true;return {issue:{id:'issue'}}};
     export const resolveToolIssue=async()=>{window.damaged=false;window.checked=false;window.replaced=true;return {}};
@@ -41,7 +41,7 @@ try{
     const r=await import('/node_modules/.vite/deps/react.js'), React=r.default??r
     const dom=await import('/node_modules/.vite/deps/react-dom_client.js')
     const {default:Report}=await import('/src/components/sla/UlpConditionReport.jsx')
-    window.damaged=false;window.checked=false;window.replaced=false
+     window.damaged=false;window.checked=false;window.replaced=false;window.verifiedAt={}
     window.fixtureReport=month=>{
       const inspected=(window.checked&&month==='2026-10')||(window.replaced&&month==='2026-11')
       return {report:null,vehicles:[{id:'vehicle',label:'Roda 2',plate_display:'KB 1234',vehicle_type_name:'Roda 2',assignment_name:'Inspeksi'}],history:[],
@@ -50,7 +50,7 @@ try{
         inspection_summary:[{vehicle_id:'vehicle',total:1,inspected:inspected?1:0,uninspected:inspected?0:1,open_issues:window.damaged?1:0}]}
     }
     const root=(dom.createRoot??dom.default.createRoot)(document.getElementById('root'))
-    window.renderReport=(month)=>root.render(React.createElement(Report,{key:month,contractUuid:'contract',up3Uuid:'up3',ownUlpUuid:'ulp',canManage:true,canInspect:true,canResolveIssue:true,canPickUlp:false,initialMonth:month,units:[{uuid:'ulp',type:'ULP',displayName:'ULP'}]}))
+     window.renderReport=(month)=>root.render(React.createElement(Report,{key:month,contractUuid:'contract',up3Uuid:'up3',ownUlpUuid:'ulp',canManage:true,canInspect:true,canResolveIssue:true,canViewToolIssues:true,canPickUlp:false,initialMonth:month,units:[{uuid:'ulp',type:'ULP',displayName:'ULP'}]}))
     window.renderReport('2026-10')
   })
   await page.getByText('1 unit belum diperiksa bulan ini',{exact:true}).waitFor()
@@ -76,11 +76,10 @@ try{
   assert.equal(await row.locator('.tool-matrix-qty').nth(1).innerText(),'1')
   assert.equal(await row.locator('.tool-percent-value').innerText(),'0%')
   await page.getByRole('button',{name:'Kembali ke daftar kendaraan'}).click()
-  await page.getByText('Semua alat sudah diperiksa bulan ini',{exact:true}).waitFor()
-  await page.locator('input[type=month]').fill('2026-11')
-  await page.getByText('1 unit belum diperiksa bulan ini',{exact:true}).waitFor()
-  assert((await page.locator('.uc-vehicle-card').innerText()).includes('1 issue unit'))
-  await page.locator('.uc-vehicle-card').click()
+   await page.getByText('Semua alat sudah diperiksa bulan ini',{exact:true}).waitFor()
+   await page.locator('input[type=month]').fill('2026-11')
+   await page.getByText('1 unit belum diperiksa bulan ini',{exact:true}).waitFor()
+   await page.locator('.uc-vehicle-card').click()
   assert.equal(await row.getByRole('button',{name:'Serah Terima',exact:true}).isDisabled(),true)
   await page.evaluate(async()=>{
     const r=await import('/node_modules/.vite/deps/react.js'), React=r.default??r
@@ -89,24 +88,40 @@ try{
     const host=document.createElement('div');host.id='coordinator';document.body.append(host)
     window.coordinatorRoot=(dom.createRoot??dom.default.createRoot)(host)
     const units=[{uuid:'ulp',type:'ULP',displayName:'ULP'}]
-    window.coordinatorRender=month=>window.coordinatorRoot.render(React.createElement(Coordinator,{contractId:'contract',up3Id:'up3',month,units}))
-    window.coordinatorRender('2026-10')
-  })
-  const coordinator=page.locator('#coordinator')
-  await coordinator.getByText('Periode Oktober 2026',{exact:true}).waitFor()
-  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).count(),1)
-  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'HT'}).count(),0)
-  assert.match(await coordinator.innerText(),/1 issue terbuka pada Oktober 2026/)
-  await page.getByRole('button',{name:'Verifikasi Penyerahan Alat Pengganti',exact:true}).click()
-  await page.getByRole('dialog').locator('input[type=datetime-local]').fill('2026-11-02T09:00')
-  await page.getByRole('button',{name:'Simpan Verifikasi',exact:true}).click()
-  await page.locator('#coordinator').getByText(/menunggu serah terima ke ULP$/).waitFor()
-  await page.evaluate(()=>window.coordinatorRender('2026-11'))
-  await coordinator.getByText('Periode November 2026',{exact:true}).waitFor()
-  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).count(),0)
-  assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'HT'}).count(),1)
-  await page.evaluate(()=>{window.coordinatorRoot.unmount();document.getElementById('coordinator').remove()})
-  await page.evaluate(()=>window.renderReport('2026-11'))
+     window.coordinatorRender=()=>window.coordinatorRoot.render(React.createElement(Coordinator,{contractId:'contract',up3Id:'up3',ulpId:'ulp',units}))
+     window.coordinatorRender()
+   })
+   const coordinator=page.locator('#coordinator')
+   await coordinator.getByText(/2 issue terbuka/).waitFor()
+   assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).count(),1)
+   assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'HT'}).count(),1)
+   assert.match(await coordinator.innerText(),/temuan dari bulan sebelumnya/)
+   await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).getByRole('button',{name:'Verifikasi Penyerahan Alat Pengganti',exact:true}).click()
+   await page.getByRole('dialog').locator('input[type=datetime-local]').fill('2026-11-02T09:00')
+   await page.getByRole('button',{name:'Simpan Verifikasi',exact:true}).click()
+   await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).getByText(/menunggu serah terima ke ULP$/).waitFor()
+   await page.evaluate(()=>window.coordinatorRender())
+   assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'Teropong'}).count(),1)
+   assert.equal(await coordinator.locator('.tool-issue-card').filter({hasText:'HT'}).count(),1)
+   await page.evaluate(()=>{window.coordinatorRoot.unmount();document.getElementById('coordinator').remove()})
+   await page.evaluate(async()=>{
+     const r=await import('/node_modules/.vite/deps/react.js'), React=r.default??r
+     const dom=await import('/node_modules/.vite/deps/react-dom_client.js')
+     const {default:Report}=await import('/src/components/sla/UlpConditionReport.jsx')
+     const host=document.createElement('div');host.id='restricted';document.body.append(host)
+     const root=(dom.createRoot??dom.default.createRoot)(host)
+     window.restrictedRoot=root
+      root.render(React.createElement(Report,{contractUuid:'contract',up3Uuid:'up3',ownUlpUuid:'ulp',canManage:false,canInspect:true,canResolveIssue:false,canViewToolIssues:false,canVerifyIssue:false,canPickUlp:false,initialMonth:'2026-11',units:[{uuid:'ulp',type:'ULP',displayName:'ULP'}]}))
+   })
+   const restricted=page.locator('#restricted')
+   await restricted.locator('.uc-vehicle-card').click()
+   const restrictedRow=restricted.locator('.tool-matrix-row').filter({hasText:'Teropong'})
+   await restrictedRow.waitFor()
+   assert.doesNotMatch(await restrictedRow.innerText(),/issue|verifikasi koordinator/i)
+   assert.equal(await restrictedRow.getByRole('button',{name:'Serah Terima',exact:true}).count(),0)
+   assert.equal(await restrictedRow.getByRole('button',{name:'Inspeksi',exact:true}).count(),0)
+   await page.evaluate(()=>{window.restrictedRoot.unmount();document.getElementById('restricted').remove()})
+   await page.evaluate(()=>window.renderReport('2026-11'))
   await page.locator('.uc-vehicle-card').click()
   await row.getByRole('button',{name:'Serah Terima',exact:true}).click()
   await dialog.locator('input[type=file]').setInputFiles({name:'replacement.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=','base64')})
@@ -119,6 +134,6 @@ try{
   await page.getByRole('button',{name:'Kembali ke daftar kendaraan'}).click()
   await page.getByText('Semua alat sudah diperiksa bulan ini',{exact:true}).waitFor()
   assert.deepEqual(errors,[])
-  console.log('Tool sync browser checks passed: read-only counts, inspection refresh, monthly issue filtering, month-specific card, carryover, handover refresh.')
+   console.log('Tool sync browser checks passed: read-only counts, inspection refresh, all-open issue list, hidden issue details for unauthorized roles, carryover, handover refresh.')
 }catch(error){console.error(error.message,errors,(await page?.locator('body').innerText())?.slice(0,2000));process.exitCode=1}
 finally{await browser?.close();await server.close()}
