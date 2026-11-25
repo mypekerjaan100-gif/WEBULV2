@@ -65,11 +65,13 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   const [aiReady, setAiReady] = useState(false)
   const [aiChecks, setAiChecks] = useState({})
   const [aiDetailDate, setAiDetailDate] = useState(null)
+  const [aiCheckingDate, setAiCheckingDate] = useState(null)
   const lock = useRef(false)
   const noticeTimer = useRef(null)
   const aiTokensRef = useRef(new Map())
   const aiQueueRef = useRef([])
   const aiRunningRef = useRef(false)
+  const aiResultWaiterRef = useRef(null)
   const aiReadyRef = useRef(false)
   const aiStatusLoadedRef = useRef(false)
   const aiDisabledNotifiedRef = useRef(false)
@@ -156,18 +158,13 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       const check = { ...result, photo: task.photo, expected: task.expected, checkedAt: Date.now() }
       if (result?.status === 'match' || result?.status === 'mismatch' || result?.status === 'unreadable') {
         setAiChecks((old) => ({ ...old, [task.date]: check }))
-        if (result.status === 'match') {
-          const reading = Number(result.reading)
-          const readingText = Number.isFinite(reading) ? fmt(reading, 1) : fmt(task.expected, 1)
-          showNotice('success', `Angka pada foto terbaca ${readingText} dan sesuai dengan Stand Akhir ${fmt(task.expected, 1)}.`, 'Angka odometer sesuai')
-        } else {
-          setAiDetailDate((current) => current ?? task.date)
-        }
-        return
+        setAiDetailDate(task.date)
+        return true
       }
       const info = describeAiFailure('')
       setAiChecks((old) => ({ ...old, [task.date]: { status: 'error', ...info, photo: task.photo, expected: task.expected, checkedAt: Date.now() } }))
-      showNotice('warning', info.message, info.title)
+      setAiDetailDate(task.date)
+      return true
     } catch (error) {
       if (!aiTargetValid(task)) return
       const info = describeAiFailure(error instanceof Error ? error.message : String(error))
@@ -177,7 +174,8 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
         aiReadyRef.current = false
         setAiReady(false)
       }
-      showNotice('warning', info.message, info.title)
+      setAiDetailDate(task.date)
+      return true
     }
   }
   const drainAiQueue = async () => {
@@ -197,7 +195,22 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
           })
           continue
         }
-        await performAiCheck(task)
+        setAiCheckingDate(task.date)
+        setAiDetailDate(null)
+        const resultDismissed = new Promise((resolve) => {
+          aiResultWaiterRef.current = { date: task.date, resolve }
+        })
+        const hasResult = await performAiCheck(task)
+        if (hasResult) {
+          await resultDismissed
+        } else {
+          setAiCheckingDate(null)
+          const waiter = aiResultWaiterRef.current
+          if (waiter?.date === task.date) {
+            aiResultWaiterRef.current = null
+            waiter.resolve()
+          }
+        }
       }
     } finally {
       aiRunningRef.current = false
@@ -263,10 +276,20 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     if (!check || check.status === 'checking') return
     setAiDetailDate(date)
   }
-  const retryAiDetail = () => {
-    const date = aiDetailDate
-    const row = rowsRef.current.find((item) => item.date === date)
+  const closeAiDetail = () => {
+    const date = aiCheckingDate ?? aiDetailDate
+    setAiCheckingDate(null)
     setAiDetailDate(null)
+    const waiter = aiResultWaiterRef.current
+    if (waiter && waiter.date === date) {
+      aiResultWaiterRef.current = null
+      waiter.resolve()
+    }
+  }
+  const retryAiDetail = () => {
+    const date = aiDetailDate ?? aiCheckingDate
+    const row = rowsRef.current.find((item) => item.date === date)
+    closeAiDetail()
     if (!row?.photo) {
       showNotice('warning', 'Foto odometer tidak ditemukan pada baris ini. Unggah foto terlebih dahulu.', 'Foto belum tersedia')
       return
@@ -317,6 +340,12 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
     let active = true
     rowsRef.current = []
     setSheet(null); setRows([]); setDetails({}); setInitial(''); setDirty(false); dismissNotice(); setAiChecks({}); setAiDetailDate(null)
+    setAiCheckingDate(null)
+    const waiter = aiResultWaiterRef.current
+    if (waiter) {
+      aiResultWaiterRef.current = null
+      waiter.resolve()
+    }
     aiQueueRef.current = []
     aiTokensRef.current.clear()
     if (!vehicleId || !vehicles.some((v) => v.id === vehicleId)) return
@@ -403,25 +432,21 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
   }
   const aiStatusChip = (date) => {
     const check = aiChecks[date]
-    if (!check) return null
+    if (!check || check.status === 'checking') return null
     const meta = aiCheckMeta(check.status)
-    const spinning = check.status === 'checking'
     const reading = Number(check.reading)
-    const detail = !spinning && check.status !== 'error' && Number.isFinite(reading) ? ` · terbaca ${fmt(reading, 1)}` : ''
-    const title = spinning
-      ? 'Sedang membaca angka pada foto odometer'
-      : check.status === 'error'
-        ? `${meta.label}: ${check.message || 'Coba periksa lagi.'}`
-        : `Hasil pemeriksaan: ${meta.label}${detail}`
+    const detail = check.status !== 'error' && Number.isFinite(reading) ? ` · terbaca ${fmt(reading, 1)}` : ''
+    const title = check.status === 'error'
+      ? `${meta.label}: ${check.message || 'Coba periksa lagi.'}`
+      : `Hasil pemeriksaan: ${meta.label}${detail}`
     return <button
       type="button"
       className={`bbm-ai-chip is-${check.status}`}
-      disabled={spinning}
       title={title}
       aria-label={`Lihat hasil pemeriksaan ${date}: ${meta.label}`}
       onClick={() => openAiDetail(date)}
     >
-      <Icon name={meta.icon} size={12} className={spinning ? 'bbm-ai-spin' : ''} />
+      <Icon name={meta.icon} size={12} />
     </button>
   }
   const photoCell = (date, path, index = null) => <span className="bbm-photo">
@@ -456,7 +481,9 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       {custom && <input className="bbm-sampling-custom" maxLength={160} aria-label={`Penjelasan ${label.toLowerCase()} sampling ${index + 1}`} placeholder="Tulis penjelasan" value={value} disabled={!editable} onChange={(e) => updateDetails(key, e.target.value)} />}
     </div>
   }
-  const aiDetailCheck = aiDetailDate ? aiChecks[aiDetailDate] : null
+  const aiDialogDate = aiCheckingDate ?? aiDetailDate
+  const aiDetailCheck = aiDialogDate ? aiChecks[aiDialogDate] : null
+  const aiCheckIsRunning = aiDetailCheck?.status === 'checking'
   const aiDetailMeta = aiCheckMeta(aiDetailCheck?.status)
   const aiDetailTitle = aiDetailCheck?.status === 'match'
     ? 'Angka odometer sesuai'
@@ -590,26 +617,53 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
       document.body,
     )}
     <Modal
-      open={Boolean(aiDetailDate && aiDetailCheck)}
-      onClose={() => setAiDetailDate(null)}
+      open={Boolean(aiDialogDate && aiDetailCheck)}
+      onClose={closeAiDetail}
       title="Pemeriksaan odometer"
       size="small"
-      className={`bbm-ai-dialog is-${aiDetailMeta.tone}`}
-      footer={aiDetailCheck ? (
+      className={`bbm-ai-dialog is-${aiDetailMeta.tone}${aiCheckIsRunning ? ' is-loading' : ''}`}
+      backdropClassName={aiCheckIsRunning ? 'bbm-ai-processing-backdrop' : ''}
+      closeOnBackdrop={!aiCheckIsRunning}
+      showCloseButton={!aiCheckIsRunning}
+      dismissDisabled={aiCheckIsRunning}
+      footer={aiDetailCheck && !aiCheckIsRunning ? (
         <>
           {aiDetailCheck.photo && <Button variant="secondary" onClick={() => showPhoto(aiDetailCheck.photo)} icon={<Icon name="camera" size={15} />}>Lihat foto</Button>}
-          <Button variant="secondary" onClick={() => setAiDetailDate(null)}>Tutup</Button>
-          {aiDetailCheck.status !== 'checking' && aiCheckAllowed && (
+          <Button variant="secondary" onClick={closeAiDetail}>Tutup</Button>
+          {aiCheckAllowed && (
             <Button variant="primary" onClick={retryAiDetail}>{aiDetailCheck.status === 'error' ? 'Coba lagi' : 'Periksa lagi'}</Button>
           )}
         </>
       ) : null}
     >
-      {aiDetailCheck && (
+      {aiDetailCheck && aiCheckIsRunning && (
+        <div className="bbm-ai-loading" role="status" aria-live="polite" aria-busy="true">
+          <div className="bbm-ai-scan-stage" aria-hidden="true">
+            <span className="bbm-ai-scan-orbit" />
+            <div className="bbm-ai-scan-card">
+              <span className="bbm-ai-scan-camera"><Icon name="camera" size={20} /></span>
+              <span className="bbm-ai-scan-display"><i /><i /><i /><i /></span>
+              <span className="bbm-ai-scan-line" />
+            </div>
+            <span className="bbm-ai-scan-sparkle"><Icon name="sparkles" size={15} /></span>
+          </div>
+          <div className="bbm-ai-loading-copy">
+            <strong>AI sedang membaca foto odometer</strong>
+            <p>Foto sedang dipindai dan angkanya dicocokkan dengan Stand Akhir.</p>
+          </div>
+          <dl className="bbm-ai-dialog-facts">
+            <div><dt>Tanggal</dt><dd>{labelDate(aiDialogDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>
+            {Number.isFinite(aiDetailExpected) && <div><dt>Stand akhir diisi</dt><dd>{fmt(aiDetailExpected, 1)}</dd></div>}
+          </dl>
+          <div className="bbm-ai-loading-track" aria-hidden="true"><span /></div>
+          <small>Mohon tunggu sampai pemeriksaan selesai.</small>
+        </div>
+      )}
+      {aiDetailCheck && !aiCheckIsRunning && (
         <>
           <div className="bbm-ai-dialog-head">
             <span className="bbm-ai-dialog-icon" aria-hidden="true">
-              <Icon name={aiDetailMeta.icon} size={22} className={aiDetailCheck.status === 'checking' ? 'bbm-ai-spin' : ''} />
+              <Icon name={aiDetailMeta.icon} size={22} />
             </span>
             <div>
               <strong>{aiDetailTitle}</strong>
@@ -617,7 +671,7 @@ export default function BbmReport({ contractId, up3Id, units, ownUlpId, canWrite
             </div>
           </div>
           <dl className="bbm-ai-dialog-facts">
-            <div><dt>Tanggal</dt><dd>{labelDate(aiDetailDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>
+            <div><dt>Tanggal</dt><dd>{labelDate(aiDialogDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>
             {Number.isFinite(aiDetailReading) && <div><dt>Angka pada foto</dt><dd>{fmt(aiDetailReading, 1)}</dd></div>}
             {Number.isFinite(aiDetailExpected) && <div><dt>Stand akhir diisi</dt><dd>{fmt(aiDetailExpected, 1)}</dd></div>}
             {aiDetailCheck.status === 'mismatch' && Number.isFinite(aiDetailReading) && Number.isFinite(aiDetailExpected) && (
